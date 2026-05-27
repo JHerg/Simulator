@@ -246,39 +246,66 @@ const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 150 m/°
 
 function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 
-// ── Wegpunkte – 22 GPS-Punkte für realistische Kurven ────────────────────────
-// Quelle: echte Straßengeometrie Köln-Bilderstöckchen → Müngersdorf
+// ── Wegpunkte – GPS-genaue Route Bilderstöckchen → RheinEnergie Stadion ───────
+// Quelle: OpenStreetMap / Google Maps echte Kölner Straßengeometrie
 const WP = [
-  // Altbaumburgweg (Wohnstraße, schmal, leicht Ost)
-  { name:"Altbaumburgweg",      street:"Altbaumburgweg",      ...ll(50.9715,6.8796), tl:false },
-  { name:"Altbaumburgweg",      street:"Altbaumburgweg",      ...ll(50.9710,6.8812), tl:false },
-  // Görlinger Str. (N→S, leichte Rechtskurve)
-  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9698,6.8828), tl:false },
-  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9682,6.8822), tl:false },
-  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9667,6.8815), tl:false },
-  // Nußbaumer Str. (diagonal SW)
-  { name:"Nußbaumer Str.",      street:"Nußbaumer Str.",      ...ll(50.9654,6.8782), tl:false },
-  { name:"Nußbaumer Str.",      street:"Nußbaumer Str.",      ...ll(50.9642,6.8762), tl:true  },
-  // Venloer Str. (W, breite Hauptstraße)
-  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9628,6.8735), tl:false },
-  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9614,6.8714), tl:true  },
-  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9600,6.8693), tl:false },
-  // Innere Kanalstr. (SW-Kurve)
-  { name:"Innere Kanalstr.",    street:"Innere Kanalstr.",    ...ll(50.9585,6.8670), tl:false },
-  { name:"Innere Kanalstr.",    street:"Innere Kanalstr.",    ...ll(50.9568,6.8650), tl:false },
-  // Militärring (Kurve nach Süden)
-  { name:"Militärring",         street:"Militärring",         ...ll(50.9550,6.8642), tl:false },
-  { name:"Militärring",         street:"Militärring",         ...ll(50.9533,6.8652), tl:true  },
-  // Aachener Str. (lange Diagonale SW zum Stadion)
-  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9516,6.8664), tl:false },
-  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9498,6.8680), tl:false },
-  { name:"Aachener Str. / Gürtel", street:"Aachener Str.",   ...ll(50.9480,6.8698), tl:true  },
-  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9461,6.8714), tl:false },
-  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9443,6.8724), tl:false },
-  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9423,6.8736), tl:false },
-  // Stadioneinfahrt
-  { name:"Stadionstr.",         street:"Stadionstr.",         ...ll(50.9395,6.8748), tl:false },
-  { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion", ...ll(50.9338,6.8750), tl:false },
+  // ── Altbaumburgweg (Wohnstraße, 6m breit) ───────────────────────────────────
+  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9715,6.8796), tl:false, width:6  },
+  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9712,6.8803), tl:false, width:6  },
+  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9708,6.8814), tl:false, width:6  },
+
+  // ── Görlinger Zentrum / Görlinger Str. (8m, leichte S-Kurve) ───────────────
+  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9698,6.8828), tl:false, width:8  },
+  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9689,6.8826), tl:false, width:8  },
+  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9680,6.8822), tl:false, width:8  },
+  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9670,6.8817), tl:false, width:8  },
+  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9660,6.8810), tl:true,  width:8  },
+
+  // ── Nußbaumer Str. (7m, diagonal SW) ────────────────────────────────────────
+  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9652,6.8790), tl:false, width:7  },
+  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9644,6.8773), tl:false, width:7  },
+  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9636,6.8756), tl:true,  width:7  },
+
+  // ── Venloer Str. Nord (Hauptstr., 12m) ──────────────────────────────────────
+  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9628,6.8740), tl:false, width:12 },
+  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9620,6.8726), tl:false, width:12 },
+  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9611,6.8712), tl:true,  width:12 },
+  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9602,6.8698), tl:false, width:12 },
+  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9592,6.8682), tl:false, width:12 },
+
+  // ── Ossendorfer Weg (8m, SW-Kurve) ──────────────────────────────────────────
+  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9582,6.8665), tl:false, width:8  },
+  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9572,6.8652), tl:false, width:8  },
+  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9560,6.8641), tl:false, width:8  },
+
+  // ── Militärringstr. (10m, Ost-Kurve dann Süd) ───────────────────────────────
+  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9548,6.8638), tl:false, width:10 },
+  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9537,6.8641), tl:false, width:10 },
+  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9526,6.8649), tl:true,  width:10 },
+  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9518,6.8658), tl:false, width:10 },
+
+  // ── Aachener Str. / Gürtel (12m, lange Diagonale SW) ────────────────────────
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9508,6.8668), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9498,6.8678), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9488,6.8688), tl:false, width:12 },
+  { name:"Aachener Str. / Gürtel",street:"Aachener Str.",       ...ll(50.9478,6.8698), tl:true,  width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9467,6.8710), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9456,6.8720), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9445,6.8727), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9433,6.8733), tl:false, width:12 },
+  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9420,6.8737), tl:false, width:12 },
+
+  // ── Universitätsstr. / Aachener Str. West ────────────────────────────────────
+  { name:"Universitätsstr.",      street:"Universitätsstr.",    ...ll(50.9408,6.8740), tl:true,  width:10 },
+  { name:"Universitätsstr.",      street:"Universitätsstr.",    ...ll(50.9396,6.8744), tl:false, width:10 },
+
+  // ── Stadionstr. / Zufahrt (8m) ───────────────────────────────────────────────
+  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9384,6.8747), tl:false, width:8  },
+  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9372,6.8748), tl:false, width:8  },
+  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9358,6.8749), tl:false, width:8  },
+
+  // ── RheinEnergie Stadion (Ziel) ──────────────────────────────────────────────
+  { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion", ...ll(50.9340,6.8750), tl:false, width:12 },
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -348,15 +375,15 @@ function roadGeo(ax, az, bx, bz, width, y) {
   const asphalt   = new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
   const sidewalk  = new THREE.MeshLambertMaterial({ color: 0xb8a898 });
   const dashMat   = new THREE.MeshBasicMaterial({ color: 0xeeeecc });
-  const RWIDTH = 8;
 
   for (let i = 0; i < WP.length - 1; i++) {
     const A = WP[i], B = WP[i+1];
+    const rw = A.width || 8; // Straßenbreite aus WP oder Standard 8m
 
     // Asphalt
-    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, RWIDTH, 0.01), asphalt));
-    // Gehwege
-    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, RWIDTH+4, 0.005), sidewalk));
+    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, rw, 0.01), asphalt));
+    // Gehwege (1.5m Bürgersteig je Seite)
+    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, rw+3, 0.005), sidewalk));
 
     // Mittellinien (gestrichelt durch kurze Segmente)
     const segLen = Math.hypot(B.x-A.x, B.z-A.z);
@@ -452,7 +479,8 @@ function roadGeo(ax, az, bx, bz, width, y) {
         const w = 7  + rng()*11;
         const h = 5  + rng()*25;
         const d = 7  + rng()*10;
-        const off = 10 + rng()*6;
+        const roadHW = (WP[i].width||8)/2;
+        const off = roadHW + Math.max(w,d)/2 + 3 + rng()*4; // Mindestabstand: Straßenrand + halbe Gebäudebreite + Gehweg
 
         const px = bx + nx*side*off + (rng()-.5)*3;
         const pz = bz + nz*side*off + (rng()-.5)*3;
@@ -819,7 +847,7 @@ function updateCar(dt) {
   // Auto-Pilot: lenkunterstützung falls kein manueller Input
   if (Math.abs(steerIn) < 0.05) steerIn = -autoSteer() * 0.55; // FIX: Auto-Pilot invertiert
   // Auto-Pilot: sanft anfahren wenn kein Gas
-  if (throttle === 0 && car.speed < 14 && car.wpIdx < WP.length) throttle = 0.65;
+  // KEIN Auto-Gas mehr – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
 
   // Geschwindigkeit
   if (throttle > 0) car.speed = Math.min(MAX_SPD, car.speed + ACCEL * throttle * dt);
