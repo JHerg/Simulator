@@ -240,104 +240,82 @@ const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
 
 // ── Geo-Koordinaten → Szene (Meter) ─────────────────────────────────────────
-// Referenzpunkt: Altbaumburgweg, 50739 Köln (Bilderstöckchen)
-const LAT0 = 50.9807, LNG0 = 6.9305;
+// Referenzpunkt: Altbaumburgweg 2, 50739 Köln (exakt laut Routenplaner)
+const LAT0 = 50.9674, LNG0 = 6.9382;
 const mLat = 111320;
-const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 040 m/°
+const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 030 m/°
 
 function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 
-// ── Vollständige Route: Altbaumburgweg 50739 → RheinEnergie Stadion 50933 ─────
-// GPS-Koordinaten: OpenStreetMap / eigene Recherche Kölner Straßennetz
-// Gesamt ~6,5 km, Richtung SW (Bilderstöckchen → Müngersdorf)
+// ══════════════════════════════════════════════════════════════════════════
+//  ROUTE: Altbaumburgweg 2 (50739) → RheinEnergieSTADION  –  8,7 km
+//  Quell-Koordinaten direkt vom Routenplaner des Nutzers
+// ══════════════════════════════════════════════════════════════════════════
 const WP = [
 
-  // ═══════════════════════════════════════════════════════════════════
-  // BILDERSTÖCKCHEN (50739) – Altbaumburgweg
-  // Wohnstraße, ca. 6 m breit, Richtung W/SW
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Altbaumburgweg",          ...ll(50.9807,6.9305), tl:false, width:6  },
-  { street:"Altbaumburgweg",          ...ll(50.9803,6.9294), tl:false, width:6  },
-  { street:"Altbaumburgweg",          ...ll(50.9798,6.9281), tl:false, width:6  },
+  // ── 1. Altbaumburgweg  (Wohnstraße ~6 m, 55 m) ───────────────────────
+  { street:"Altbaumburgweg",            ...ll(50.9674,6.9382), tl:false, width:6  },
+  { street:"Altbaumburgweg",            ...ll(50.9669,6.9377), tl:false, width:6  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Birkenweg  (kurze Querstraße, führt S Richtung Görlinger Zentrum)
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Birkenweg",               ...ll(50.9789,6.9265), tl:false, width:6  },
-  { street:"Birkenweg",               ...ll(50.9779,6.9250), tl:false, width:6  },
+  // ── 2. Trifelsstraße  (Wohnstraße ~6 m, 187 m, rechts) ───────────────
+  { street:"Trifelsstraße",             ...ll(50.9668,6.9361), tl:false, width:6  },
+  { street:"Trifelsstraße",             ...ll(50.9667,6.9349), tl:false, width:6  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Görlinger Str. – Hauptstraße durch Bilderstöckchen nach S (8 m)
-  // Verbindet Bilderstöckchen mit Bocklemünd / Ossendorf
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Görlinger Str.",          ...ll(50.9766,6.9232), tl:false, width:8  },
-  { street:"Görlinger Str.",          ...ll(50.9750,6.9212), tl:false, width:8  },
-  { street:"Görlinger Str.",          ...ll(50.9732,6.9192), tl:false, width:8  },
-  { street:"Görlinger Str.",          ...ll(50.9714,6.9175), tl:true,  width:8  },
+  // ── 3. Ebernburgweg  (Wohnstraße ~6 m, 288 m, links) ─────────────────
+  { street:"Ebernburgweg",              ...ll(50.9654,6.9347), tl:false, width:6  },
+  { street:"Ebernburgweg",              ...ll(50.9641,6.9344), tl:false, width:6  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Bocklemünder Str. – Querverbindung nach SW (7 m)
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Bocklemünder Str.",       ...ll(50.9696,6.9150), tl:false, width:7  },
-  { street:"Bocklemünder Str.",       ...ll(50.9678,6.9122), tl:false, width:7  },
+  // ── 4. Schiefersburger Weg  (~7 m, 239 m, rechts) ────────────────────
+  { street:"Schiefersburger Weg",       ...ll(50.9641,6.9327), tl:false, width:7  },
+  { street:"Schiefersburger Weg",       ...ll(50.9640,6.9310), tl:false, width:7  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Nußbaumer Str. – Verbindung Richtung Bickendorf/Ossendorf (8 m)
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Nußbaumer Str.",          ...ll(50.9659,6.9088), tl:false, width:8  },
-  { street:"Nußbaumer Str.",          ...ll(50.9641,6.9052), tl:false, width:8  },
-  { street:"Nußbaumer Str.",          ...ll(50.9622,6.9015), tl:true,  width:8  },
+  // ── 5. Escher Str.  (~9 m, 666 m, 2. Ausfahrt Kreisverkehr) ──────────
+  //       Kreisverkehr an der Einmündung, dann südwärts
+  { street:"Escher Str.",               ...ll(50.9624,6.9298), tl:false, width:9  },
+  { street:"Escher Str.",               ...ll(50.9605,6.9284), tl:false, width:9  },
+  { street:"Escher Str.",               ...ll(50.9586,6.9270), tl:true,  width:9  },
+  { street:"Escher Str.",               ...ll(50.9572,6.9258), tl:false, width:9  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Venloer Str. – Hauptachse Bickendorf → Ehrenfeld (16 m, Tram 3/4)
-  // B265, zweibahnig mit Straßenbahn in Mittellage
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Venloer Str.",            ...ll(50.9603,6.8978), tl:false, width:16 },
-  { street:"Venloer Str.",            ...ll(50.9585,6.8942), tl:false, width:16 },
-  { street:"Venloer Str.",            ...ll(50.9567,6.8906), tl:true,  width:16 },
-  { street:"Venloer Str.",            ...ll(50.9549,6.8870), tl:false, width:16 },
-  { street:"Venloer Str.",            ...ll(50.9532,6.8838), tl:false, width:16 },
+  // ── 6. Parkgürtel  (~12 m, 647 m, Auffahren auf den Grüngürtel) ──────
+  { street:"Parkgürtel",                ...ll(50.9563,6.9205), tl:false, width:12 },
+  { street:"Parkgürtel",                ...ll(50.9555,6.9158), tl:false, width:12 },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Ossendorfer Weg – SW-Kurve durch Ossendorf (8 m)
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Ossendorfer Weg",         ...ll(50.9514,6.8812), tl:false, width:8  },
-  { street:"Ossendorfer Weg",         ...ll(50.9499,6.8792), tl:false, width:8  },
-  { street:"Ossendorfer Weg",         ...ll(50.9484,6.8778), tl:false, width:8  },
+  // ── 7. Auffahrt Richtung Zentrum / K4  (~10 m, 357 m, links halten) ──
+  { street:"Auffahrt Richtung Zentrum", ...ll(50.9539,6.9148), tl:false, width:10 },
+  { street:"Auffahrt Richtung Zentrum", ...ll(50.9523,6.9141), tl:false, width:10 },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Militärringstr. – Kölner Ringstraße (12 m, 21 km gesamt)
-  // Biegt nach S/SW Richtung Müngersdorf
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Militärringstr.",         ...ll(50.9468,6.8762), tl:false, width:12 },
-  { street:"Militärringstr.",         ...ll(50.9451,6.8750), tl:false, width:12 },
-  { street:"Militärringstr.",         ...ll(50.9435,6.8742), tl:true,  width:12 },
+  // ── 8. Innere Kanalstraße / K4  (~14 m, 2.462 m) ─────────────────────
+  //       lange, gerade Stadtstraße südwärts durch Neuehrenfeld / Ehrenfeld
+  { street:"Innere Kanalstraße",        ...ll(50.9493,6.9133), tl:false, width:14 },
+  { street:"Innere Kanalstraße",        ...ll(50.9461,6.9123), tl:true,  width:14 },
+  { street:"Innere Kanalstraße",        ...ll(50.9429,6.9113), tl:false, width:14 },
+  { street:"Innere Kanalstraße",        ...ll(50.9397,6.9104), tl:true,  width:14 },
+  { street:"Innere Kanalstraße",        ...ll(50.9368,6.9095), tl:false, width:14 },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Aachener Str. – Bundesstraße B55, Richtung W (14 m, Tram Linie 1)
-  // Kreuzung am Gürtel: bedeutendste Kreuzung auf der Route
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Aachener Str.",           ...ll(50.9418,6.8732), tl:false, width:14 },
-  { street:"Aachener Str.",           ...ll(50.9405,6.8724), tl:false, width:14 },
-  { street:"Aachener Str. / Gürtel",  ...ll(50.9392,6.8716), tl:true,  width:14 },
-  { street:"Aachener Str.",           ...ll(50.9380,6.8709), tl:false, width:14 },
-  { street:"Aachener Str.",           ...ll(50.9368,6.8703), tl:false, width:14 },
-  { street:"Aachener Str.",           ...ll(50.9356,6.8698), tl:false, width:14 },
-  { street:"Aachener Str.",           ...ll(50.9344,6.8692), tl:false, width:14 },
+  // ── 9. Aachener Str. B55  (~18 m, 1.708 m, rechts) ───────────────────
+  //       breite Bundesstraße mit Straßenbahn, westwärts nach Müngersdorf
+  { street:"Aachener Str.",             ...ll(50.9364,6.9032), tl:false, width:18 },
+  { street:"Aachener Str.",             ...ll(50.9360,6.8963), tl:true,  width:18 },
+  { street:"Aachener Str.",             ...ll(50.9357,6.8897), tl:false, width:18 },
+  { street:"Aachener Str.",             ...ll(50.9354,6.8836), tl:true,  width:18 },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Am Sportpark Müngersdorf – Zufahrt Sportzentrum/DSHS (10 m)
-  // (war fälschlicherweise "Universitätsstr." – korrekt: Am Sportpark)
-  // ═══════════════════════════════════════════════════════════════════
-  { street:"Am Sportpark Müngersdorf",...ll(50.9340,6.8780), tl:true,  width:10 },
-  { street:"Am Sportpark Müngersdorf",...ll(50.9336,6.8770), tl:false, width:10 },
-  { street:"Am Sportpark Müngersdorf",...ll(50.9334,6.8762), tl:false, width:10 },
+  // ── 10. Kitschburger Str.  (~8 m, 330 m, links) ───────────────────────
+  { street:"Kitschburger Str.",         ...ll(50.9340,6.8833), tl:false, width:8  },
+  { street:"Kitschburger Str.",         ...ll(50.9325,6.8831), tl:false, width:8  },
 
-  // ═══════════════════════════════════════════════════════════════════
-  // RheinEnergie Stadion (Ziel)  50.9334°N, 6.8752°E
-  // ═══════════════════════════════════════════════════════════════════
+  // ── 11. Friedrich-Schmidt-Straße  (~10 m, 1.023 m, 1. Ausfahrt KV) ───
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9328,6.8800), tl:false, width:10 },
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9332,6.8770), tl:false, width:10 },
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9336,6.8740), tl:false, width:10 },
+
+  // ── 12. Junkersdorfer Str.  (~10 m, 788 m, direkt zum Stadion) ────────
+  { street:"Junkersdorfer Str.",        ...ll(50.9338,6.8782), tl:false, width:10 },
+  { street:"Junkersdorfer Str.",        ...ll(50.9337,6.8770), tl:false, width:10 },
+  { street:"Junkersdorfer Str.",        ...ll(50.9336,6.8759), tl:false, width:10 },
+
+  // ── Ziel: RheinEnergieSTADION  50.9334° N, 6.8751° E ─────────────────
   { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion",
-    ...ll(50.9334,6.8752), tl:false, width:14 },
+    ...ll(50.9334,6.8751), tl:false, width:14 },
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -988,7 +966,7 @@ function drawMinimap() {
 async function loadOSM() {
   // Bounding box rund um unsere Route
   // Bounding box: deckt komplette Route von Bilderstöckchen bis Müngersdorf ab
-  const bbox = '50.928,6.868,50.985,6.938';
+  const bbox = '50.930,6.872,50.970,6.942';
   const q = `[out:json][timeout:30];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox}););(._;>;);out body;`;
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
 
