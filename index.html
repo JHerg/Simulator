@@ -4,8 +4,20 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
   <title>Köln Fahrsimulator</title>
-  <!-- Three.js als klassisches Script-Tag – kein importmap, läuft überall -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
+  <!-- Three.js: erst jsdelivr, dann unpkg als Fallback -->
+  <script>
+    window.__threeLoaded = false;
+    window.__threeError  = false;
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"
+          onload="window.__threeLoaded=true"
+          onerror="window.__threeError=true"></script>
+  <!-- Fallback CDN falls jsdelivr blockiert ist -->
+  <script>
+    if (window.__threeError || typeof THREE === 'undefined') {
+      document.write('<script src="https://unpkg.com/three@0.165.0/build/three.min.js"><\/script>');
+    }
+  </script>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:#000;overflow:hidden;font-family:Arial,sans-serif;touch-action:none;}
@@ -95,12 +107,43 @@
     #br{bottom:20px;left:90px;width:68px;height:68px;}
     #bgas{bottom:20px;right:12px;width:88px;height:68px;background:rgba(0,120,0,.6);}
     #bbrk{bottom:20px;right:110px;width:68px;height:68px;background:rgba(160,0,0,.5);}
+    /* ── Desktop: Speedo + Minimap immer sichtbar ──── */
+    #speedo{ bottom:20px; right:20px; }
+    #mm    { bottom:20px; left:20px;  }
+
+    /* ── Fehler-Box ────────────────────────────────── */
+    #err-box{
+      display:none;position:fixed;inset:0;z-index:9999;
+      background:rgba(0,0,0,.95);
+      align-items:center;justify-content:center;flex-direction:column;
+      color:#ff5555;text-align:center;padding:30px;font-size:15px;
+    }
+    #err-box h2{font-size:28px;margin-bottom:16px;}
+    #err-box pre{background:#111;color:#f88;padding:12px;border-radius:8px;
+      font-size:11px;text-align:left;max-width:600px;overflow:auto;margin-top:12px;}
+    #err-solution{background:#1a2a1a;color:#8f8;padding:12px 20px;
+      border-radius:8px;margin-top:14px;font-size:13px;line-height:1.8;}
   </style>
 </head>
 <body>
 
+<!-- ── Fehler-Overlay (erscheint wenn JS-Fehler) ── -->
+<div id="err-box">
+  <h2>⚠️ Simulator-Fehler</h2>
+  <div id="err-msg">Unbekannter Fehler</div>
+  <pre id="err-detail"></pre>
+  <div id="err-solution">
+    <strong>Lösung A – GitHub Pages (empfohlen):</strong><br>
+    github.com/JHerg/Simulator → Settings → Pages → Branch wählen → Save<br>
+    → URL: <strong>https://jherg.github.io/Simulator/</strong><br><br>
+    <strong>Lösung B – Lokaler Server:</strong><br>
+    Im Ordner: <code>npx serve .</code> oder <code>python -m http.server 8080</code><br>
+    Dann: <strong>http://localhost:8080</strong>
+  </div>
+</div>
+
 <div id="prog"><div id="prog-fill"></div></div>
-<canvas id="canvas"></canvas>
+<canvas id="canvas" style="width:100vw;height:100vh;display:block;"></canvas>
 
 <div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
 <div id="toast"></div>
@@ -118,10 +161,38 @@
 </div>
 
 <script>
+// Fehler sichtbar machen
+function showError(msg, detail) {
+  var box = document.getElementById('err-box');
+  box.style.display = 'flex';
+  document.getElementById('err-msg').textContent = msg;
+  if (detail) document.getElementById('err-detail').textContent = detail;
+}
+window.onerror = function(msg, src, line, col, err) {
+  showError(msg, (err && err.stack) || ('Line ' + line + ':' + col));
+  return true;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  showError('Promise-Fehler: ' + e.reason, String(e.reason));
+});
+</script>
+
+<script>
 // ════════════════════════════════════════════════════════════════════════════
 //  KÖLN FAHRSIMULATOR v2
 //  Altbaumburgweg, Bilderstöckchen  →  RheinEnergie Stadion
 // ════════════════════════════════════════════════════════════════════════════
+
+// Three.js geladen?
+if (typeof THREE === 'undefined') {
+  showError(
+    'Three.js konnte nicht geladen werden.',
+    'Die Bibliothek (CDN: jsdelivr.net / unpkg.com) ist nicht erreichbar.\n\n' +
+    'Das passiert bei file://-Protokoll in Edge.\n' +
+    'Lösung: GitHub Pages oder lokaler Server (siehe unten).'
+  );
+  throw new Error('THREE not loaded');
+}
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
@@ -433,9 +504,7 @@ function updateTrafficLights(t) {
 
   // Rasen
   const grass = new THREE.Mesh(
-    new THREE.EllipseCurve ? // Three.js 165 hat EllipseGeometry nicht direkt
-      new THREE.CylinderGeometry(52,52,0.5,32) :
-      new THREE.CylinderGeometry(52,52,0.5,32),
+    new THREE.CylinderGeometry(52, 52, 0.5, 32),
     new THREE.MeshLambertMaterial({ color: 0x22aa44 })
   );
   grass.position.set(sx, 0.4, sz);
