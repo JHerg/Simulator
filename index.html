@@ -144,6 +144,15 @@
 <div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div></div>
 <div id="mm"><canvas id="mm-cv" width="160" height="160" style="display:block;"></canvas></div>
 <div id="osm-lbl">🗺 Lade OSM…</div>
+<!-- Aktuelle Straße (Daueranzeige wie Navigation) -->
+<div id="street-lbl" style="
+  position:fixed;bottom:130px;left:50%;transform:translateX(-50%);
+  background:#003399;color:#fff;padding:5px 22px 5px 14px;
+  border-radius:4px;font-size:15px;font-weight:bold;z-index:40;
+  white-space:nowrap;pointer-events:none;
+  box-shadow:0 2px 8px rgba(0,0,40,.5);
+  border:2px solid #fff;
+">Altbaumburgweg</div>
 <div id="hint">↑W Gas &nbsp; ↓S Bremse<br>←A Links &nbsp; →D Rechts<br>Space Handbremse<br>R Neustart</div>
 
 <!-- Mobile-Buttons -->
@@ -237,18 +246,39 @@ const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 150 m/°
 
 function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 
-// ── Wegpunkte (echte GPS-Koordinaten aus Köln) ───────────────────────────────
+// ── Wegpunkte – 22 GPS-Punkte für realistische Kurven ────────────────────────
+// Quelle: echte Straßengeometrie Köln-Bilderstöckchen → Müngersdorf
 const WP = [
-  { name:"Altbaumburgweg",         ...ll(50.9713,6.8796), tl:false },
-  { name:"Görlinger Zentrum",      ...ll(50.9690,6.8820), tl:false },
-  { name:"Nußbaumer Str.",         ...ll(50.9650,6.8760), tl:true  },
-  { name:"Venloer Str. (Nord)",    ...ll(50.9600,6.8720), tl:true  },
-  { name:"Innere Kanalstr.",       ...ll(50.9530,6.8680), tl:false },
-  { name:"Militärringstr.",        ...ll(50.9480,6.8700), tl:true  },
-  { name:"Aachener Str./Gürtel",   ...ll(50.9430,6.8730), tl:true  },
-  { name:"Universitätsstr.",       ...ll(50.9400,6.8760), tl:false },
-  { name:"Aachener Str. West",     ...ll(50.9360,6.8740), tl:false },
-  { name:"RheinEnergie Stadion 🏟",  ...ll(50.9338,6.8750), tl:false },
+  // Altbaumburgweg (Wohnstraße, schmal, leicht Ost)
+  { name:"Altbaumburgweg",      street:"Altbaumburgweg",      ...ll(50.9715,6.8796), tl:false },
+  { name:"Altbaumburgweg",      street:"Altbaumburgweg",      ...ll(50.9710,6.8812), tl:false },
+  // Görlinger Str. (N→S, leichte Rechtskurve)
+  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9698,6.8828), tl:false },
+  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9682,6.8822), tl:false },
+  { name:"Görlinger Str.",      street:"Görlinger Str.",      ...ll(50.9667,6.8815), tl:false },
+  // Nußbaumer Str. (diagonal SW)
+  { name:"Nußbaumer Str.",      street:"Nußbaumer Str.",      ...ll(50.9654,6.8782), tl:false },
+  { name:"Nußbaumer Str.",      street:"Nußbaumer Str.",      ...ll(50.9642,6.8762), tl:true  },
+  // Venloer Str. (W, breite Hauptstraße)
+  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9628,6.8735), tl:false },
+  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9614,6.8714), tl:true  },
+  { name:"Venloer Str.",        street:"Venloer Str.",        ...ll(50.9600,6.8693), tl:false },
+  // Innere Kanalstr. (SW-Kurve)
+  { name:"Innere Kanalstr.",    street:"Innere Kanalstr.",    ...ll(50.9585,6.8670), tl:false },
+  { name:"Innere Kanalstr.",    street:"Innere Kanalstr.",    ...ll(50.9568,6.8650), tl:false },
+  // Militärring (Kurve nach Süden)
+  { name:"Militärring",         street:"Militärring",         ...ll(50.9550,6.8642), tl:false },
+  { name:"Militärring",         street:"Militärring",         ...ll(50.9533,6.8652), tl:true  },
+  // Aachener Str. (lange Diagonale SW zum Stadion)
+  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9516,6.8664), tl:false },
+  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9498,6.8680), tl:false },
+  { name:"Aachener Str. / Gürtel", street:"Aachener Str.",   ...ll(50.9480,6.8698), tl:true  },
+  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9461,6.8714), tl:false },
+  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9443,6.8724), tl:false },
+  { name:"Aachener Str.",       street:"Aachener Str.",       ...ll(50.9423,6.8736), tl:false },
+  // Stadioneinfahrt
+  { name:"Stadionstr.",         street:"Stadionstr.",         ...ll(50.9395,6.8748), tl:false },
+  { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion", ...ll(50.9338,6.8750), tl:false },
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -338,6 +368,63 @@ function roadGeo(ax, az, bx, bz, width, y) {
       const x1 = A.x + (B.x-A.x)*t1, z1 = A.z + (B.z-A.z)*t1;
       scene.add(new THREE.Mesh(roadGeo(x0,z0,x1,z1, 0.2, 0.02), dashMat));
     }
+  }
+})();
+
+// ── Straßenschilder (deutsche blaue Schilder, Canvas-Texturen) ───────────────
+(function makeStreetSigns() {
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
+  let prevStreet = '';
+
+  for (let i = 1; i < WP.length; i++) {
+    const wp   = WP[i];
+    const prev = WP[i - 1];
+    if (wp.street === prevStreet) continue;
+    prevStreet = wp.street;
+
+    // Richtungsvektor des Segments
+    const dx = wp.x - prev.x, dz = wp.z - prev.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1) continue;
+    const nx = -dz / len, nz = dx / len; // Senkrecht links
+
+    // Canvas-Textur (deutsches Straßenschild, blau)
+    const cv = document.createElement('canvas');
+    cv.width = 400; cv.height = 80;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#002288';
+    ctx.fillRect(0, 0, 400, 80);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(4, 4, 392, 72);
+    ctx.fillStyle = '#ffffff';
+    const label = wp.street.replace(' 🏟', '');
+    const fs = label.length > 18 ? 22 : 28;
+    ctx.font = `bold ${fs}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 200, 42);
+    const tex = new THREE.CanvasTexture(cv);
+
+    // Schild rechts der Fahrtrichtung
+    const sx = wp.x - nx * 7;
+    const sz = wp.z - nz * 7;
+
+    // Mast
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.07, 4, 6), postMat
+    );
+    post.position.set(sx, 2, sz);
+    scene.add(post);
+
+    // Schildfläche (DoubleSide → von beiden Seiten lesbar)
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, side: THREE.DoubleSide
+    });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(5, 1), mat);
+    sign.position.set(sx, 4.5, sz);
+    sign.rotation.y = Math.atan2(dx, dz) + Math.PI / 2; // senkrecht zur Straße
+    scene.add(sign);
   }
 })();
 
@@ -683,7 +770,12 @@ function checkWaypoint() {
   if (car.wpIdx >= WP.length) return;
   const wp = WP[car.wpIdx];
   if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
-    toast('📍 ' + wp.name);
+    // Straßenwechsel? → Toast zeigen
+    const prevStreet = car.wpIdx > 0 ? WP[car.wpIdx-1].street : '';
+    if (wp.street !== prevStreet) {
+      toast('🛣 ' + wp.street);
+      document.getElementById('street-lbl').textContent = wp.street;
+    }
     car.wpIdx++;
     document.getElementById('prog-fill').style.width =
       ((car.wpIdx-1)/(WP.length-1)*100).toFixed(1) + '%';
@@ -702,14 +794,15 @@ function updateCar(dt) {
   if (keys['ArrowUp']   || keys['KeyW'] || touch.gas)   throttle = 1;
   if (keys['ArrowDown'] || keys['KeyS'] || touch.brake)  braking  = 1;
   if (keys['Space'])                                      braking  = 2;
-  if (keys['ArrowLeft'] || keys['KeyA'] || touch.left)   steerIn  = -1;
-  if (keys['ArrowRight']|| keys['KeyD'] || touch.right)  steerIn  =  1;
+  // FIX: Links=Osten=heading+ / Rechts=Westen=heading-
+  if (keys['ArrowLeft'] || keys['KeyA'] || touch.left)   steerIn  =  1;
+  if (keys['ArrowRight']|| keys['KeyD'] || touch.right)  steerIn  = -1;
 
   // Gamepad
   const gp = getGamepadInput();
   if (gp) {
     const ax = gp.axes[0];
-    if (Math.abs(ax) > 0.08) steerIn = ax;
+    if (Math.abs(ax) > 0.08) steerIn = -ax; // Gamepad-Achse invertieren (Thrustmaster: Links=-1)
     const rt = gp.buttons[7]?.value ?? 0;
     const lt = gp.buttons[6]?.value ?? 0;
     if (rt > 0.05) throttle = rt;
@@ -724,7 +817,7 @@ function updateCar(dt) {
   }
 
   // Auto-Pilot: lenkunterstützung falls kein manueller Input
-  if (Math.abs(steerIn) < 0.05) steerIn = autoSteer() * 0.55;
+  if (Math.abs(steerIn) < 0.05) steerIn = -autoSteer() * 0.55; // FIX: Auto-Pilot invertiert
   // Auto-Pilot: sanft anfahren wenn kein Gas
   if (throttle === 0 && car.speed < 14 && car.wpIdx < WP.length) throttle = 0.65;
 
