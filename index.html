@@ -850,8 +850,8 @@ function updateCar(dt) {
   car.x += Math.sin(car.heading) * car.speed * dt;
   car.z += Math.cos(car.heading) * car.speed * dt;
 
-  // Lenkrad animieren
-  wheelGrp.rotation.z = -car.steer * 0.55;
+  // Lenkrad animieren (positives steer = Links → Lenkrad gegen Uhrzeigersinn)
+  wheelGrp.rotation.z = car.steer * 0.55;
 
   checkWaypoint();
 }
@@ -861,7 +861,7 @@ function updateCamera() {
   cam.position.set(car.x, 1.25, car.z);
   cam.rotation.y = car.heading + Math.PI;  // +PI weil Three.js-Kamera in -Z schaut
   cam.rotation.x = 0;
-  cam.rotation.z = car.steer * -0.025;
+  cam.rotation.z = car.steer * 0.025;  // leichte Kurvenneigung in Lenkrichtung
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
