@@ -4,20 +4,19 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
   <title>Köln Fahrsimulator</title>
-  <!-- Three.js: erst jsdelivr, dann unpkg als Fallback -->
-  <script>
-    window.__threeLoaded = false;
-    window.__threeError  = false;
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"
-          onload="window.__threeLoaded=true"
-          onerror="window.__threeError=true"></script>
-  <!-- Fallback CDN falls jsdelivr blockiert ist -->
-  <script>
-    if (window.__threeError || typeof THREE === 'undefined') {
-      document.write('<script src="https://unpkg.com/three@0.165.0/build/three.min.js"><\/script>');
+  <!-- Three.js wird per async/await geladen – korrekte Reihenfolge garantiert -->
+  <style>
+    #boot-screen{
+      position:fixed;inset:0;z-index:9999;
+      background:#001118;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:18px;
+      color:#0af;font-family:Arial;font-size:16px;text-align:center;
     }
-  </script>
+    #boot-bar{width:240px;height:6px;background:#0a1e2a;border-radius:3px;overflow:hidden;}
+    #boot-bar-fill{height:100%;width:0%;background:#0af;transition:width .4s;}
+    #boot-msg{color:#aaa;font-size:13px;}
+    #boot-err{color:#f55;font-size:14px;display:none;max-width:420px;line-height:1.7;}
+  </style>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:#000;overflow:hidden;font-family:Arial,sans-serif;touch-action:none;}
@@ -128,18 +127,13 @@
 <body>
 
 <!-- ── Fehler-Overlay (erscheint wenn JS-Fehler) ── -->
-<div id="err-box">
-  <h2>⚠️ Simulator-Fehler</h2>
-  <div id="err-msg">Unbekannter Fehler</div>
-  <pre id="err-detail"></pre>
-  <div id="err-solution">
-    <strong>Lösung A – GitHub Pages (empfohlen):</strong><br>
-    github.com/JHerg/Simulator → Settings → Pages → Branch wählen → Save<br>
-    → URL: <strong>https://jherg.github.io/Simulator/</strong><br><br>
-    <strong>Lösung B – Lokaler Server:</strong><br>
-    Im Ordner: <code>npx serve .</code> oder <code>python -m http.server 8080</code><br>
-    Dann: <strong>http://localhost:8080</strong>
-  </div>
+<!-- Boot-Screen (verschwindet sobald Three.js geladen ist) -->
+<div id="boot-screen">
+  <div style="font-size:36px">🚗</div>
+  <div style="font-size:20px;color:#fff;font-weight:bold">Köln Fahrsimulator</div>
+  <div id="boot-bar"><div id="boot-bar-fill"></div></div>
+  <div id="boot-msg">Starte…</div>
+  <div id="boot-err"></div>
 </div>
 
 <div id="prog"><div id="prog-fill"></div></div>
@@ -161,38 +155,77 @@
 </div>
 
 <script>
-// Fehler sichtbar machen
-function showError(msg, detail) {
-  var box = document.getElementById('err-box');
-  box.style.display = 'flex';
-  document.getElementById('err-msg').textContent = msg;
-  if (detail) document.getElementById('err-detail').textContent = detail;
-}
-window.onerror = function(msg, src, line, col, err) {
-  showError(msg, (err && err.stack) || ('Line ' + line + ':' + col));
-  return true;
-};
-window.addEventListener('unhandledrejection', function(e) {
-  showError('Promise-Fehler: ' + e.reason, String(e.reason));
-});
-</script>
-
-<script>
 // ════════════════════════════════════════════════════════════════════════════
-//  KÖLN FAHRSIMULATOR v2
-//  Altbaumburgweg, Bilderstöckchen  →  RheinEnergie Stadion
+//  KÖLN FAHRSIMULATOR v2 – Async Boot-Loader
 // ════════════════════════════════════════════════════════════════════════════
 
-// Three.js geladen?
-if (typeof THREE === 'undefined') {
-  showError(
-    'Three.js konnte nicht geladen werden.',
-    'Die Bibliothek (CDN: jsdelivr.net / unpkg.com) ist nicht erreichbar.\n\n' +
-    'Das passiert bei file://-Protokoll in Edge.\n' +
-    'Lösung: GitHub Pages oder lokaler Server (siehe unten).'
-  );
-  throw new Error('THREE not loaded');
+// Three.js dynamisch laden (async/await – korrekte Reihenfolge garantiert)
+function loadScript(url) {
+  return new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = url;
+    s.onload  = resolve;
+    s.onerror = function() { reject(new Error('Konnte nicht laden: ' + url)); };
+    document.head.appendChild(s);
+  });
 }
+
+function bootMsg(text, pct) {
+  document.getElementById('boot-msg').textContent = text;
+  if (pct !== undefined)
+    document.getElementById('boot-bar-fill').style.width = pct + '%';
+}
+
+function bootError(text) {
+  document.getElementById('boot-err').style.display = 'block';
+  document.getElementById('boot-err').innerHTML =
+    '<strong>❌ ' + text + '</strong><br><br>' +
+    'Öffne diese Seite über:<br>' +
+    '<strong>https://jherg.github.io/Simulator/</strong><br>' +
+    '<small>(GitHub Pages → immer verfügbar)</small>';
+  document.getElementById('boot-msg').textContent = '';
+}
+
+async function boot() {
+  const CDNs = [
+    'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
+    'https://unpkg.com/three@0.158.0/build/three.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js',
+  ];
+
+  let loaded = false;
+  for (let i = 0; i < CDNs.length; i++) {
+    const cdn = CDNs[i];
+    bootMsg('Lade Three.js (' + cdn.split('/')[2] + ')…', 20 + i * 25);
+    try {
+      await loadScript(cdn);
+      if (typeof THREE !== 'undefined') { loaded = true; break; }
+    } catch(e) {
+      console.warn('CDN fehlgeschlagen:', cdn);
+    }
+  }
+
+  if (!loaded) {
+    bootError('Three.js konnte von keinem CDN geladen werden.');
+    return;
+  }
+
+  bootMsg('Baue Szene…', 80);
+  // Kurze Pause damit Browser den Fortschrittsbalken rendern kann
+  await new Promise(r => setTimeout(r, 60));
+
+  try {
+    startSimulator();
+    document.getElementById('boot-screen').style.display = 'none';
+  } catch(e) {
+    bootError('Render-Fehler: ' + e.message);
+    console.error(e);
+  }
+}
+
+boot();
+
+function startSimulator() {
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
@@ -887,8 +920,10 @@ function loop(now) {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
-loadOSM();   // asynchron im Hintergrund
+loadOSM();
 requestAnimationFrame(loop);
+
+} // Ende startSimulator()
 </script>
 </body>
 </html>
