@@ -240,72 +240,104 @@ const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
 
 // ── Geo-Koordinaten → Szene (Meter) ─────────────────────────────────────────
-const LAT0 = 50.9713, LNG0 = 6.8796;
+// Referenzpunkt: Altbaumburgweg, 50739 Köln (Bilderstöckchen)
+const LAT0 = 50.9807, LNG0 = 6.9305;
 const mLat = 111320;
-const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 150 m/°
+const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 040 m/°
 
 function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 
-// ── Wegpunkte – GPS-genaue Route Bilderstöckchen → RheinEnergie Stadion ───────
-// Quelle: OpenStreetMap / Google Maps echte Kölner Straßengeometrie
+// ── Vollständige Route: Altbaumburgweg 50739 → RheinEnergie Stadion 50933 ─────
+// GPS-Koordinaten: OpenStreetMap / eigene Recherche Kölner Straßennetz
+// Gesamt ~6,5 km, Richtung SW (Bilderstöckchen → Müngersdorf)
 const WP = [
-  // ── Altbaumburgweg (Wohnstraße, 6m breit) ───────────────────────────────────
-  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9715,6.8796), tl:false, width:6  },
-  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9712,6.8803), tl:false, width:6  },
-  { name:"Altbaumburgweg",        street:"Altbaumburgweg",      ...ll(50.9708,6.8814), tl:false, width:6  },
 
-  // ── Görlinger Zentrum / Görlinger Str. (8m, leichte S-Kurve) ───────────────
-  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9698,6.8828), tl:false, width:8  },
-  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9689,6.8826), tl:false, width:8  },
-  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9680,6.8822), tl:false, width:8  },
-  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9670,6.8817), tl:false, width:8  },
-  { name:"Görlinger Str.",        street:"Görlinger Str.",      ...ll(50.9660,6.8810), tl:true,  width:8  },
+  // ═══════════════════════════════════════════════════════════════════
+  // BILDERSTÖCKCHEN (50739) – Altbaumburgweg
+  // Wohnstraße, ca. 6 m breit, Richtung W/SW
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Altbaumburgweg",          ...ll(50.9807,6.9305), tl:false, width:6  },
+  { street:"Altbaumburgweg",          ...ll(50.9803,6.9294), tl:false, width:6  },
+  { street:"Altbaumburgweg",          ...ll(50.9798,6.9281), tl:false, width:6  },
 
-  // ── Nußbaumer Str. (7m, diagonal SW) ────────────────────────────────────────
-  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9652,6.8790), tl:false, width:7  },
-  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9644,6.8773), tl:false, width:7  },
-  { name:"Nußbaumer Str.",        street:"Nußbaumer Str.",      ...ll(50.9636,6.8756), tl:true,  width:7  },
+  // ═══════════════════════════════════════════════════════════════════
+  // Birkenweg  (kurze Querstraße, führt S Richtung Görlinger Zentrum)
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Birkenweg",               ...ll(50.9789,6.9265), tl:false, width:6  },
+  { street:"Birkenweg",               ...ll(50.9779,6.9250), tl:false, width:6  },
 
-  // ── Venloer Str. Nord (Hauptstr., 12m) ──────────────────────────────────────
-  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9628,6.8740), tl:false, width:12 },
-  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9620,6.8726), tl:false, width:12 },
-  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9611,6.8712), tl:true,  width:12 },
-  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9602,6.8698), tl:false, width:12 },
-  { name:"Venloer Str.",          street:"Venloer Str.",        ...ll(50.9592,6.8682), tl:false, width:12 },
+  // ═══════════════════════════════════════════════════════════════════
+  // Görlinger Str. – Hauptstraße durch Bilderstöckchen nach S (8 m)
+  // Verbindet Bilderstöckchen mit Bocklemünd / Ossendorf
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Görlinger Str.",          ...ll(50.9766,6.9232), tl:false, width:8  },
+  { street:"Görlinger Str.",          ...ll(50.9750,6.9212), tl:false, width:8  },
+  { street:"Görlinger Str.",          ...ll(50.9732,6.9192), tl:false, width:8  },
+  { street:"Görlinger Str.",          ...ll(50.9714,6.9175), tl:true,  width:8  },
 
-  // ── Ossendorfer Weg (8m, SW-Kurve) ──────────────────────────────────────────
-  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9582,6.8665), tl:false, width:8  },
-  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9572,6.8652), tl:false, width:8  },
-  { name:"Ossendorfer Weg",       street:"Ossendorfer Weg",     ...ll(50.9560,6.8641), tl:false, width:8  },
+  // ═══════════════════════════════════════════════════════════════════
+  // Bocklemünder Str. – Querverbindung nach SW (7 m)
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Bocklemünder Str.",       ...ll(50.9696,6.9150), tl:false, width:7  },
+  { street:"Bocklemünder Str.",       ...ll(50.9678,6.9122), tl:false, width:7  },
 
-  // ── Militärringstr. (10m, Ost-Kurve dann Süd) ───────────────────────────────
-  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9548,6.8638), tl:false, width:10 },
-  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9537,6.8641), tl:false, width:10 },
-  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9526,6.8649), tl:true,  width:10 },
-  { name:"Militärringstr.",       street:"Militärringstr.",     ...ll(50.9518,6.8658), tl:false, width:10 },
+  // ═══════════════════════════════════════════════════════════════════
+  // Nußbaumer Str. – Verbindung Richtung Bickendorf/Ossendorf (8 m)
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Nußbaumer Str.",          ...ll(50.9659,6.9088), tl:false, width:8  },
+  { street:"Nußbaumer Str.",          ...ll(50.9641,6.9052), tl:false, width:8  },
+  { street:"Nußbaumer Str.",          ...ll(50.9622,6.9015), tl:true,  width:8  },
 
-  // ── Aachener Str. / Gürtel (12m, lange Diagonale SW) ────────────────────────
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9508,6.8668), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9498,6.8678), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9488,6.8688), tl:false, width:12 },
-  { name:"Aachener Str. / Gürtel",street:"Aachener Str.",       ...ll(50.9478,6.8698), tl:true,  width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9467,6.8710), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9456,6.8720), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9445,6.8727), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9433,6.8733), tl:false, width:12 },
-  { name:"Aachener Str.",         street:"Aachener Str.",       ...ll(50.9420,6.8737), tl:false, width:12 },
+  // ═══════════════════════════════════════════════════════════════════
+  // Venloer Str. – Hauptachse Bickendorf → Ehrenfeld (16 m, Tram 3/4)
+  // B265, zweibahnig mit Straßenbahn in Mittellage
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Venloer Str.",            ...ll(50.9603,6.8978), tl:false, width:16 },
+  { street:"Venloer Str.",            ...ll(50.9585,6.8942), tl:false, width:16 },
+  { street:"Venloer Str.",            ...ll(50.9567,6.8906), tl:true,  width:16 },
+  { street:"Venloer Str.",            ...ll(50.9549,6.8870), tl:false, width:16 },
+  { street:"Venloer Str.",            ...ll(50.9532,6.8838), tl:false, width:16 },
 
-  // ── Universitätsstr. / Aachener Str. West ────────────────────────────────────
-  { name:"Universitätsstr.",      street:"Universitätsstr.",    ...ll(50.9408,6.8740), tl:true,  width:10 },
-  { name:"Universitätsstr.",      street:"Universitätsstr.",    ...ll(50.9396,6.8744), tl:false, width:10 },
+  // ═══════════════════════════════════════════════════════════════════
+  // Ossendorfer Weg – SW-Kurve durch Ossendorf (8 m)
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Ossendorfer Weg",         ...ll(50.9514,6.8812), tl:false, width:8  },
+  { street:"Ossendorfer Weg",         ...ll(50.9499,6.8792), tl:false, width:8  },
+  { street:"Ossendorfer Weg",         ...ll(50.9484,6.8778), tl:false, width:8  },
 
-  // ── Stadionstr. / Zufahrt (8m) ───────────────────────────────────────────────
-  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9384,6.8747), tl:false, width:8  },
-  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9372,6.8748), tl:false, width:8  },
-  { name:"Stadionstr.",           street:"Stadionstr.",         ...ll(50.9358,6.8749), tl:false, width:8  },
+  // ═══════════════════════════════════════════════════════════════════
+  // Militärringstr. – Kölner Ringstraße (12 m, 21 km gesamt)
+  // Biegt nach S/SW Richtung Müngersdorf
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Militärringstr.",         ...ll(50.9468,6.8762), tl:false, width:12 },
+  { street:"Militärringstr.",         ...ll(50.9451,6.8750), tl:false, width:12 },
+  { street:"Militärringstr.",         ...ll(50.9435,6.8742), tl:true,  width:12 },
 
-  // ── RheinEnergie Stadion (Ziel) ──────────────────────────────────────────────
-  { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion", ...ll(50.9340,6.8750), tl:false, width:12 },
+  // ═══════════════════════════════════════════════════════════════════
+  // Aachener Str. – Bundesstraße B55, Richtung W (14 m, Tram Linie 1)
+  // Kreuzung am Gürtel: bedeutendste Kreuzung auf der Route
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Aachener Str.",           ...ll(50.9418,6.8732), tl:false, width:14 },
+  { street:"Aachener Str.",           ...ll(50.9405,6.8724), tl:false, width:14 },
+  { street:"Aachener Str. / Gürtel",  ...ll(50.9392,6.8716), tl:true,  width:14 },
+  { street:"Aachener Str.",           ...ll(50.9380,6.8709), tl:false, width:14 },
+  { street:"Aachener Str.",           ...ll(50.9368,6.8703), tl:false, width:14 },
+  { street:"Aachener Str.",           ...ll(50.9356,6.8698), tl:false, width:14 },
+  { street:"Aachener Str.",           ...ll(50.9344,6.8692), tl:false, width:14 },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Am Sportpark Müngersdorf – Zufahrt Sportzentrum/DSHS (10 m)
+  // (war fälschlicherweise "Universitätsstr." – korrekt: Am Sportpark)
+  // ═══════════════════════════════════════════════════════════════════
+  { street:"Am Sportpark Müngersdorf",...ll(50.9340,6.8780), tl:true,  width:10 },
+  { street:"Am Sportpark Müngersdorf",...ll(50.9336,6.8770), tl:false, width:10 },
+  { street:"Am Sportpark Müngersdorf",...ll(50.9334,6.8762), tl:false, width:10 },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RheinEnergie Stadion (Ziel)  50.9334°N, 6.8752°E
+  // ═══════════════════════════════════════════════════════════════════
+  { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion",
+    ...ll(50.9334,6.8752), tl:false, width:14 },
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -321,10 +353,10 @@ renderer.toneMappingExposure = 0.95;
 // ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x6ab4e8);
-scene.fog = new THREE.Fog(0x6ab4e8, 120, isMobile ? 450 : 850);
+scene.fog = new THREE.Fog(0x6ab4e8, 150, isMobile ? 600 : 1100);
 
 // ── Kamera (Cockpit) ─────────────────────────────────────────────────────────
-const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, isMobile ? 550 : 1000);
+const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, isMobile ? 700 : 1300);
 cam.rotation.order = 'YXZ';
 
 // ── Beleuchtung ───────────────────────────────────────────────────────────────
@@ -342,12 +374,13 @@ scene.add(new THREE.AmbientLight(0xc8d8ff, 0.65));
 scene.add(new THREE.HemisphereLight(0x87ceeb, 0x345a20, 0.45));
 
 // ── Boden ─────────────────────────────────────────────────────────────────────
+// Boden deckt die gesamte Route ab: Start (0,0) → Stadion (~-3900m, ~5300m)
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(6000, 9000),
+  new THREE.PlaneGeometry(9000, 10000),
   new THREE.MeshLambertMaterial({ color: 0x3c6b2c })
 );
 ground.rotation.x = -Math.PI / 2;
-ground.position.set(-200, 0, 2100);
+ground.position.set(-1900, 0, 2700);
 ground.receiveShadow = true;
 scene.add(ground);
 
@@ -954,7 +987,8 @@ function drawMinimap() {
 // ── OSM-Daten laden (Overpass API) ───────────────────────────────────────────
 async function loadOSM() {
   // Bounding box rund um unsere Route
-  const bbox = '50.930,6.865,50.975,6.895';
+  // Bounding box: deckt komplette Route von Bilderstöckchen bis Müngersdorf ab
+  const bbox = '50.928,6.868,50.985,6.938';
   const q = `[out:json][timeout:30];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox}););(._;>;);out body;`;
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
 
