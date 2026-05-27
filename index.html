@@ -1,669 +1,825 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Köln Fahrsimulator – Bilderstöckchen → RheinEnergie Stadion</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>Köln Fahrsimulator</title>
+  <!-- Three.js als klassisches Script-Tag – kein importmap, läuft überall -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: Arial, sans-serif; }
-    #canvas { display: block; width: 100vw; height: 100vh; }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#000;overflow:hidden;font-family:Arial,sans-serif;touch-action:none;}
+    canvas{display:block;}
 
-    /* HUD Overlay */
-    #hud {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      pointer-events: none; z-index: 10;
-    }
-    #speedometer {
-      position: fixed; bottom: 30px; right: 40px;
-      background: rgba(0,0,0,0.7); border: 2px solid #fff;
-      border-radius: 50%; width: 110px; height: 110px;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: #fff; text-shadow: 0 0 8px #0af;
-    }
-    #speedometer .kmh { font-size: 32px; font-weight: bold; color: #0af; }
-    #speedometer .unit { font-size: 12px; color: #aaa; }
+    /* ── Fortschrittsbalken ─────────────────────────── */
+    #prog{position:fixed;top:0;left:0;right:0;height:5px;background:#111;z-index:50;}
+    #prog-fill{height:100%;width:0%;background:linear-gradient(90deg,#0af,#0f8);transition:width .3s;}
 
-    #minimap {
-      position: fixed; bottom: 30px; left: 30px;
-      width: 180px; height: 180px;
-      background: rgba(0,0,0,0.75); border: 2px solid #444;
-      border-radius: 8px; overflow: hidden;
+    /* ── Titel-Bar ──────────────────────────────────── */
+    #info{
+      position:fixed;top:12px;left:50%;transform:translateX(-50%);
+      background:rgba(0,0,0,.75);color:#fff;padding:6px 18px;
+      border-radius:20px;font-size:13px;white-space:nowrap;
+      border:1px solid #444;z-index:40;pointer-events:none;
     }
-    #minimap canvas { width: 100%; height: 100%; }
 
-    #info {
-      position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,0,0,0.7); color: #fff; padding: 8px 20px;
-      border-radius: 20px; font-size: 14px; text-align: center;
-      border: 1px solid #555;
+    /* ── Toast (Straßenname) ────────────────────────── */
+    #toast{
+      position:fixed;top:52px;left:50%;transform:translateX(-50%);
+      background:rgba(10,80,220,.85);color:#fff;padding:5px 16px;
+      border-radius:14px;font-size:13px;opacity:0;
+      transition:opacity .4s;z-index:40;pointer-events:none;
     }
-    #controls-hint {
-      position: fixed; top: 20px; right: 20px;
-      background: rgba(0,0,0,0.65); color: #ccc;
-      padding: 10px 14px; border-radius: 8px; font-size: 12px;
-      line-height: 1.7; border: 1px solid #333;
+
+    /* ── Tachometer ─────────────────────────────────── */
+    #speedo{
+      position:fixed;z-index:40;pointer-events:none;
+      background:rgba(0,0,0,.82);border:2px solid #444;border-radius:50%;
+      width:100px;height:100px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
     }
-    #progress-bar {
-      position: fixed; top: 0; left: 0; right: 0; height: 4px;
-      background: #222;
+    #speedo .v{font-size:30px;font-weight:bold;color:#0af;line-height:1;}
+    #speedo .u{font-size:11px;color:#777;}
+
+    /* ── Minimap ─────────────────────────────────────── */
+    #mm{
+      position:fixed;
+      background:rgba(0,0,0,.8);border:2px solid #333;
+      border-radius:8px;overflow:hidden;z-index:40;
     }
-    #progress-fill {
-      height: 100%; background: linear-gradient(90deg, #0af, #0f8);
-      transition: width 0.3s;
+
+    /* ── OSM-Status ─────────────────────────────────── */
+    #osm-lbl{
+      position:fixed;top:12px;right:14px;
+      background:rgba(0,0,0,.7);color:#aaa;
+      padding:4px 10px;border-radius:8px;font-size:11px;
+      z-index:40;transition:opacity .5s;
     }
-    #waypoint-name {
-      position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
-      background: rgba(0,100,255,0.75); color: #fff;
-      padding: 5px 16px; border-radius: 14px; font-size: 13px;
-      opacity: 0; transition: opacity 0.5s;
+
+    /* ── Tastaturhilfe (Desktop) ────────────────────── */
+    #hint{
+      position:fixed;top:58px;right:14px;
+      background:rgba(0,0,0,.65);color:#bbb;
+      padding:9px 13px;border-radius:8px;font-size:12px;
+      line-height:1.9;z-index:40;pointer-events:none;
     }
+
+    /* ── Mobile Steuerung ────────────────────────────── */
+    #mctrl{
+      position:fixed;bottom:0;left:0;right:0;height:115px;
+      display:none;z-index:45;pointer-events:none;
+    }
+    /* Zeige mobile Buttons auf Touch-Geräten oder kleinen Bildschirmen */
+    @media(pointer:coarse),(max-width:700px){
+      #mctrl{display:block;}
+      #hint{display:none;}
+      #speedo{bottom:auto;top:14px;right:14px;}
+      #mm{bottom:auto;top:14px;left:14px;}
+    }
+    @media(pointer:fine){
+      #speedo{bottom:125px;right:20px;}
+      #mm{bottom:125px;left:20px;}
+    }
+
+    .mbtn{
+      position:absolute;pointer-events:all;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:14px;font-size:24px;font-weight:bold;
+      border:2px solid rgba(255,255,255,.25);
+      background:rgba(0,0,0,.55);color:#fff;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+      user-select:none;transition:background .1s;
+    }
+    .mbtn.on{background:rgba(50,100,255,.65);}
+    #bl{bottom:20px;left:12px;width:68px;height:68px;}
+    #br{bottom:20px;left:90px;width:68px;height:68px;}
+    #bgas{bottom:20px;right:12px;width:88px;height:68px;background:rgba(0,120,0,.6);}
+    #bbrk{bottom:20px;right:110px;width:68px;height:68px;background:rgba(160,0,0,.5);}
   </style>
 </head>
 <body>
 
-<div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+<div id="prog"><div id="prog-fill"></div></div>
 <canvas id="canvas"></canvas>
 
-<div id="info">🚗 Köln Fahrsimulator | Altbaumburgweg → RheinEnergie Stadion</div>
-<div id="waypoint-name" id="waypoint-name"></div>
+<div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
+<div id="toast"></div>
+<div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div></div>
+<div id="mm"><canvas id="mm-cv" width="160" height="160" style="display:block;"></canvas></div>
+<div id="osm-lbl">🗺 Lade OSM…</div>
+<div id="hint">↑W Gas &nbsp; ↓S Bremse<br>←A Links &nbsp; →D Rechts<br>Space Handbremse<br>R Neustart</div>
 
-<div id="speedometer">
-  <div class="kmh" id="speed-val">0</div>
-  <div class="unit">km/h</div>
+<!-- Mobile-Buttons -->
+<div id="mctrl">
+  <div class="mbtn" id="bl">◀</div>
+  <div class="mbtn" id="br">▶</div>
+  <div class="mbtn" id="bgas">⚡GAS</div>
+  <div class="mbtn" id="bbrk">⛔</div>
 </div>
 
-<div id="minimap">
-  <canvas id="minimap-canvas" width="180" height="180"></canvas>
-</div>
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+//  KÖLN FAHRSIMULATOR v2
+//  Altbaumburgweg, Bilderstöckchen  →  RheinEnergie Stadion
+// ════════════════════════════════════════════════════════════════════════════
 
-<div id="controls-hint">
-  ↑ / W — Gas<br>
-  ↓ / S — Bremsen<br>
-  ← / A — Links<br>
-  → / D — Rechts<br>
-  Space — Handbremse<br>
-  R — Route neu starten
-</div>
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+              || window.innerWidth < 700;
 
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
-  }
-}
-</script>
+// ── Geo-Koordinaten → Szene (Meter) ─────────────────────────────────────────
+const LAT0 = 50.9713, LNG0 = 6.8796;
+const mLat = 111320;
+const mLng = mLat * Math.cos(LAT0 * Math.PI / 180);   // ≈ 70 150 m/°
 
-<script type="module">
-import * as THREE from 'three';
+function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 
-// ─── Route: Altbaumburgweg → RheinEnergie Stadion ─────────────────────────
-// Echte Straßennamen / Wegpunkte als Spielwelt-Koordinaten (X/Z in Metern)
-// Nordung: -Z = Nord, +X = Ost
-// Startpunkt Altbaumburgweg ca. 50.9685°N, 6.8812°E
-// RheinEnergie Stadion ca. 50.9333°N, 6.8750°E
-
-const WAYPOINTS = [
-  { name: "Altbaumburgweg",           x:   0,   z:    0 },
-  { name: "Görlinger Str.",           x:  80,   z:  120 },
-  { name: "Nußbaumer Str.",           x: 150,   z:  300 },
-  { name: "Venloer Str. (Nord)",      x: 200,   z:  520 },
-  { name: "Ossendorfer Weg",          x: 160,   z:  700 },
-  { name: "Militärringstr.",          x:  80,   z:  900 },
-  { name: "Aachener Str. / Gürtel",   x: -60,   z: 1080 },
-  { name: "Universitätsstr.",         x:-130,   z: 1250 },
-  { name: "Aachener Str. West",       x:-200,   z: 1420 },
-  { name: "RheinEnergie Stadion 🏟️",  x:-250,   z: 1620 },
+// ── Wegpunkte (echte GPS-Koordinaten aus Köln) ───────────────────────────────
+const WP = [
+  { name:"Altbaumburgweg",         ...ll(50.9713,6.8796), tl:false },
+  { name:"Görlinger Zentrum",      ...ll(50.9690,6.8820), tl:false },
+  { name:"Nußbaumer Str.",         ...ll(50.9650,6.8760), tl:true  },
+  { name:"Venloer Str. (Nord)",    ...ll(50.9600,6.8720), tl:true  },
+  { name:"Innere Kanalstr.",       ...ll(50.9530,6.8680), tl:false },
+  { name:"Militärringstr.",        ...ll(50.9480,6.8700), tl:true  },
+  { name:"Aachener Str./Gürtel",   ...ll(50.9430,6.8730), tl:true  },
+  { name:"Universitätsstr.",       ...ll(50.9400,6.8760), tl:false },
+  { name:"Aachener Str. West",     ...ll(50.9360,6.8740), tl:false },
+  { name:"RheinEnergie Stadion 🏟",  ...ll(50.9338,6.8750), tl:false },
 ];
 
-// ─── Scene Setup ──────────────────────────────────────────────────────────
+// ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
+renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = !isMobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.9;
+renderer.toneMappingExposure = 0.95;
 
+// ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 80, 400);
+scene.background = new THREE.Color(0x6ab4e8);
+scene.fog = new THREE.Fog(0x6ab4e8, 120, isMobile ? 450 : 850);
 
-// ─── Camera (Cockpit-Perspektive) ─────────────────────────────────────────
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 600);
+// ── Kamera (Cockpit) ─────────────────────────────────────────────────────────
+const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, isMobile ? 550 : 1000);
+cam.rotation.order = 'YXZ';
 
-// ─── Lights ───────────────────────────────────────────────────────────────
-const sun = new THREE.DirectionalLight(0xfff5e0, 1.4);
-sun.position.set(100, 200, 50);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 600;
-sun.shadow.camera.left = -250;
-sun.shadow.camera.right = 250;
-sun.shadow.camera.top = 250;
-sun.shadow.camera.bottom = -250;
+// ── Beleuchtung ───────────────────────────────────────────────────────────────
+const sun = new THREE.DirectionalLight(0xfff5d0, 1.4);
+sun.position.set(-300, 600, -200);
+if (!isMobile) {
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = sun.shadow.camera.bottom = -500;
+  sun.shadow.camera.right = sun.shadow.camera.top  =  500;
+  sun.shadow.camera.far = 1400;
+}
 scene.add(sun);
-scene.add(new THREE.AmbientLight(0xc8d8ff, 0.6));
-const hemi = new THREE.HemisphereLight(0x87ceeb, 0x447744, 0.4);
-scene.add(hemi);
+scene.add(new THREE.AmbientLight(0xc8d8ff, 0.65));
+scene.add(new THREE.HemisphereLight(0x87ceeb, 0x345a20, 0.45));
 
-// ─── Ground ───────────────────────────────────────────────────────────────
-const groundGeo = new THREE.PlaneGeometry(2000, 4000);
-const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a7c40 });
-const ground = new THREE.Mesh(groundGeo, groundMat);
+// ── Boden ─────────────────────────────────────────────────────────────────────
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(6000, 9000),
+  new THREE.MeshLambertMaterial({ color: 0x3c6b2c })
+);
 ground.rotation.x = -Math.PI / 2;
-ground.position.set(0, -0.05, 800);
+ground.position.set(-200, 0, 2100);
 ground.receiveShadow = true;
 scene.add(ground);
 
-// ─── Road Builder ─────────────────────────────────────────────────────────
-function buildRoad(pts) {
-  const roadGroup = new THREE.Group();
-  const roadMat   = new THREE.MeshLambertMaterial({ color: 0x333333 });
-  const lineMat   = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  const W = 7.0; // Straßenbreite
-
-  for (let i = 0; i < pts.length - 1; i++) {
-    const A = new THREE.Vector3(pts[i].x,   0, pts[i].z);
-    const B = new THREE.Vector3(pts[i+1].x, 0, pts[i+1].z);
-    const dir = new THREE.Vector3().subVectors(B, A);
-    const len = dir.length();
-    dir.normalize();
-
-    const angle = Math.atan2(dir.x, dir.z);
-
-    // Asphalt
-    const rGeo = new THREE.PlaneGeometry(W, len);
-    const rMesh = new THREE.Mesh(rGeo, roadMat);
-    rMesh.rotation.x = -Math.PI / 2;
-    rMesh.rotation.z = -angle;  // PlaneGeometry liegt in XY, wir drehen um Z vor der X-Rotation
-    // Korrekte Positionierung: Mitte zwischen A und B
-    rMesh.position.set((A.x + B.x) / 2, 0.01, (A.z + B.z) / 2);
-    // Wir verwenden lookAt-Trick:
-    const mid = new THREE.Vector3((A.x+B.x)/2, 0, (A.z+B.z)/2);
-    rMesh.position.copy(mid);
-    rMesh.position.y = 0.01;
-    rMesh.lookAt(B.x, 0, B.z);
-    rMesh.rotateX(-Math.PI/2);
-    rMesh.scale.x = W;
-    rMesh.scale.y = len;
-    rMesh.receiveShadow = true;
-    roadGroup.add(rMesh);
-
-    // Mittellinie (gestrichelt simuliert durch kurze Segmente)
-    const dashCount = Math.floor(len / 8);
-    for (let d = 0; d < dashCount; d++) {
-      const t = (d + 0.5) / dashCount;
-      const pos = new THREE.Vector3().lerpVectors(A, B, t);
-      const dashGeo = new THREE.PlaneGeometry(0.15, 3.0);
-      const dash = new THREE.Mesh(dashGeo, lineMat);
-      dash.position.copy(pos);
-      dash.position.y = 0.02;
-      dash.lookAt(B.x, 0, B.z);
-      dash.rotateX(-Math.PI / 2);
-      roadGroup.add(dash);
-    }
-
-    // Bordsteine / Randlinien
-    [-W/2 - 0.2, W/2 + 0.2].forEach(offset => {
-      const cGeo = new THREE.PlaneGeometry(0.4, len);
-      const cMesh = new THREE.Mesh(cGeo, new THREE.MeshLambertMaterial({ color: 0xddddcc }));
-      // Offset senkrecht zur Fahrtrichtung
-      const perp = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(offset);
-      cMesh.position.copy(mid).add(perp);
-      cMesh.position.y = 0.015;
-      cMesh.lookAt(B.x + perp.x, 0, B.z + perp.z);
-      cMesh.rotateX(-Math.PI / 2);
-      cMesh.scale.y = len;
-      roadGroup.add(cMesh);
-    });
-  }
-  return roadGroup;
+// ── Hilfsfunktion: Straßensegment-Geometrie (vertex-basiert, kein lookAt) ────
+function roadGeo(ax, az, bx, bz, width, y) {
+  const dx = bx - ax, dz = bz - az;
+  const len = Math.hypot(dx, dz);
+  const nx = -dz / len, nz = dx / len; // Normale (senkrecht zur Fahrtrichtung)
+  const hw = width / 2;
+  const geo = new THREE.BufferGeometry();
+  // 4 Ecken: AL, AR, BR, BL
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([
+    ax - nx*hw, y, az - nz*hw,
+    ax + nx*hw, y, az + nz*hw,
+    bx + nx*hw, y, bz + nz*hw,
+    bx - nx*hw, y, bz - nz*hw,
+  ], 3));
+  geo.setIndex([0,1,2, 0,2,3]);
+  geo.computeVertexNormals();
+  return geo;
 }
 
-scene.add(buildRoad(WAYPOINTS));
+// ── Hauptroute aufbauen ───────────────────────────────────────────────────────
+(function buildRoute() {
+  const asphalt   = new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
+  const sidewalk  = new THREE.MeshLambertMaterial({ color: 0xb8a898 });
+  const dashMat   = new THREE.MeshBasicMaterial({ color: 0xeeeecc });
+  const RWIDTH = 8;
 
-// ─── Gebäude ──────────────────────────────────────────────────────────────
-const buildingColors = [0xd4a574, 0xc8b89a, 0xbfae9e, 0xe8d5b7, 0xa8956e, 0xcc9966];
-const rng = (seed) => { let s = seed; return () => { s = (s*16807+0) % 2147483647; return (s-1)/2147483646; }; };
-const rand = rng(42);
+  for (let i = 0; i < WP.length - 1; i++) {
+    const A = WP[i], B = WP[i+1];
 
-function addBuildings() {
-  const bGroup = new THREE.Group();
-  WAYPOINTS.forEach((wp, i) => {
-    if (i === WAYPOINTS.length - 1) return;
-    const next = WAYPOINTS[i + 1];
-    const dir = new THREE.Vector3(next.x - wp.x, 0, next.z - wp.z).normalize();
-    const perp = new THREE.Vector3(-dir.z, 0, dir.x);
-    const segLen = Math.hypot(next.x - wp.x, next.z - wp.z);
-    const count = Math.floor(segLen / 18);
+    // Asphalt
+    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, RWIDTH, 0.01), asphalt));
+    // Gehwege
+    scene.add(new THREE.Mesh(roadGeo(A.x,A.z,B.x,B.z, RWIDTH+4, 0.005), sidewalk));
 
-    for (let b = 0; b < count; b++) {
-      const t = (b + 0.5) / count;
-      const base = new THREE.Vector3(wp.x + (next.x-wp.x)*t, 0, wp.z + (next.z-wp.z)*t);
-      [-1, 1].forEach(side => {
-        const w = 8  + rand() * 10;
-        const h = 6  + rand() * 22;
-        const d = 8  + rand() * 10;
-        const offset = 8 + rand() * 5;
-        const pos = base.clone().addScaledVector(perp, side * offset);
-        const geo = new THREE.BoxGeometry(w, h, d);
-        const mat = new THREE.MeshLambertMaterial({
-          color: buildingColors[Math.floor(rand() * buildingColors.length)]
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(pos.x + (rand()-0.5)*4, h/2, pos.z + (rand()-0.5)*4);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        bGroup.add(mesh);
+    // Mittellinien (gestrichelt durch kurze Segmente)
+    const segLen = Math.hypot(B.x-A.x, B.z-A.z);
+    const steps  = Math.floor(segLen / 10);
+    for (let s = 0; s < steps; s++) {
+      const t0 = (s + 0.1) / steps;
+      const t1 = (s + 0.6) / steps;
+      const x0 = A.x + (B.x-A.x)*t0, z0 = A.z + (B.z-A.z)*t0;
+      const x1 = A.x + (B.x-A.x)*t1, z1 = A.z + (B.z-A.z)*t1;
+      scene.add(new THREE.Mesh(roadGeo(x0,z0,x1,z1, 0.2, 0.02), dashMat));
+    }
+  }
+})();
 
-        // Fenster (einfache helle Rechtecke auf der Fassade)
-        if (h > 10) {
-          const winMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
-          for (let wy = 2; wy < h - 1; wy += 3) {
-            for (let wx = -w/2+1; wx < w/2-0.5; wx += 2.5) {
-              const wGeo = new THREE.PlaneGeometry(0.9, 1.2);
-              const wMesh = new THREE.Mesh(wGeo, winMat);
-              wMesh.position.set(
-                mesh.position.x + wx,
-                wy,
-                mesh.position.z + (side > 0 ? -d/2 - 0.01 : d/2 + 0.01)
-              );
-              if (side < 0) wMesh.rotation.y = Math.PI;
-              bGroup.add(wMesh);
+// ── Gebäude ───────────────────────────────────────────────────────────────────
+(function buildBuildings() {
+  const COLORS  = [0xd4a574,0xc9b8a2,0xbbb0a5,0xe8d8b8,0xa8946e,0xcc9966,0x9b8b7a,0xd0c0a0];
+  const winMat  = new THREE.MeshBasicMaterial({ color:0xffffbb });
+  const rng = (() => { let s=1234567; return ()=>{ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; }; })();
+
+  const spacing = isMobile ? 30 : 18;
+
+  for (let i = 0; i < WP.length-1; i++) {
+    const A = WP[i], B = WP[i+1];
+    const dx = B.x-A.x, dz = B.z-A.z;
+    const len = Math.hypot(dx, dz);
+    const ux = dx/len, uz = dz/len;  // Richtung
+    const nx = -uz, nz = ux;         // Senkrecht
+
+    const count = Math.floor(len / spacing);
+    for (let k = 0; k < count; k++) {
+      const t = (k + 0.5) / count;
+      const bx = A.x + dx*t, bz = A.z + dz*t;
+
+      [-1,1].forEach(side => {
+        const w = 7  + rng()*11;
+        const h = 5  + rng()*25;
+        const d = 7  + rng()*10;
+        const off = 10 + rng()*6;
+
+        const px = bx + nx*side*off + (rng()-.5)*3;
+        const pz = bz + nz*side*off + (rng()-.5)*3;
+
+        const mat  = new THREE.MeshLambertMaterial({ color: COLORS[Math.floor(rng()*COLORS.length)] });
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        mesh.position.set(px, h/2, pz);
+        if (!isMobile) mesh.castShadow = mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        // Fenster
+        if (h > 8 && !isMobile) {
+          for (let wy = 2; wy < h-1; wy += 3.5) {
+            for (let wx = -w/2+1.2; wx < w/2-0.8; wx += 2.8) {
+              const wm = new THREE.Mesh(new THREE.PlaneGeometry(1,1.4), winMat);
+              wm.position.set(px+wx, wy, pz + (side > 0 ? -d/2-0.02 : d/2+0.02));
+              if (side < 0) wm.rotation.y = Math.PI;
+              scene.add(wm);
             }
           }
         }
       });
     }
-  });
-  return bGroup;
-}
-scene.add(addBuildings());
-
-// ─── Bäume ────────────────────────────────────────────────────────────────
-function addTrees() {
-  const tGroup = new THREE.Group();
-  const trunkMat  = new THREE.MeshLambertMaterial({ color: 0x6b4226 });
-  const crownMat  = new THREE.MeshLambertMaterial({ color: 0x2d7a2d });
-  const crownMat2 = new THREE.MeshLambertMaterial({ color: 0x1e6b1e });
-  const rand2 = rng(77);
-
-  WAYPOINTS.forEach((wp, i) => {
-    if (i >= WAYPOINTS.length - 1) return;
-    const next = WAYPOINTS[i + 1];
-    const dir = new THREE.Vector3(next.x - wp.x, 0, next.z - wp.z).normalize();
-    const perp = new THREE.Vector3(-dir.z, 0, dir.x);
-    const segLen = Math.hypot(next.x - wp.x, next.z - wp.z);
-    const count = Math.floor(segLen / 12);
-
-    for (let t = 0; t < count; t++) {
-      const frac = t / count;
-      const base = new THREE.Vector3(wp.x + (next.x-wp.x)*frac, 0, wp.z + (next.z-wp.z)*frac);
-      [-1, 1].forEach(side => {
-        if (rand2() > 0.55) return; // nicht überall Bäume
-        const offset = 6 + rand2() * 3;
-        const pos = base.clone().addScaledVector(perp, side * offset);
-        const h = 4 + rand2() * 3;
-        // Stamm
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, h, 6), trunkMat);
-        trunk.position.set(pos.x, h/2, pos.z);
-        trunk.castShadow = true;
-        tGroup.add(trunk);
-        // Krone
-        const cr = 1.5 + rand2() * 1.5;
-        const crown = new THREE.Mesh(new THREE.SphereGeometry(cr, 7, 7), rand2() > 0.5 ? crownMat : crownMat2);
-        crown.position.set(pos.x, h + cr*0.6, pos.z);
-        crown.castShadow = true;
-        tGroup.add(crown);
-      });
-    }
-  });
-  return tGroup;
-}
-scene.add(addTrees());
-
-// ─── Stadion am Ende ──────────────────────────────────────────────────────
-(function buildStadium() {
-  const end = WAYPOINTS[WAYPOINTS.length - 1];
-  const mat = new THREE.MeshLambertMaterial({ color: 0xccaa44 });
-  // Ovale Außenwand als Ring
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(55, 12, 8, 40),
-    mat
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.set(end.x - 60, 12, end.z + 20);
-  ring.castShadow = true;
-  scene.add(ring);
-  // Dach
-  const roof = new THREE.Mesh(
-    new THREE.TorusGeometry(55, 8, 4, 40),
-    new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide })
-  );
-  roof.rotation.x = Math.PI / 2;
-  roof.position.set(end.x - 60, 24, end.z + 20);
-  scene.add(roof);
-  // Namensschild
-  console.log("RheinEnergie Stadion platziert bei", end.x - 60, end.z + 20);
+  }
 })();
 
-// ─── Cockpit (Lenkrad + Armaturenbrett) ──────────────────────────────────
-const cockpitGroup = new THREE.Group();
+// ── Bäume ─────────────────────────────────────────────────────────────────────
+(function buildTrees() {
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b3f1e });
+  const crownMats = [
+    new THREE.MeshLambertMaterial({ color: 0x2d7a2d }),
+    new THREE.MeshLambertMaterial({ color: 0x1e6b1e }),
+    new THREE.MeshLambertMaterial({ color: 0x3a8a28 }),
+  ];
+  const rng = (() => { let s=9876543; return ()=>{ s=(s*1664525+1013904223)&0x7fffffff; return s/0x7fffffff; }; })();
+  const treeSpacing = isMobile ? 25 : 14;
+
+  for (let i = 0; i < WP.length-1; i++) {
+    const A = WP[i], B = WP[i+1];
+    const dx = B.x-A.x, dz = B.z-A.z;
+    const len = Math.hypot(dx, dz);
+    const ux = dx/len, uz = dz/len;
+    const nx = -uz, nz = ux;
+    const count = Math.floor(len / treeSpacing);
+
+    for (let k = 0; k < count; k++) {
+      const t = k / count;
+      const bx = A.x + dx*t, bz = A.z + dz*t;
+
+      [-1,1].forEach(side => {
+        if (rng() > 0.6) return;
+        const off = 8 + rng()*3;
+        const px = bx + nx*side*off;
+        const pz = bz + nz*side*off;
+        const h  = 4 + rng()*4;
+        const cr = 1.4 + rng()*1.6;
+
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.18,h,6), trunkMat);
+        trunk.position.set(px, h/2, pz);
+        scene.add(trunk);
+
+        const crown = new THREE.Mesh(
+          new THREE.SphereGeometry(cr, isMobile?5:8, isMobile?5:8),
+          crownMats[Math.floor(rng()*crownMats.length)]
+        );
+        crown.position.set(px, h + cr*0.55, pz);
+        if (!isMobile) crown.castShadow = true;
+        scene.add(crown);
+      });
+    }
+  }
+})();
+
+// ── Ampeln ────────────────────────────────────────────────────────────────────
+const trafficLights = [];
+
+function makeTrafficLight(x, z, facing) {
+  const g = new THREE.Group();
+  // Mast
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08,0.09,5,8),
+    new THREE.MeshLambertMaterial({ color:0x222222 })
+  );
+  pole.position.y = 2.5;
+  g.add(pole);
+
+  // Gehäuse
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45,1.5,0.3),
+    new THREE.MeshLambertMaterial({ color:0x111111 })
+  );
+  box.position.set(0, 5.25, 0);
+  g.add(box);
+
+  // Drei Lichter: [0]=rot [1]=gelb [2]=grün
+  const yOff = [0.52, 0, -0.52];
+  const onColors  = [0xff2200, 0xffaa00, 0x00dd00];
+  const bulbs = yOff.map((yo, idx) => {
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(0.14, 8),
+      new THREE.MeshBasicMaterial({ color: 0x111111 })
+    );
+    m.position.set(0, 5.25+yo, 0.16);
+    m.userData.on  = onColors[idx];
+    m.userData.off = 0x111111;
+    g.add(m);
+    return m;
+  });
+
+  g.position.set(x, 0, z);
+  if (facing !== undefined) g.rotation.y = facing;
+  g.userData.bulbs = bulbs;
+  g.userData.phase = Math.random() * 15;  // gestaffelte Phasen
+  scene.add(g);
+  trafficLights.push(g);
+}
+
+// Ampeln an markierten Wegpunkten (beidseitig)
+WP.forEach((wp, i) => {
+  if (!wp.tl || i === 0 || i >= WP.length-1) return;
+  const prev = WP[i-1];
+  const dx = wp.x - prev.x, dz = wp.z - prev.z;
+  const len = Math.hypot(dx, dz);
+  const nx = -dz/len, nz = dx/len;
+  const facing = Math.atan2(dx, dz);
+
+  makeTrafficLight(wp.x + nx* 6, wp.z + nz* 6, facing);
+  makeTrafficLight(wp.x - nx* 6, wp.z - nz* 6, facing + Math.PI);
+});
+
+function updateTrafficLights(t) {
+  trafficLights.forEach(tl => {
+    const cycle = (t + tl.userData.phase) % 14;  // 14-Sekunden-Zyklus
+    // 0–6s grün, 6–8s gelb, 8–14s rot
+    let state; // 2=grün 1=gelb 0=rot
+    if      (cycle < 6)  state = 2;
+    else if (cycle < 8)  state = 1;
+    else                 state = 0;
+
+    tl.userData.bulbs.forEach((b, i) => {
+      b.material.color.setHex(i === state ? b.userData.on : b.userData.off);
+    });
+    tl.userData.isRed = (state === 0);
+  });
+}
+
+// ── RheinEnergie Stadion ──────────────────────────────────────────────────────
+(function buildStadium() {
+  const end = WP[WP.length-1];
+  const sx = end.x - 80, sz = end.z + 30;
+
+  // Äußere Wand als Torus
+  const wall = new THREE.Mesh(
+    new THREE.TorusGeometry(60, 14, 10, 48),
+    new THREE.MeshLambertMaterial({ color:0xccaa44 })
+  );
+  wall.rotation.x = Math.PI/2;
+  wall.position.set(sx, 14, sz);
+  scene.add(wall);
+
+  // Überdachung
+  const roof = new THREE.Mesh(
+    new THREE.TorusGeometry(60, 9, 5, 48),
+    new THREE.MeshLambertMaterial({ color:0x888888 })
+  );
+  roof.rotation.x = Math.PI/2;
+  roof.position.set(sx, 27, sz);
+  scene.add(roof);
+
+  // Rasen
+  const grass = new THREE.Mesh(
+    new THREE.EllipseCurve ? // Three.js 165 hat EllipseGeometry nicht direkt
+      new THREE.CylinderGeometry(52,52,0.5,32) :
+      new THREE.CylinderGeometry(52,52,0.5,32),
+    new THREE.MeshLambertMaterial({ color: 0x22aa44 })
+  );
+  grass.position.set(sx, 0.4, sz);
+  scene.add(grass);
+
+  // Flutlichtmasten
+  [[60,60],[-60,60],[60,-60],[-60,-60]].forEach(([ox,oz]) => {
+    const mast = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5,0.6,30,8),
+      new THREE.MeshLambertMaterial({ color:0x888888 })
+    );
+    mast.position.set(sx+ox, 15, sz+oz);
+    scene.add(mast);
+    const light = new THREE.Mesh(
+      new THREE.BoxGeometry(4,1,1.5),
+      new THREE.MeshBasicMaterial({ color:0xffffaa })
+    );
+    light.position.set(sx+ox, 31, sz+oz);
+    scene.add(light);
+  });
+})();
+
+// ── Cockpit ───────────────────────────────────────────────────────────────────
+const cockpit = new THREE.Group();
 
 // Armaturenbrett
-const dashMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-const dashGeo = new THREE.BoxGeometry(1.4, 0.25, 0.35);
-const dash = new THREE.Mesh(dashGeo, dashMat);
-dash.position.set(0, -0.38, -0.55);
-cockpitGroup.add(dash);
-
-// Lenkrad (Ring + Speichen)
-const wheelGroup = new THREE.Group();
-const rimMat  = new THREE.MeshLambertMaterial({ color: 0x111111 });
-const spokeMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.018, 8, 32), rimMat);
-wheelGroup.add(rim);
-// 3 Speichen
-[-60, 60, 180].forEach(angleDeg => {
-  const a = angleDeg * Math.PI / 180;
-  const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 6), spokeMat);
-  spoke.position.set(Math.sin(a)*0.08, Math.cos(a)*0.08, 0);
-  spoke.rotation.z = -a;
-  wheelGroup.add(spoke);
-});
-// Nabe
-wheelGroup.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.04, 10), rimMat));
-wheelGroup.position.set(0, -0.22, -0.58);
-wheelGroup.rotation.x = 0.35;
-cockpitGroup.add(wheelGroup);
-
-// A-Säulen (einfache Balken)
-[[-0.62, 0.05, 0.3], [0.62, 0.05, 0.3]].forEach(([px, py, pz], side) => {
-  const pillar = new THREE.Mesh(
-    new THREE.BoxGeometry(0.05, 0.55, 0.05),
-    new THREE.MeshLambertMaterial({ color: 0x111111 })
-  );
-  pillar.position.set(px, py, pz);
-  pillar.rotation.z = (side === 0 ? 1 : -1) * 0.18;
-  cockpitGroup.add(pillar);
-});
-
-// Motorhaube (kleine Wölbung unten im Bild)
-const hoodMesh = new THREE.Mesh(
-  new THREE.BoxGeometry(1.1, 0.08, 0.9),
-  new THREE.MeshLambertMaterial({ color: 0x1144aa })
+const dashMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(1.5, 0.22, 0.45),
+  new THREE.MeshLambertMaterial({ color:0x151515 })
 );
-hoodMesh.position.set(0, -0.46, -1.1);
-cockpitGroup.add(hoodMesh);
+dashMesh.position.set(0, -0.40, -0.52);
+cockpit.add(dashMesh);
 
-camera.add(cockpitGroup);
-scene.add(camera);
+// Windschutzscheibenrahmen (oben)
+const wsTop = new THREE.Mesh(
+  new THREE.BoxGeometry(1.5, 0.07, 0.07),
+  new THREE.MeshLambertMaterial({ color:0x111111 })
+);
+wsTop.position.set(0, 0.38, -0.38);
+cockpit.add(wsTop);
 
-// ─── Fahrzeug-Zustand ─────────────────────────────────────────────────────
+// Lenkrad
+const wheelGrp = new THREE.Group();
+wheelGrp.position.set(0, -0.23, -0.55);
+wheelGrp.rotation.x = 0.32;
+const rimMat   = new THREE.MeshLambertMaterial({ color:0x0d0d0d });
+const spokeMat = new THREE.MeshLambertMaterial({ color:0x1a1a1a });
+// Felge
+wheelGrp.add(new THREE.Mesh(new THREE.TorusGeometry(0.155,0.016,8,32), rimMat));
+// 3 Speichen
+[0,120,240].forEach(deg => {
+  const a = deg * Math.PI / 180;
+  const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.155,6), spokeMat);
+  sp.position.set(Math.sin(a)*0.077, Math.cos(a)*0.077, 0);
+  sp.rotation.z = -a;
+  wheelGrp.add(sp);
+});
+wheelGrp.add(new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.04,10), rimMat));
+cockpit.add(wheelGrp);
+
+// A-Säulen (vorne links/rechts, schräggestellt)
+[-0.60, 0.60].forEach(side => {
+  const pillar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.055, 0.6, 0.055),
+    new THREE.MeshLambertMaterial({ color:0x0d0d0d })
+  );
+  pillar.position.set(side, 0.02, -0.36);
+  pillar.rotation.z = -side * 0.22;
+  pillar.rotation.x = -0.28;
+  cockpit.add(pillar);
+});
+
+// Motorhaube (sichtbar unten im Bild)
+const hood = new THREE.Mesh(
+  new THREE.BoxGeometry(1.2, 0.07, 1.0),
+  new THREE.MeshLambertMaterial({ color:0x1144bb })
+);
+hood.position.set(0, -0.52, -1.05);
+cockpit.add(hood);
+
+cam.add(cockpit);
+scene.add(cam);
+
+// ── Fahrzeugzustand ───────────────────────────────────────────────────────────
+// Startrichtung: Richtung zum 1. Wegpunkt
+const _dx0 = WP[1].x - WP[0].x, _dz0 = WP[1].z - WP[0].z;
 const car = {
-  pos:     new THREE.Vector3(WAYPOINTS[0].x, 0, WAYPOINTS[0].z),
-  heading: 0,        // Radiant, 0 = Süd (+Z)
-  speed:   0,        // m/s
-  accel:   0,
+  x:       WP[0].x,
+  z:       WP[0].z,
+  heading: Math.atan2(_dx0, _dz0),
+  speed:   0,
   steer:   0,
-  wpIdx:   1,        // nächster Wegpunkt
+  wpIdx:   1,
 };
 
-// Kamera-Offset im Auto: Augen-Höhe
-const CAM_HEIGHT = 1.2;
-const CAM_BEHIND = 0.0; // echte Cockpit-Sicht: kein Zurückversatz
-
-// ─── Steuerung ────────────────────────────────────────────────────────────
+// ── Eingabe ───────────────────────────────────────────────────────────────────
 const keys = {};
 window.addEventListener('keydown', e => { keys[e.code] = true; });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
-window.addEventListener('keydown', e => {
-  if (e.code === 'KeyR') resetCar();
-});
+window.addEventListener('keydown', e => { if (e.code==='KeyR') resetCar(); });
 
-// Gamepad
-let gamepad = null;
-window.addEventListener('gamepadconnected', e => {
-  gamepad = e.gamepad;
-  console.log('Gamepad verbunden:', e.gamepad.id);
-  showWaypointMsg('🎮 Controller verbunden!');
-});
-window.addEventListener('gamepaddisconnected', () => { gamepad = null; });
+// Mobile Buttons
+const touch = { left:false, right:false, gas:false, brake:false };
+function bindBtn(id, prop) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const on  = e => { touch[prop]=true;  el.classList.add('on');    e.preventDefault(); };
+  const off = e => { touch[prop]=false; el.classList.remove('on'); e.preventDefault(); };
+  el.addEventListener('touchstart',  on,  { passive:false });
+  el.addEventListener('touchend',    off, { passive:false });
+  el.addEventListener('touchcancel', off, { passive:false });
+  el.addEventListener('mousedown',   on);
+  el.addEventListener('mouseup',     off);
+}
+bindBtn('bl',   'left');
+bindBtn('br',   'right');
+bindBtn('bgas', 'gas');
+bindBtn('bbrk', 'brake');
 
-function resetCar() {
-  car.pos.set(WAYPOINTS[0].x, 0, WAYPOINTS[0].z);
-  car.heading = 0;
-  car.speed = 0;
-  car.wpIdx = 1;
-  showWaypointMsg('🔄 Neustart: Altbaumburgweg');
+// Gamepad / Thrustmaster
+let pad = null;
+window.addEventListener('gamepadconnected',    e => { pad = e.gamepad; toast('🎮 Controller: ' + e.gamepad.id.substring(0,28)); });
+window.addEventListener('gamepaddisconnected', () => { pad = null; });
+
+function getGamepadInput() {
+  if (!pad) return null;
+  const gps = navigator.getGamepads();
+  return gps[pad.index] || null;
 }
 
-// ─── Automatische Wegpunkt-Navigation (Auto-Pilot Hilfe) ──────────────────
-// Das Auto lenkt sanft zum nächsten Wegpunkt.
-// Spieler kann mit Tasten übersteuern.
-
-function autoSteer(dt) {
-  if (car.wpIdx >= WAYPOINTS.length) return 0;
-  const target = WAYPOINTS[car.wpIdx];
-  const tx = target.x - car.pos.x;
-  const tz = target.z - car.pos.z;
-  const targetAngle = Math.atan2(tx, tz);
+// ── Auto-Pilot Lenkung ────────────────────────────────────────────────────────
+function autoSteer() {
+  if (car.wpIdx >= WP.length) return 0;
+  const wp = WP[car.wpIdx];
+  const targetAngle = Math.atan2(wp.x - car.x, wp.z - car.z);
   let diff = targetAngle - car.heading;
-  // Normalize -π .. π
-  while (diff >  Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
-  return Math.max(-1, Math.min(1, diff * 1.5));
+  while (diff >  Math.PI) diff -= 2*Math.PI;
+  while (diff < -Math.PI) diff += 2*Math.PI;
+  return Math.max(-1, Math.min(1, diff * 2.0));
 }
 
 function checkWaypoint() {
-  if (car.wpIdx >= WAYPOINTS.length) return;
-  const wp = WAYPOINTS[car.wpIdx];
-  const dist = Math.hypot(wp.x - car.pos.x, wp.z - car.pos.z);
-  if (dist < 12) {
-    showWaypointMsg('📍 ' + wp.name);
+  if (car.wpIdx >= WP.length) return;
+  const wp = WP[car.wpIdx];
+  if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
+    toast('📍 ' + wp.name);
     car.wpIdx++;
-    updateProgress();
-    if (car.wpIdx >= WAYPOINTS.length) {
-      setTimeout(() => showWaypointMsg('🏟️ Ziel erreicht! RheinEnergie Stadion'), 500);
-    }
+    document.getElementById('prog-fill').style.width =
+      ((car.wpIdx-1)/(WP.length-1)*100).toFixed(1) + '%';
+    if (car.wpIdx >= WP.length)
+      setTimeout(() => toast('🏟 Ziel erreicht! RheinEnergie Stadion'), 600);
   }
 }
 
-// ─── HUD Helfer ───────────────────────────────────────────────────────────
-let waypointTimeout;
-function showWaypointMsg(text) {
-  const el = document.getElementById('waypoint-name');
-  el.textContent = text;
+// ── Physik ────────────────────────────────────────────────────────────────────
+const MAX_SPD = 22, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
+
+function updateCar(dt) {
+  // Eingabe zusammenführen
+  let throttle = 0, braking = 0, steerIn = 0;
+
+  if (keys['ArrowUp']   || keys['KeyW'] || touch.gas)   throttle = 1;
+  if (keys['ArrowDown'] || keys['KeyS'] || touch.brake)  braking  = 1;
+  if (keys['Space'])                                      braking  = 2;
+  if (keys['ArrowLeft'] || keys['KeyA'] || touch.left)   steerIn  = -1;
+  if (keys['ArrowRight']|| keys['KeyD'] || touch.right)  steerIn  =  1;
+
+  // Gamepad
+  const gp = getGamepadInput();
+  if (gp) {
+    const ax = gp.axes[0];
+    if (Math.abs(ax) > 0.08) steerIn = ax;
+    const rt = gp.buttons[7]?.value ?? 0;
+    const lt = gp.buttons[6]?.value ?? 0;
+    if (rt > 0.05) throttle = rt;
+    if (lt > 0.05) braking  = lt;
+    // Thrustmaster: Achse 1/2 könnten Pedale sein
+    if (gp.axes.length > 2) {
+      const gas   = (-gp.axes[1] + 1) / 2;  // -1=offen → 0, +1=gedrückt → 1
+      const brake = (-gp.axes[2] + 1) / 2;
+      if (gas   > 0.05) throttle = Math.max(throttle, gas);
+      if (brake > 0.05) braking  = Math.max(braking,  brake);
+    }
+  }
+
+  // Auto-Pilot: lenkunterstützung falls kein manueller Input
+  if (Math.abs(steerIn) < 0.05) steerIn = autoSteer() * 0.55;
+  // Auto-Pilot: sanft anfahren wenn kein Gas
+  if (throttle === 0 && car.speed < 14 && car.wpIdx < WP.length) throttle = 0.65;
+
+  // Geschwindigkeit
+  if (throttle > 0) car.speed = Math.min(MAX_SPD, car.speed + ACCEL * throttle * dt);
+  else              car.speed = Math.max(0,        car.speed - DRAG * dt);
+  if (braking  > 0) car.speed = Math.max(0,        car.speed - BRAKE * braking * dt);
+
+  // Lenkung (sanft interpoliert)
+  const sFactor = Math.min(1, car.speed / MAX_SPD);
+  car.steer += (steerIn - car.steer) * 6 * dt;
+  car.heading += car.steer * STEER_SPD * sFactor * dt;
+
+  // Position
+  car.x += Math.sin(car.heading) * car.speed * dt;
+  car.z += Math.cos(car.heading) * car.speed * dt;
+
+  // Lenkrad animieren
+  wheelGrp.rotation.z = -car.steer * 0.55;
+
+  checkWaypoint();
+}
+
+// ── Kamera setzen ─────────────────────────────────────────────────────────────
+function updateCamera() {
+  cam.position.set(car.x, 1.25, car.z);
+  cam.rotation.y = car.heading + Math.PI;  // +PI weil Three.js-Kamera in -Z schaut
+  cam.rotation.x = 0;
+  cam.rotation.z = car.steer * -0.025;
+}
+
+// ── HUD ───────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
   el.style.opacity = '1';
-  clearTimeout(waypointTimeout);
-  waypointTimeout = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.style.opacity = '0', 2800);
 }
 
-function updateProgress() {
-  const pct = ((car.wpIdx - 1) / (WAYPOINTS.length - 1)) * 100;
-  document.getElementById('progress-fill').style.width = pct + '%';
+function resetCar() {
+  car.x = WP[0].x; car.z = WP[0].z;
+  car.heading = Math.atan2(WP[1].x-WP[0].x, WP[1].z-WP[0].z);
+  car.speed = 0; car.steer = 0; car.wpIdx = 1;
+  document.getElementById('prog-fill').style.width = '0%';
+  toast('🔄 Neustart – Altbaumburgweg');
 }
 
-// ─── Minimap ──────────────────────────────────────────────────────────────
-const mmCanvas = document.getElementById('minimap-canvas');
-const mmCtx    = mmCanvas.getContext('2d');
-const MM_W = 180, MM_H = 180;
+// ── Minimap ───────────────────────────────────────────────────────────────────
+const mmCv  = document.getElementById('mm-cv');
+const mmCtx = mmCv.getContext('2d');
+let osmRoads = [];   // wird von OSM befüllt
+
+const MM = 160;
+// Bounding Box der Route berechnen
+const allX = WP.map(w=>w.x), allZ = WP.map(w=>w.z);
+const mmMinX = Math.min(...allX)-80, mmMaxX = Math.max(...allX)+80;
+const mmMinZ = Math.min(...allZ)-80, mmMaxZ = Math.max(...allZ)+80;
+
+function toMM(wx, wz) {
+  return [
+    10 + (wx - mmMinX) / (mmMaxX - mmMinX) * (MM-20),
+    10 + (wz - mmMinZ) / (mmMaxZ - mmMinZ) * (MM-20),
+  ];
+}
 
 function drawMinimap() {
-  mmCtx.clearRect(0, 0, MM_W, MM_H);
-  mmCtx.fillStyle = '#1a2a1a';
-  mmCtx.fillRect(0, 0, MM_W, MM_H);
+  mmCtx.clearRect(0,0,MM,MM);
+  mmCtx.fillStyle = '#192219';
+  mmCtx.fillRect(0,0,MM,MM);
 
-  // Skalierung: Route passt in Minimap
-  const allX = WAYPOINTS.map(w => w.x);
-  const allZ = WAYPOINTS.map(w => w.z);
-  const minX = Math.min(...allX), maxX = Math.max(...allX);
-  const minZ = Math.min(...allZ), maxZ = Math.max(...allZ);
-  const scaleX = (MM_W - 20) / (maxX - minX + 1);
-  const scaleZ = (MM_H - 20) / (maxZ - minZ + 1);
-  const scale  = Math.min(scaleX, scaleZ);
-  const offX = 10 + (MM_W - 20 - (maxX-minX)*scale) / 2;
-  const offZ = 10;
-
-  const toMM = (wx, wz) => ({
-    x: offX + (wx - minX) * scale,
-    y: offZ + (wz - minZ) * scale
-  });
-
-  // Route zeichnen
-  mmCtx.strokeStyle = '#555'; mmCtx.lineWidth = 3;
-  mmCtx.beginPath();
-  WAYPOINTS.forEach((wp, i) => {
-    const p = toMM(wp.x, wp.z);
-    i === 0 ? mmCtx.moveTo(p.x, p.y) : mmCtx.lineTo(p.x, p.y);
-  });
-  mmCtx.stroke();
-
-  // Zurückgelegte Route
-  mmCtx.strokeStyle = '#0af'; mmCtx.lineWidth = 2;
-  mmCtx.beginPath();
-  WAYPOINTS.slice(0, car.wpIdx).forEach((wp, i) => {
-    const p = toMM(wp.x, wp.z);
-    i === 0 ? mmCtx.moveTo(p.x, p.y) : mmCtx.lineTo(p.x, p.y);
-  });
-  // bis aktuelle Pos
-  const cp = toMM(car.pos.x, car.pos.z);
-  mmCtx.lineTo(cp.x, cp.y);
-  mmCtx.stroke();
-
-  // Wegpunkte
-  WAYPOINTS.forEach((wp, i) => {
-    const p = toMM(wp.x, wp.z);
+  // OSM-Hintergrundstraßen
+  mmCtx.strokeStyle = '#2a3a2a';
+  mmCtx.lineWidth = 1;
+  osmRoads.forEach(pts => {
+    if (pts.length < 2) return;
     mmCtx.beginPath();
-    mmCtx.arc(p.x, p.y, i < car.wpIdx ? 3 : 2, 0, Math.PI*2);
-    mmCtx.fillStyle = i < car.wpIdx ? '#0f8' : '#888';
+    pts.forEach(([ox,oz],i) => {
+      const [px,py] = toMM(ox,oz);
+      i===0 ? mmCtx.moveTo(px,py) : mmCtx.lineTo(px,py);
+    });
+    mmCtx.stroke();
+  });
+
+  // Hauptroute (grau)
+  mmCtx.strokeStyle='#555'; mmCtx.lineWidth=2.5;
+  mmCtx.beginPath();
+  WP.forEach((wp,i)=>{const[px,py]=toMM(wp.x,wp.z); i===0?mmCtx.moveTo(px,py):mmCtx.lineTo(px,py);});
+  mmCtx.stroke();
+
+  // Zurückgelegte Strecke (blau)
+  mmCtx.strokeStyle='#0af'; mmCtx.lineWidth=2;
+  mmCtx.beginPath();
+  WP.slice(0, car.wpIdx).forEach((wp,i)=>{const[px,py]=toMM(wp.x,wp.z); i===0?mmCtx.moveTo(px,py):mmCtx.lineTo(px,py);});
+  const [cpx,cpy] = toMM(car.x, car.z);
+  mmCtx.lineTo(cpx, cpy);
+  mmCtx.stroke();
+
+  // Wegpunkt-Dots
+  WP.forEach((wp,i)=>{
+    const[px,py]=toMM(wp.x,wp.z);
+    mmCtx.beginPath(); mmCtx.arc(px,py,i<car.wpIdx?3.5:2,0,Math.PI*2);
+    mmCtx.fillStyle = i<car.wpIdx ? '#0f8' : '#555';
     mmCtx.fill();
   });
 
-  // Auto-Dreieck
+  // Auto (roter Pfeil)
+  const[ax,ay]=toMM(car.x,car.z);
   mmCtx.save();
-  mmCtx.translate(cp.x, cp.y);
+  mmCtx.translate(ax,ay);
   mmCtx.rotate(car.heading);
-  mmCtx.fillStyle = '#ff4444';
-  mmCtx.beginPath();
-  mmCtx.moveTo(0, -5); mmCtx.lineTo(-3, 4); mmCtx.lineTo(3, 4);
-  mmCtx.closePath();
-  mmCtx.fill();
+  mmCtx.fillStyle='#ff3333';
+  mmCtx.beginPath(); mmCtx.moveTo(0,-5.5); mmCtx.lineTo(-3.5,4); mmCtx.lineTo(3.5,4);
+  mmCtx.closePath(); mmCtx.fill();
   mmCtx.restore();
 }
 
-// ─── Game Loop ────────────────────────────────────────────────────────────
-const MAX_SPEED  = 22;  // ~80 km/h
-const ACCEL_RATE = 6;
-const BRAKE_RATE = 14;
-const DRAG       = 1.8;
-const STEER_RATE = 1.4;
-const STEER_RETURN = 3.0;
+// ── OSM-Daten laden (Overpass API) ───────────────────────────────────────────
+async function loadOSM() {
+  // Bounding box rund um unsere Route
+  const bbox = '50.930,6.865,50.975,6.895';
+  const q = `[out:json][timeout:30];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox}););(._;>;);out body;`;
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
 
-let lastTime = performance.now();
-const clock = new THREE.Clock();
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
 
-function update(now) {
-  const dt = Math.min((now - lastTime) / 1000, 0.05);
-  lastTime = now;
+    // Node-Lookup bauen
+    const nodes = {};
+    data.elements.filter(e=>e.type==='node').forEach(n=>{
+      const pos = ll(n.lat, n.lon);
+      nodes[n.id] = [pos.x, pos.z];
+    });
 
-  // ── Eingabe lesen ──
-  let throttle = 0, braking = 0, steerInput = 0;
+    // Straßen in Szene rendern (als dünne Plane-Segmente)
+    const osmMat = new THREE.MeshBasicMaterial({ color:0x1e2e1e });
+    let roadCount = 0;
 
-  if (keys['ArrowUp']   || keys['KeyW']) throttle =  1;
-  if (keys['ArrowDown'] || keys['KeyS']) braking  =  1;
-  if (keys['ArrowLeft'] || keys['KeyA']) steerInput = -1;
-  if (keys['ArrowRight']|| keys['KeyD']) steerInput =  1;
-  if (keys['Space'])                     braking  =  2;
+    data.elements.filter(e=>e.type==='way').forEach(way => {
+      const pts = way.nodes.map(id=>nodes[id]).filter(Boolean);
+      if (pts.length < 2) return;
 
-  // Gamepad
-  if (gamepad) {
-    const gp = navigator.getGamepads()[gamepad.index];
-    if (gp) {
-      const leftX  = gp.axes[0];
-      const rt     = (gp.buttons[7]?.value ?? 0);
-      const lt     = (gp.buttons[6]?.value ?? 0);
-      if (Math.abs(leftX) > 0.08) steerInput = leftX;
-      if (rt > 0.05) throttle = rt;
-      if (lt > 0.05) braking  = lt;
-    }
+      // Für Minimap speichern
+      osmRoads.push(pts);
+
+      // 3D-Geometrie (nur wenn nah genug an Route)
+      for (let i = 0; i < pts.length-1; i++) {
+        const [ax,az] = pts[i];
+        const [bx,bz] = pts[i+1];
+        const geo = roadGeo(ax,az,bx,bz, 5.5, 0.005);
+        scene.add(new THREE.Mesh(geo, osmMat));
+        roadCount++;
+      }
+    });
+
+    document.getElementById('osm-lbl').textContent = `🗺 OSM ✓ (${roadCount} Segmente)`;
+    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 4000);
+    console.log('OSM geladen:', roadCount, 'Straßensegmente');
+  } catch(err) {
+    console.warn('OSM nicht geladen:', err);
+    document.getElementById('osm-lbl').textContent = '🗺 OSM (offline)';
+    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 3000);
   }
-
-  // Auto-Pilot Lenkung (falls kein manueller Input)
-  const autoS = autoSteer(dt);
-  if (Math.abs(steerInput) < 0.05) steerInput = autoS * 0.6;
-
-  // Wenn kein manueller Antrieb: sanft beschleunigen (Demo-Modus)
-  if (throttle === 0 && car.speed < 14 && car.wpIdx < WAYPOINTS.length) {
-    throttle = 0.7;
-  }
-
-  // ── Physik ──
-  if (throttle > 0) {
-    car.speed = Math.min(MAX_SPEED, car.speed + ACCEL_RATE * throttle * dt);
-  } else {
-    car.speed = Math.max(0, car.speed - DRAG * dt);
-  }
-  if (braking > 0) {
-    car.speed = Math.max(0, car.speed - BRAKE_RATE * braking * dt);
-  }
-
-  // Lenkung (nur bei Fahrt)
-  const steerFactor = car.speed / MAX_SPEED;
-  car.steer += (steerInput - car.steer) * STEER_RATE * dt * 5;
-  car.heading += car.steer * STEER_RATE * steerFactor * dt * 1.5;
-
-  // Lenkrad rotieren
-  const steeringWheel = cockpitGroup.children.find(c => c === camera.children[0]?.children[1]);
-  // Zugriff über wheelGroup (Index 1 in cockpitGroup)
-  if (cockpitGroup.children[1]) {
-    cockpitGroup.children[1].rotation.z = -car.steer * 0.6;
-  }
-
-  // Position aktualisieren
-  car.pos.x += Math.sin(car.heading) * car.speed * dt;
-  car.pos.z += Math.cos(car.heading) * car.speed * dt;
-
-  checkWaypoint();
-
-  // ── Kamera positionieren ──
-  camera.position.set(
-    car.pos.x,
-    CAM_HEIGHT,
-    car.pos.z
-  );
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y = car.heading + Math.PI; // Blickrichtung = Fahrtrichtung
-  camera.rotation.x = 0;
-  camera.rotation.z = car.steer * -0.03; // leichtes Rollen beim Lenken
-
-  // ── Speedometer ──
-  document.getElementById('speed-val').textContent = Math.round(car.speed * 3.6);
-
-  // ── Minimap ──
-  drawMinimap();
-
-  // ── Render ──
-  renderer.render(scene, camera);
-  requestAnimationFrame(update);
 }
 
-// ─── Resize ───────────────────────────────────────────────────────────────
+// ── Resize ────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  cam.aspect = innerWidth / innerHeight;
+  cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
 });
-renderer.setSize(window.innerWidth, window.innerHeight);
 
-// ─── Start ────────────────────────────────────────────────────────────────
-showWaypointMsg('🚦 Start: Altbaumburgweg, Bilderstöckchen');
-updateProgress();
-requestAnimationFrame(update);
+// ── Animation Loop ────────────────────────────────────────────────────────────
+let lastT = performance.now();
+const clock = new THREE.Clock();
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+  const elapsed = clock.getElapsedTime();
+
+  updateCar(dt);
+  updateCamera();
+  updateTrafficLights(elapsed);
+  drawMinimap();
+
+  document.getElementById('spd').textContent = Math.round(car.speed * 3.6);
+  renderer.render(scene, cam);
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
+loadOSM();   // asynchron im Hintergrund
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
