@@ -783,17 +783,6 @@ function getGamepadInput() {
   return gps[pad.index] || null;
 }
 
-// ── Auto-Pilot Lenkung ────────────────────────────────────────────────────────
-function autoSteer() {
-  if (car.wpIdx >= WP.length) return 0;
-  const wp = WP[car.wpIdx];
-  const targetAngle = Math.atan2(wp.x - car.x, wp.z - car.z);
-  let diff = targetAngle - car.heading;
-  while (diff >  Math.PI) diff -= 2*Math.PI;
-  while (diff < -Math.PI) diff += 2*Math.PI;
-  return Math.max(-1, Math.min(1, diff * 2.0));
-}
-
 function checkWaypoint() {
   if (car.wpIdx >= WP.length) return;
   const wp = WP[car.wpIdx];
@@ -844,10 +833,8 @@ function updateCar(dt) {
     }
   }
 
-  // Auto-Pilot: lenkunterstützung falls kein manueller Input
-  if (Math.abs(steerIn) < 0.05) steerIn = -autoSteer() * 0.55; // FIX: Auto-Pilot invertiert
-  // Auto-Pilot: sanft anfahren wenn kein Gas
-  // KEIN Auto-Gas mehr – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
+  // KEIN Auto-Pilot – vollständig manuelles Fahren (Auto-Lenkung entfernt)
+  // KEIN Auto-Gas – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
 
   // Geschwindigkeit
   if (throttle > 0) car.speed = Math.min(MAX_SPD, car.speed + ACCEL * throttle * dt);
