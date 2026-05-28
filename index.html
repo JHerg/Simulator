@@ -1359,7 +1359,7 @@ function checkCollisions() {
 }
 
 // ── Physik ────────────────────────────────────────────────────────────────────
-const MAX_SPD = 22, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
+const MAX_SPD = 22, MAX_REV = 5, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
 
 function updateCar(dt) {
   // Eingabe zusammenführen
@@ -1393,15 +1393,34 @@ function updateCar(dt) {
   // KEIN Auto-Pilot – vollständig manuelles Fahren (Auto-Lenkung entfernt)
   // KEIN Auto-Gas – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
 
-  // Geschwindigkeit
-  if (throttle > 0) car.speed = Math.min(MAX_SPD, car.speed + ACCEL * throttle * dt);
-  else              car.speed = Math.max(0,        car.speed - DRAG * dt);
-  if (braking  > 0) car.speed = Math.max(0,        car.speed - BRAKE * braking * dt);
+  // Geschwindigkeit + Rückwärtsgang
+  if (throttle > 0) {
+    // Gas → vorwärts (bricht auch Rückwärtsfahrt ab)
+    car.speed = Math.min(MAX_SPD, car.speed + ACCEL * throttle * dt);
+  } else {
+    // Rollwiderstand (gilt vorwärts und rückwärts)
+    if (car.speed > 0) car.speed = Math.max(0,       car.speed - DRAG * dt);
+    else               car.speed = Math.min(0,       car.speed + DRAG * dt);
+  }
+  if (braking > 0) {
+    if (car.speed > 0.05) {
+      // Normale Bremsung (vorwärts fahrend)
+      car.speed = Math.max(0, car.speed - BRAKE * braking * dt);
+    } else if (braking === 1) {
+      // Rückwärtsgang: nur mit normalem Bremsknopf (S / ↓ / Touch-Bremse)
+      car.speed = Math.max(-MAX_REV, car.speed - ACCEL * 0.55 * dt);
+    } else {
+      // Handbremse (Space): kein Rückwärtsgang, nur stoppen
+      car.speed = Math.max(0, car.speed - BRAKE * 2 * dt);
+    }
+  }
 
-  // Lenkung (sanft interpoliert)
-  const sFactor = Math.min(1, car.speed / MAX_SPD);
+  // Lenkung (sanft interpoliert; im Rückwärtsgang umgekehrt)
+  const absSp  = Math.abs(car.speed);
+  const sFactor = Math.min(1, absSp / MAX_SPD);
+  const reverse = car.speed < -0.1 ? -1 : 1;   // Lenkung beim Rückwärtsfahren spiegeln
   car.steer += (steerIn - car.steer) * 6 * dt;
-  car.heading += car.steer * STEER_SPD * sFactor * dt;
+  car.heading += car.steer * STEER_SPD * sFactor * reverse * dt;
 
   // Position
   car.x += Math.sin(car.heading) * car.speed * dt;
@@ -1524,6 +1543,25 @@ function nearRoute(cx, cz, maxDist) {
   return false;
 }
 
+// Abstand Punkt → Liniensegment (für Straßen-Kollisions-Check)
+function distToSeg(px, pz, ax, az, bx, bz) {
+  const dx = bx-ax, dz = bz-az;
+  const len2 = dx*dx + dz*dz;
+  if (len2 < 1e-6) return Math.hypot(px-ax, pz-az);
+  const t = Math.max(0, Math.min(1, ((px-ax)*dx + (pz-az)*dz) / len2));
+  return Math.hypot(px-(ax+t*dx), pz-(az+t*dz));
+}
+
+// Prüft ob Gebäude-Mittelpunkt in der Fahrbahntrasse liegt
+function onRouteCorridor(cx, cz) {
+  for (let i = 0; i < WP.length-1; i++) {
+    const hw = (WP[i].width || 8) / 2 + 5;   // halbe Fahrbahnbreite + 5 m Puffer
+    if (distToSeg(cx, cz, WP[i].x, WP[i].z, WP[i+1].x, WP[i+1].z) < hw)
+      return true;
+  }
+  return false;
+}
+
 function makeFacadeTex(wallColor, isNight, seed) {
   const W = 256, H = 512;
   const cv = document.createElement('canvas');
@@ -1622,6 +1660,7 @@ function buildOSMBuildings(elements, nodes) {
     const cx = pts.reduce((s,p) => s+p[0], 0) / pts.length;
     const cz = pts.reduce((s,p) => s+p[1], 0) / pts.length;
     if (!nearRoute(cx, cz, 72)) return;
+    if (onRouteCorridor(cx, cz)) return;   // Gebäude liegt auf der Fahrbahn → überspringen
 
     // Fläche (Shoelace)
     let area2 = 0;
@@ -1749,7 +1788,8 @@ function loop(now) {
   updateLimitHUD();
   updateEngineSound();
 
-  document.getElementById('spd').textContent = Math.round(car.speed * 3.6);
+  document.getElementById('spd').textContent =
+    (car.speed < -0.2 ? '↩ ' : '') + Math.round(Math.abs(car.speed) * 3.6);
   renderer.render(scene, cam);
 }
 
