@@ -947,6 +947,152 @@ function updateTrafficLights(t) {
   });
 })();
 
+// ── Stadion-Atmosphäre: Banner · Fans · Fanbusse · VIP-Schild ─────────────────
+(function buildStadiumAtmosphere() {
+  const end = WP[WP.length - 1];
+  const sx = end.x - 80,  sz = end.z + 30;   // Stadion-Zentrum
+  const pCX = end.x + 58, pCZ = end.z - 18;  // Parkplatz-Mitte
+
+  // ── "POKALENDSPIEL"-Banner auf der Ost-Fassade ──
+  {
+    const bc = document.createElement('canvas');
+    bc.width = 512; bc.height = 128;
+    const bctx = bc.getContext('2d');
+    bctx.fillStyle = '#cc0000';
+    bctx.fillRect(0, 0, 512, 128);
+    bctx.strokeStyle = '#ffdd00';
+    bctx.lineWidth = 7;
+    bctx.strokeRect(5, 5, 502, 118);
+    bctx.fillStyle = '#ffdd00';
+    bctx.font = 'bold 52px Arial, sans-serif';
+    bctx.textAlign = 'center';
+    bctx.textBaseline = 'middle';
+    bctx.fillText('POKALENDSPIEL', 256, 64);
+    const tex = new THREE.CanvasTexture(bc);
+    // BoxGeometry: Index 4 = +z-Fläche = "Vorderseite"
+    const board = new THREE.Mesh(
+      new THREE.BoxGeometry(36, 9, 0.6),
+      [
+        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
+        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
+        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
+        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
+        new THREE.MeshBasicMaterial({ map: tex }),
+        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
+      ]
+    );
+    // Östliche Außenwand des Stadions (r≈74), rotation.y=-PI/2 dreht +z → +x (Ost)
+    board.position.set(sx + 64, 24, sz);
+    board.rotation.y = -Math.PI / 2;
+    scene.add(board);
+  }
+
+  // ── Fans ──
+  const fanColors = [0xcc0000, 0xffffff, 0x0055aa, 0xffdd00, 0xee3311];
+  const fBodyGeo = new THREE.CylinderGeometry(0.38, 0.38, 1.6, 6);
+  const fHeadGeo = new THREE.SphereGeometry(0.38, 6, 5);
+  const fHeadMat = new THREE.MeshLambertMaterial({ color: 0xffcc99 });
+
+  const clusters = [
+    { cx: sx - 25,  cz: sz - 96,  n: 22, rx: 26, rz: 12 },
+    { cx: sx - 25,  cz: sz + 96,  n: 22, rx: 26, rz: 12 },
+    { cx: sx - 118, cz: sz - 10,  n: 18, rx: 10, rz: 24 },
+    { cx: sx + 80,  cz: sz - 90,  n: 14, rx: 18, rz: 10 },
+    { cx: sx + 80,  cz: sz + 90,  n: 14, rx: 18, rz: 10 },
+    { cx: sx - 92,  cz: sz - 68,  n:  8, rx: 12, rz: 10 },
+    { cx: sx - 92,  cz: sz + 68,  n:  8, rx: 12, rz: 10 },
+  ];
+
+  clusters.forEach(({ cx, cz, n, rx, rz }) => {
+    for (let i = 0; i < n; i++) {
+      const fx = cx + (Math.random() - 0.5) * 2 * rx;
+      const fz = cz + (Math.random() - 0.5) * 2 * rz;
+      const mat = new THREE.MeshLambertMaterial({
+        color: fanColors[Math.floor(Math.random() * fanColors.length)]
+      });
+      const body = new THREE.Mesh(fBodyGeo, mat);
+      body.position.set(fx, 0.8, fz);
+      scene.add(body);
+      const head = new THREE.Mesh(fHeadGeo, fHeadMat);
+      head.position.set(fx, 1.95, fz);
+      scene.add(head);
+    }
+  });
+
+  // ── Fanbusse ──
+  const busWhite = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+  const busDark  = new THREE.MeshLambertMaterial({ color: 0x222222 });
+  const busWin   = new THREE.MeshBasicMaterial({ color: 0x88aacc });
+  const busRed   = new THREE.MeshLambertMaterial({ color: 0xcc0000 });
+
+  function makeBus(bx, bz, ry) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.8, 3.4, 11), busWhite);
+    body.position.set(0, 1.7, 0); g.add(body);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.65, 11.05), busRed);
+    stripe.position.set(0, 2.45, 0); g.add(stripe);
+    const wsF = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.5, 0.12), busWin);
+    wsF.position.set(0, 2.0, -5.56); g.add(wsF);
+    const wsR = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.2, 0.12), busWin);
+    wsR.position.set(0, 2.1, 5.56); g.add(wsR);
+    for (let i = -1; i <= 1; i++) {
+      const wL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 2.0), busWin);
+      wL.position.set(-1.47, 2.0, i * 3.2); g.add(wL);
+      const wR = wL.clone(); wR.position.set(1.47, 2.0, i * 3.2); g.add(wR);
+    }
+    const wGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.5, 10);
+    [[-1.6, -3.8],[1.6, -3.8],[-1.6, 3.8],[1.6, 3.8]].forEach(([wx, wz]) => {
+      const wh = new THREE.Mesh(wGeo, busDark);
+      wh.rotation.z = Math.PI / 2;
+      wh.position.set(wx, 0.6, wz); g.add(wh);
+    });
+    g.rotation.y = ry;
+    g.position.set(bx, 0, bz);
+    scene.add(g);
+  }
+
+  makeBus(sx - 108, sz - 32,  0.08);
+  makeBus(sx - 108, sz + 12, -0.05);
+  makeBus(sx -  12, sz - 114, Math.PI / 2 + 0.1);
+  makeBus(sx +  20, sz - 114, Math.PI / 2 - 0.08);
+  makeBus(sx -  45, sz + 114, Math.PI / 2 + 0.05);
+
+  // ── VIP-Parkplatz-Schild ──
+  {
+    const vc = document.createElement('canvas');
+    vc.width = 256; vc.height = 128;
+    const vctx = vc.getContext('2d');
+    vctx.fillStyle = '#002288';
+    vctx.fillRect(0, 0, 256, 128);
+    vctx.strokeStyle = '#ffdd00';
+    vctx.lineWidth = 5;
+    vctx.strokeRect(4, 4, 248, 120);
+    vctx.fillStyle = '#ffdd00';
+    vctx.font = 'bold 46px Arial, sans-serif';
+    vctx.textAlign = 'center';
+    vctx.textBaseline = 'middle';
+    vctx.fillText('VIP', 128, 36);
+    vctx.fillStyle = '#ffffff';
+    vctx.font = 'bold 26px Arial, sans-serif';
+    vctx.fillText('Parkplatz', 128, 86);
+    const vtex = new THREE.CanvasTexture(vc);
+
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.09, 0.1, 5.5, 8),
+      new THREE.MeshLambertMaterial({ color: 0x888888 })
+    );
+    post.position.set(pCX - 28, 2.75, pCZ);
+    scene.add(post);
+
+    const sign = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 3, 0.15),
+      new THREE.MeshBasicMaterial({ map: vtex, side: THREE.DoubleSide })
+    );
+    sign.position.set(pCX - 28, 5.9, pCZ);
+    scene.add(sign);
+  }
+})();
+
 // ── NPC-Verkehr ───────────────────────────────────────────────────────────────
 const NPC_COLORS = [0xcc3322,0x228833,0xddcc11,0xffffff,0x2255cc,0xdd7722,0x882288];
 const npcs = [];
