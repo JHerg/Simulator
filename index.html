@@ -590,6 +590,7 @@ function roadGeo(ax, az, bx, bz, width, y) {
     const count = Math.floor(len / spacing);
     for (let k = 0; k < count; k++) {
       const t = (k + 0.5) / count;
+      if (t < 0.13 || t > 0.87) continue;  // Kreuzungsbereich freihalten
       const bx = A.x + dx*t, bz = A.z + dz*t;
 
       [-1,1].forEach(side => {
@@ -597,10 +598,10 @@ function roadGeo(ax, az, bx, bz, width, y) {
         const h = 5  + rng()*25;
         const d = 7  + rng()*10;
         const roadHW = (WP[i].width||8)/2;
-        const off = roadHW + Math.max(w,d)/2 + 3 + rng()*4; // Mindestabstand: Straßenrand + halbe Gebäudebreite + Gehweg
+        const off = roadHW + Math.max(w,d)/2 + 4 + rng()*4;
 
-        const px = bx + nx*side*off + (rng()-.5)*3;
-        const pz = bz + nz*side*off + (rng()-.5)*3;
+        const px = bx + nx*side*off + (rng()-.5)*1.5;
+        const pz = bz + nz*side*off + (rng()-.5)*1.5;
 
         const mat  = new THREE.MeshLambertMaterial({ color: COLORS[Math.floor(rng()*COLORS.length)] });
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -645,11 +646,13 @@ function roadGeo(ax, az, bx, bz, width, y) {
 
     for (let k = 0; k < count; k++) {
       const t = k / count;
+      if (t < 0.1 || t > 0.9) continue;  // Kreuzungsbereich freihalten
       const bx = A.x + dx*t, bz = A.z + dz*t;
 
       [-1,1].forEach(side => {
         if (rng() > 0.6) return;
-        const off = 8 + rng()*3;
+        const roadHW = (WP[i].width || 8) / 2;
+        const off = roadHW + 1.6 + rng() * 3;
         const px = bx + nx*side*off;
         const pz = bz + nz*side*off;
         const h  = 4 + rng()*4;
