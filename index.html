@@ -228,6 +228,35 @@
     .pp-btn:hover{transform:scale(1.06);}
     #pp-yes{background:#22aa44;color:#fff;}
     #pp-no{background:#555;color:#ccc;}
+    /* Home-Popup */
+    #home-popup{
+      position:fixed;inset:0;z-index:8500;display:none;
+      align-items:center;justify-content:center;
+      background:rgba(0,0,0,.78);
+    }
+    /* Legendärer-Tag-Popup */
+    #legend-popup{
+      position:fixed;inset:0;z-index:9000;display:none;
+      align-items:center;justify-content:center;
+      background:rgba(0,0,8,.92);
+    }
+    #legend-inner{
+      background:linear-gradient(160deg,#0d1a2a,#1a2a3a);
+      border:2px solid #6699cc;border-radius:20px;
+      padding:36px 44px;text-align:center;color:#fff;
+      box-shadow:0 8px 64px rgba(0,40,120,.9);max-width:480px;
+    }
+    #legend-title{font-size:22px;font-weight:bold;color:#ffdd88;margin-bottom:18px;}
+    #legend-text{font-size:13px;color:#cce;line-height:1.75;margin-bottom:16px;text-align:left;}
+    #legend-stats{font-size:15px;color:#fff;font-weight:bold;
+      margin:14px 0;padding:12px 18px;
+      background:rgba(255,255,255,.07);border-radius:10px;line-height:1.9;}
+    #legend-close{
+      margin-top:12px;padding:12px 30px;border-radius:12px;font-size:15px;
+      font-weight:bold;background:#0044cc;border:2px solid #4488ff;
+      color:#fff;cursor:pointer;
+    }
+    #legend-close:hover{background:#0055ee;}
 
     /* ── Fußball-Bildschirm ───────────────────────────────── */
     #football-screen{
@@ -355,6 +384,28 @@
 <div id="limit-sign"><div id="limit-val">30</div></div>
 
 <!-- Parkplatz-Popup -->
+<!-- Heimankunft-Popup -->
+<div id="home-popup">
+  <div class="pp-box">
+    <div class="pp-title">🏠 Altbaumburgweg</div>
+    <div class="pp-sub">Sie stehen auf Ihrer Hofeinfahrt.<br>Möchten Sie aussteigen?</div>
+    <div class="pp-row">
+      <button id="hp-yes" class="pp-btn" style="background:#226699">✔ Ja, aussteigen</button>
+      <button id="hp-no"  class="pp-btn">🚗 Noch kurz bleiben</button>
+    </div>
+  </div>
+</div>
+
+<!-- Legendärer-Tag-Popup -->
+<div id="legend-popup">
+  <div id="legend-inner">
+    <div id="legend-title">🌟 Ein legendärer Tag geht zu Ende</div>
+    <div id="legend-text"></div>
+    <div id="legend-stats"></div>
+    <button id="legend-close">✔ Danke — gute Nacht!</button>
+  </div>
+</div>
+
 <div id="park-popup">
   <div class="pp-box">
     <div class="pp-title">🏟 RheinEnergie Stadion</div>
@@ -1447,6 +1498,7 @@ function checkWaypoint() {
       } else {
         car.homeMode = false;
         car.wpIdx = 1;
+        _homeJourneyDone = true;
         document.getElementById('prog-fill').style.width = '0%';
         document.getElementById('street-lbl').textContent = WP[0].street;
         setTimeout(() => toast('🏠 Zuhause! Altbaumburgweg'), 600);
@@ -2260,6 +2312,8 @@ async function loadOSM() {
 let footballActive = false;
 let _parkTimer = null, _parkShown = false;
 let PARK_CX = 0, PARK_CZ = 0;
+let HOME_CX = 0, HOME_CZ = 0;
+let _homeJourneyDone = false, _homeParkShown = false, _homeParkTimer = null;
 
 // Virtuelle Spielfeld-Koordinaten (immer 700×420, wird auf Canvas skaliert)
 const FB_VW = 700, FB_VH = 420;
@@ -2346,6 +2400,112 @@ function setupParkingAndFootball() {
   });
 }
 
+// ── Hofeinfahrt / Heimpark ────────────────────────────────────────────────────
+function buildHomePark() {
+  const d0x = WP[1].x - WP[0].x, d0z = WP[1].z - WP[0].z;
+  const d0len = Math.hypot(d0x, d0z) || 1;
+  const nx = -d0z / d0len, nz = d0x / d0len;  // Perpendicular (links der Fahrtrichtung)
+  HOME_CX = WP[0].x + nx * 13;
+  HOME_CZ = WP[0].z + nz * 13;
+
+  // Asphalt-Fläche
+  const lot = new THREE.Mesh(
+    new THREE.PlaneGeometry(18, 10),
+    new THREE.MeshLambertMaterial({ color: 0x383838 })
+  );
+  lot.rotation.x = -Math.PI / 2;
+  lot.position.set(HOME_CX, 0.02, HOME_CZ);
+  scene.add(lot);
+
+  // Parkmarkierung
+  const lnMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 9), lnMat);
+  ln.rotation.x = -Math.PI / 2;
+  ln.position.set(HOME_CX, 0.03, HOME_CZ);
+  scene.add(ln);
+
+  // Pfosten + Hausnummern-Schild
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.08, 3.2, 8),
+    new THREE.MeshLambertMaterial({ color: 0x886633 })
+  );
+  post.position.set(HOME_CX + nx * 7, 1.6, HOME_CZ + nz * 7);
+  scene.add(post);
+
+  const sc = document.createElement('canvas');
+  sc.width = 256; sc.height = 96;
+  const sctx = sc.getContext('2d');
+  sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, 256, 96);
+  sctx.strokeStyle = '#222'; sctx.lineWidth = 3; sctx.strokeRect(2, 2, 252, 92);
+  sctx.fillStyle = '#1a1a1a';
+  sctx.font = 'bold 18px Arial, sans-serif';
+  sctx.textAlign = 'center'; sctx.textBaseline = 'middle';
+  sctx.fillText('Altbaumburgweg 2', 128, 48);
+  const stex = new THREE.CanvasTexture(sc);
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(3.8, 1.5, 0.1),
+    new THREE.MeshBasicMaterial({ map: stex, side: THREE.DoubleSide })
+  );
+  sign.position.set(HOME_CX + nx * 7, 3.8, HOME_CZ + nz * 7);
+  scene.add(sign);
+}
+
+function checkHomePark() {
+  if (!_homeJourneyDone || _homeParkShown) return;
+  const d = Math.hypot(car.x - HOME_CX, car.z - HOME_CZ);
+  if (d > 45) { _homeParkShown = false; return; }
+  if (d < 20 && Math.abs(car.speed) < 0.9) {
+    if (!_homeParkTimer) _homeParkTimer = setTimeout(() => {
+      _homeParkTimer = null;
+      if (Math.hypot(car.x - HOME_CX, car.z - HOME_CZ) < 20)
+        document.getElementById('home-popup').style.display = 'flex';
+    }, 1400);
+  } else if (d >= 20 || Math.abs(car.speed) >= 0.9) {
+    if (_homeParkTimer) { clearTimeout(_homeParkTimer); _homeParkTimer = null; }
+  }
+}
+
+function showLegendPopup() {
+  const score = FB.score[0] + ' : ' + FB.score[1];
+  const winner = FB.score[0] > FB.score[1] ? 'CF Köln' :
+                 FB.score[1] > FB.score[0] ? 'Bavaria München' : 'Unentschieden';
+  const rcKoeln = FB.redCards?.[0] || 0, rcBayern = FB.redCards?.[1] || 0;
+
+  document.getElementById('legend-text').innerHTML =
+    `Du bist heute von hier aufgebrochen — 8,7 Kilometer mitten durch Köln,\n` +
+    `vorbei an Altbauten, Lindenalleen und dem quirligen Stadtleben.\n\n` +
+    `Am RheinEnergie Stadion angekommen, bist du aufs Spielfeld getreten: ` +
+    `als Schiedsrichter beim Pokalfinale zwischen CF Köln und Bavaria München. ` +
+    `Du hattest das letzte Wort bei jedem Elfmeter, jeder Roten Karte.\n\n` +
+    `Dann die stille Heimfahrt — dieselbe Strecke, aber irgendwie weiter. ` +
+    `Die Straßen Kölns ein letztes Mal unter den Rädern.`
+      .split('\n').join('<br>');
+
+  document.getElementById('legend-stats').innerHTML =
+    `⚽ Endergebnis: <b>${score}</b> &nbsp;·&nbsp; Sieger: <b>${winner}</b><br>` +
+    (rcKoeln || rcBayern
+      ? `🟥 Rote Karten: Köln ×${rcKoeln} &nbsp; Bayern ×${rcBayern}`
+      : `🏆 Kein Spieler vom Platz gestellt`);
+
+  document.getElementById('legend-popup').style.display = 'flex';
+}
+
+function setupHomePark() {
+  buildHomePark();
+  document.getElementById('hp-yes').addEventListener('click', () => {
+    document.getElementById('home-popup').style.display = 'none';
+    _homeParkShown = true;
+    showLegendPopup();
+  });
+  document.getElementById('hp-no').addEventListener('click', () => {
+    document.getElementById('home-popup').style.display = 'none';
+    _homeParkShown = true;
+  });
+  document.getElementById('legend-close').addEventListener('click', () => {
+    document.getElementById('legend-popup').style.display = 'none';
+  });
+}
+
 function checkParking() {
   if (footballActive) return;
   const d = Math.hypot(car.x - PARK_CX, car.z - PARK_CZ);
@@ -2370,11 +2530,100 @@ function initFBPlayers() {
     [0.42, 0.16],[0.42, 0.38],[0.42, 0.62],[0.42, 0.84],  // MIT
     [0.62, 0.34],[0.62, 0.66],                             // STU
   ];
+  const nums = [1, 5, 4, 3, 2, 6, 8, 11, 7, 9, 10];
   positions.forEach(([nx, ny], i) => {
     const role = i===0 ? 'gk' : i<5 ? 'def' : i<9 ? 'mid' : 'fwd';
-    FB.players.push({ x:nx*FB_VW, y:ny*FB_VH, hx:nx*FB_VW, hy:ny*FB_VH, team:0, role, ph:Math.random()*6.28 });
-    FB.players.push({ x:(1-nx)*FB_VW, y:ny*FB_VH, hx:(1-nx)*FB_VW, hy:ny*FB_VH, team:1, role, ph:Math.random()*6.28 });
+    const num = nums[i];
+    FB.players.push({ x:nx*FB_VW, y:ny*FB_VH, hx:nx*FB_VW, hy:ny*FB_VH, team:0, role, num, ph:Math.random()*6.28 });
+    FB.players.push({ x:(1-nx)*FB_VW, y:ny*FB_VH, hx:(1-nx)*FB_VW, hy:ny*FB_VH, team:1, role, num, ph:Math.random()*6.28 });
   });
+}
+
+// ── Stadion-Audio (Web Audio API) ────────────────────────────────────────────
+let _fbAudioCtx = null, _crowdGain = null, _crowdSrc = null;
+
+function _fbAudio() {
+  if (!_fbAudioCtx) _fbAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _fbAudioCtx;
+}
+
+function _startCrowd() {
+  const ctx = _fbAudio();
+  // Crowd-Rauschen: gefärbtes Noise mit langsamer Modulation
+  const bufLen = ctx.sampleRate * 3;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  let v = 0;
+  for (let i = 0; i < bufLen; i++) {
+    v = v * 0.992 + (Math.random() * 2 - 1) * 0.008;
+    data[i] = v + (Math.random() - 0.5) * 0.04;
+  }
+  _crowdSrc = ctx.createBufferSource();
+  _crowdSrc.buffer = buf; _crowdSrc.loop = true;
+
+  // Bandpass um 600 Hz – typisches Stadion-Rauschen
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 620; bp.Q.value = 0.4;
+
+  // Langsame Lautstärke-Modulation (Wellen)
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 0.07;
+  const lfoGain = ctx.createGain(); lfoGain.gain.value = 0.18;
+  lfo.connect(lfoGain);
+
+  _crowdGain = ctx.createGain(); _crowdGain.gain.value = 0.28;
+  lfoGain.connect(_crowdGain.gain);
+  _crowdSrc.connect(bp); bp.connect(_crowdGain); _crowdGain.connect(ctx.destination);
+  _crowdSrc.start(); lfo.start();
+}
+
+function _stopCrowd() {
+  try { _crowdSrc && _crowdSrc.stop(); } catch(e) {}
+  _crowdSrc = null;
+}
+
+function _playCheer(loud) {
+  const ctx = _fbAudio();
+  const bufLen = ctx.sampleRate * (loud ? 3.5 : 1.8);
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) {
+    const env = i < bufLen*0.12
+      ? i / (bufLen*0.12)
+      : Math.max(0, 1 - (i - bufLen*0.12) / (bufLen*0.88));
+    data[i] = (Math.random() * 2 - 1) * env * 0.7;
+  }
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = loud ? 800 : 600; bp.Q.value = 0.3;
+  const g = ctx.createGain(); g.gain.value = loud ? 1.1 : 0.55;
+  src.connect(bp); bp.connect(g); g.connect(ctx.destination);
+  src.start();
+  if (_crowdGain) {
+    _crowdGain.gain.cancelScheduledValues(ctx.currentTime);
+    _crowdGain.gain.setValueAtTime(_crowdGain.gain.value, ctx.currentTime);
+    _crowdGain.gain.linearRampToValueAtTime(loud ? 0.9 : 0.55, ctx.currentTime + 0.2);
+    _crowdGain.gain.linearRampToValueAtTime(0.28, ctx.currentTime + (loud ? 3.5 : 2.0));
+  }
+}
+
+function _playWhistle(long) {
+  const ctx = _fbAudio();
+  const dur = long ? 1.1 : 0.38;
+  const osc = ctx.createOscillator(); osc.frequency.value = long ? 2600 : 2400;
+  osc.type = 'square';
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.25, ctx.currentTime);
+  g.gain.linearRampToValueAtTime(0, ctx.currentTime + dur);
+  osc.connect(g); g.connect(ctx.destination);
+  osc.start(); osc.stop(ctx.currentTime + dur);
+  if (long) {
+    setTimeout(() => {
+      const o2 = ctx.createOscillator(); o2.frequency.value = 2500; o2.type='square';
+      const g2 = ctx.createGain(); g2.gain.setValueAtTime(0.22, ctx.currentTime);
+      g2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.9);
+      o2.connect(g2); g2.connect(ctx.destination); o2.start(); o2.stop(ctx.currentTime + 0.9);
+    }, 450);
+  }
 }
 
 function startFootballMatch() {
@@ -2412,6 +2661,8 @@ function startFootballMatch() {
   document.getElementById('fb-time').textContent   = "0'";
   document.getElementById('fb-result').style.display = 'none';
   document.getElementById('fb-banner').style.display = 'none';
+  _stopCrowd();
+  setTimeout(() => { _playWhistle(false); setTimeout(_startCrowd, 400); }, 300);
 }
 
 function showFBBanner(text, color) {
@@ -2421,6 +2672,12 @@ function showFBBanner(text, color) {
   b.style.display = 'block';
   clearTimeout(b._t);
   b._t = setTimeout(() => { b.style.display = 'none'; }, 2000);
+  // Sound je nach Banner-Typ
+  if (text.includes('TOR'))     _playCheer(true);
+  else if (text.includes('Halbzeit')) { _playWhistle(false); setTimeout(() => _playWhistle(false), 600); }
+  else if (text.includes('ELFMETER')) _playWhistle(false);
+  else if (text.includes('KARTE'))    _playWhistle(false);
+  else if (text.includes('verschossen')) _playCheer(false);
 }
 
 function updateFootball(dt) {
@@ -2502,29 +2759,90 @@ function updateFootball(dt) {
     if (d < nearDist) { nearDist = d; nearIdx = i; }
   });
 
+  // Welches Team hat den Ball? Für taktische Entscheidungen
+  const ballTeam = FB.players[nearIdx] ? FB.players[nearIdx].team : -1;
+
   const t = FB.gameTime;
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
-    const hasBall = i === nearIdx && nearDist < 16;
-    const jx = Math.sin(t*0.45+p.ph)*20, jy = Math.cos(t*0.6+p.ph*1.3)*14;
-    let tx, ty;
+    const hasBall  = (i === nearIdx && nearDist < 16);
+    const ownAtk   = (ballTeam === p.team);           // eigenes Team am Ball
+    const losing   = FB.score[p.team] < FB.score[1 - p.team] - 1; // 2+ Tore hinten
+    const oppGoalX = p.team === 0 ? FB_VW - bM : bM; // gegnerisches Tor
+    const ownGoalX = p.team === 0 ? bM : FB_VW - bM; // eigenes Tor
+    const jx = Math.sin(t*0.45+p.ph)*18, jy = Math.cos(t*0.6+p.ph*1.3)*13;
+    let tx, ty, spd;
+
     if (p.role === 'gk') {
-      tx = p.hx;
-      ty = p.hy + (FB.ball.y - p.hy) * 0.4;
-      ty = Math.max(p.hy-38, Math.min(p.hy+38, ty));
+      // TW: nah am Tor, vertikal dem Ball folgen
+      tx = p.hx + (ownAtk ? 8 : 0);
+      ty = p.hy + (FB.ball.y - p.hy) * 0.38;
+      ty = Math.max(p.hy - 42, Math.min(p.hy + 42, ty));
+      spd = 3.0;
+
     } else if (hasBall) {
-      const gx = p.team===0 ? FB_VW-bM-8 : bM+8;
-      const gy = FB_VH/2 + (Math.random()-.5)*FB_VH*0.35;
-      const ang = Math.atan2(gy-FB.ball.y, gx-FB.ball.x);
-      FB.ball.vx = Math.cos(ang+(Math.random()-.5)*0.55) * (140+Math.random()*80);
-      FB.ball.vy = Math.sin(ang+(Math.random()-.5)*0.55) * (140+Math.random()*80);
-      tx = p.hx+jx*0.5; ty = p.hy+jy*0.5;
-    } else {
-      const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
-      tx = d < 95 ? FB.ball.x+jx*0.35 : p.hx+jx;
-      ty = d < 95 ? FB.ball.y+jy*0.35 : p.hy+jy;
+      // Spieler mit Ball: auf Tor schießen, taktische Richtung
+      const gx = oppGoalX + (p.team===0 ? -10 : 10);
+      const gy = FB_VH/2 + (Math.random()-.5)*FB_VH*0.4;
+      const ang = Math.atan2(gy - FB.ball.y, gx - FB.ball.x);
+      const pwr = 130 + Math.random()*90 + (p.role==='fwd' ? 30 : 0);
+      FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.5) * pwr;
+      FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.5) * pwr;
+      tx = p.hx + jx*0.4; ty = p.hy + jy*0.4;
+      spd = 4.5;
+
+    } else if (p.role === 'fwd') {
+      if (ownAtk) {
+        // Stürmer: Laufweg Richtung Tor, diagonal starten
+        const runX = oppGoalX + (p.team===0 ? -(20 + Math.abs(jx)) : 20 + Math.abs(jx));
+        tx = runX; ty = p.hy + jy * 1.2;
+      } else if (losing) {
+        // Pressing bei Rückstand
+        tx = FB.ball.x + jx*0.25; ty = FB.ball.y + jy*0.25;
+      } else {
+        // Hohes Angriffsdrittel halten
+        const advX = oppGoalX + (p.team===0 ? -60 : 60);
+        tx = advX + jx; ty = p.hy + jy;
+      }
+      spd = 5.6;
+
+    } else if (p.role === 'mid') {
+      if (ownAtk) {
+        // Mittelfeld schiebt nach vorne, unterstützt Angriff
+        const advX = p.hx + (p.team===0 ? 45 : -45);
+        const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
+        tx = d < 120 ? FB.ball.x + jx*0.3 : advX + jx;
+        ty = d < 120 ? FB.ball.y + jy*0.3 : p.hy + jy;
+      } else {
+        // Defensiv einrücken, Passwege sperren
+        const defX = p.hx + (p.team===0 ? -20 : 20);
+        const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
+        tx = d < 95 ? FB.ball.x + jx*0.28 : defX + jx;
+        ty = d < 95 ? FB.ball.y + jy*0.28 : p.hy + jy;
+      }
+      spd = 5.2;
+
+    } else { // def
+      if (ownAtk) {
+        // Abwehr schiebt leicht vor, hält Linie
+        const advX = p.hx + (p.team===0 ? 18 : -18);
+        tx = advX + jx*0.5; ty = p.hy + jy*0.5;
+      } else {
+        // Ball Richtung eigenem Tor: zurück + Ball orientieren
+        const threat = p.team===0 ? FB.ball.x < p.hx+50 : FB.ball.x > p.hx-50;
+        if (threat) {
+          tx = p.hx + (FB.ball.x-p.hx)*0.22 + jx*0.25;
+          ty = p.hy + (FB.ball.y-p.hy)*0.48 + jy*0.25;
+          tx = p.team===0
+            ? Math.max(ownGoalX+10, Math.min(tx, p.hx+55))
+            : Math.min(ownGoalX-10, Math.max(tx, p.hx-55));
+        } else {
+          tx = p.hx + jx*0.45; ty = p.hy + jy*0.45;
+        }
+      }
+      spd = 4.6;
     }
-    const spd = p.role==='gk' ? 2.8 : 4.8;
+
     p.x += (tx-p.x) * spd * dt;
     p.y += (ty-p.y) * spd * dt;
   });
@@ -2590,7 +2908,7 @@ function drawFootball() {
   // ── Spieler ──
   FB.players.forEach(p => {
     if (p.redCard) return;
-    const r = p.role==='gk' ? 9 : 7;
+    const r = p.role==='gk' ? 11 : 9;
     const col = p.team===0
       ? (p.role==='gk' ? '#ff9900' : '#e5001e')
       : (p.role==='gk' ? '#88ccff' : '#0055cc');
@@ -2598,9 +2916,11 @@ function drawFootball() {
     ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5;
     ctx.stroke();
-    // Trikotnummer als Punkt-Highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.beginPath(); ctx.arc(p.x-r*0.22, p.y-r*0.22, r*0.32, 0, Math.PI*2); ctx.fill();
+    // Trikotnummer
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(r * 1.05)}px Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.num, p.x, p.y + 0.5);
   });
 
   // ── Ball ──
@@ -2656,11 +2976,21 @@ function showFootballResult() {
     sc.style.color = '#fff'; win.textContent = '🤝 Unentschieden!';
   }
   document.getElementById('fb-result').style.display = 'flex';
+  // Abpfiff: 3 Pfiffe + auslaufende Crowd
+  _playWhistle(true);
+  setTimeout(() => _playWhistle(false), 900);
+  setTimeout(() => _playWhistle(false), 1500);
+  if (_crowdGain) {
+    const ctx = _fbAudio();
+    _crowdGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 6);
+    setTimeout(_stopCrowd, 6500);
+  }
 }
 
 function returnFromFootball() {
   footballActive = false;
   FB.penalty = null;
+  _stopCrowd();
   document.getElementById('football-screen').style.display = 'none';
   car.x = WP[WP.length-1].x;
   car.z = WP[WP.length-1].z;
@@ -2702,6 +3032,7 @@ function loop(now) {
   const elapsed = clock.getElapsedTime();
   updateCar(dt);
   checkParking();
+  checkHomePark();
   updateNPCs(dt);
   updatePedestrians(dt);
   updateCamera();
@@ -2768,6 +3099,7 @@ initNPCs();
 buildZebraAndStopLines();
 buildPedestrians();
 setupParkingAndFootball();
+setupHomePark();
 document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
