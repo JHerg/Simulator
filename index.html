@@ -1676,10 +1676,10 @@ function distToSeg(px, pz, ax, az, bx, bz) {
   return Math.hypot(px-(ax+t*dx), pz-(az+t*dz));
 }
 
-// Prüft ob Gebäude-Mittelpunkt in der Fahrbahntrasse liegt
+// Prüft ob Punkt in der Fahrbahntrasse liegt
 function onRouteCorridor(cx, cz) {
   for (let i = 0; i < WP.length-1; i++) {
-    const hw = (WP[i].width || 8) / 2 + 5;   // halbe Fahrbahnbreite + 5 m Puffer
+    const hw = (WP[i].width || 8) / 2 + 7;   // halbe Fahrbahnbreite + 7 m Puffer
     if (distToSeg(cx, cz, WP[i].x, WP[i].z, WP[i+1].x, WP[i+1].z) < hw)
       return true;
   }
@@ -1784,7 +1784,9 @@ function buildOSMBuildings(elements, nodes) {
     const cx = pts.reduce((s,p) => s+p[0], 0) / pts.length;
     const cz = pts.reduce((s,p) => s+p[1], 0) / pts.length;
     if (!nearRoute(cx, cz, 72)) return;
-    if (onRouteCorridor(cx, cz)) return;   // Gebäude liegt auf der Fahrbahn → überspringen
+    // Centroid UND alle Eckpunkte prüfen – verhindert Gebäude die in die Fahrbahn ragen
+    if (onRouteCorridor(cx, cz)) return;
+    if (pts.some(([px, pz]) => onRouteCorridor(px, pz))) return;
 
     // Fläche (Shoelace)
     let area2 = 0;
