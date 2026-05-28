@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
   <title>Köln Fahrsimulator</title>
-  <!-- Three.js wird per async/await geladen – korrekte Reihenfolge garantiert -->
+  <!-- Three.js wird per ES-Modul (importmap) geladen -->
   <style>
     #boot-screen{
       position:fixed;inset:0;z-index:9999;
@@ -282,20 +282,32 @@
 </div>
 
 <script>
-// ════════════════════════════════════════════════════════════════════════════
-//  KÖLN FAHRSIMULATOR v2 – Async Boot-Loader
-// ════════════════════════════════════════════════════════════════════════════
-
-// Three.js dynamisch laden (async/await – korrekte Reihenfolge garantiert)
-function loadScript(url) {
-  return new Promise(function(resolve, reject) {
-    var s = document.createElement('script');
-    s.src = url;
-    s.onload  = resolve;
-    s.onerror = function() { reject(new Error('Konnte nicht laden: ' + url)); };
-    document.head.appendChild(s);
-  });
+// Fallback: Fehlermeldung nach 15s wenn ES-Module nicht laden
+window._loadTimer = setTimeout(function() {
+  var e = document.getElementById('boot-err');
+  if (e && document.getElementById('boot-screen').style.display !== 'none') {
+    e.style.display = 'block';
+    e.innerHTML = '<strong>❌ 3D-Engine konnte nicht geladen werden</strong><br>' +
+      'Bitte Seite neu laden oder einen anderen Browser (Chrome/Firefox/Safari 16+) verwenden.';
+  }
+}, 15000);
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+  }
 }
+</script>
+<script type="module">
+// ════════════════════════════════════════════════════════════════════════════
+//  KÖLN FAHRSIMULATOR v2 – ES-Modul Bootstrap
+// ════════════════════════════════════════════════════════════════════════════
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 function bootMsg(text, pct) {
   document.getElementById('boot-msg').textContent = text;
@@ -314,29 +326,7 @@ function bootError(text) {
 }
 
 async function boot() {
-  const CDNs = [
-    'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js',
-    'https://unpkg.com/three@0.158.0/build/three.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.158.0/three.min.js',
-  ];
-
-  let loaded = false;
-  for (let i = 0; i < CDNs.length; i++) {
-    const cdn = CDNs[i];
-    bootMsg('Lade Three.js (' + cdn.split('/')[2] + ')…', 20 + i * 25);
-    try {
-      await loadScript(cdn);
-      if (typeof THREE !== 'undefined') { loaded = true; break; }
-    } catch(e) {
-      console.warn('CDN fehlgeschlagen:', cdn);
-    }
-  }
-
-  if (!loaded) {
-    bootError('Three.js konnte von keinem CDN geladen werden.');
-    return;
-  }
-
+  clearTimeout(window._loadTimer);  // ES-Module erfolgreich geladen
   bootMsg('Bereit…', 95);
   await new Promise(r => setTimeout(r, 40));
 
@@ -511,6 +501,7 @@ renderer.shadowMap.enabled = !isMobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
+let composer = null;  // EffectComposer für Bloom (initialisiert in setupBloom())
 
 // ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
@@ -567,7 +558,10 @@ function roadGeo(ax, az, bx, bz, width, y) {
 
 // ── Hauptroute aufbauen ───────────────────────────────────────────────────────
 (function buildRoute() {
-  const asphalt   = new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
+  // Nasse Straße: MeshStandardMaterial mit Metallness/Roughness → Spiegelung
+  const asphalt = cfg.weather === 'rain'
+    ? new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.22, metalness: 0.28 })
+    : new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
   const sidewalk  = new THREE.MeshLambertMaterial({ color: 0xb8a898 });
   const dashMat   = new THREE.MeshBasicMaterial({ color: 0xeeeecc });
 
@@ -704,6 +698,39 @@ const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
   }
 })();
 
+// ── Zebrastreifen + Haltelinien an Ampelkreuzungen ────────────────────────────
+function buildZebraAndStopLines() {
+  const zebMat  = new THREE.MeshBasicMaterial({ color: 0xddddd0 });
+  const stopMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  WP.forEach((wp, i) => {
+    if (!wp.tl || i === 0 || i >= WP.length - 1) return;
+    const prev = WP[i - 1];
+    const dx = wp.x - prev.x, dz = wp.z - prev.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1) return;
+    const ux = dx / len, uz = dz / len;   // Fahrtrichtung (Einheitsvektor)
+    const nx = -uz, nz = ux;              // Senkrecht zur Fahrtrichtung
+    const hw = (wp.width || 8) * 0.48;   // halbe Fahrbahnbreite
+
+    // 5 Zebrastreifen, zentriert 5 m vor dem Wegpunkt
+    for (let s = 0; s < 5; s++) {
+      const t = (s - 2) * 1.1;            // -2.2 … +2.2 m relativ zur Mitte
+      const cx = wp.x - ux * 5 + ux * t;
+      const cz = wp.z - uz * 5 + uz * t;
+      scene.add(new THREE.Mesh(
+        roadGeo(cx - nx * hw, cz - nz * hw, cx + nx * hw, cz + nz * hw, 0.52, 0.03),
+        zebMat
+      ));
+    }
+    // Haltelinie 9 m vor Ampel
+    const slx = wp.x - ux * 9, slz = wp.z - uz * 9;
+    scene.add(new THREE.Mesh(
+      roadGeo(slx - nx * hw, slz - nz * hw, slx + nx * hw, slz + nz * hw, 0.28, 0.03),
+      stopMat
+    ));
+  });
+}
+
 // ── Ampeln ────────────────────────────────────────────────────────────────────
 const trafficLights = [];
 
@@ -829,7 +856,7 @@ function updateTrafficLights(t) {
 const NPC_COLORS = [0xcc3322,0x228833,0xddcc11,0xffffff,0x2255cc,0xdd7722,0x882288];
 const npcs = [];
 
-function createNPC(wpStart, color) {
+function createNPC(wpStart, color, reverse) {
   const g   = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ color });
   const blk = new THREE.MeshLambertMaterial({ color: 0x111111 });
@@ -855,42 +882,139 @@ function createNPC(wpStart, color) {
 
   scene.add(g);
   const wp = WP[wpStart];
-  const wpN = WP[Math.min(wpStart+1, WP.length-1)];
-  return {
-    mesh: g,
-    x: wp.x, z: wp.z,
-    heading: Math.atan2(wpN.x - wp.x, wpN.z - wp.z),
-    speed: 7.5 + Math.random() * 4,  // 27–42 km/h
-    wpIdx: wpStart + 1,
-  };
+  if (reverse) {
+    const wpN = WP[Math.max(wpStart - 1, 0)];
+    return { mesh: g, x: wp.x, z: wp.z,
+             heading: Math.atan2(wpN.x - wp.x, wpN.z - wp.z),
+             speed: 7.5 + Math.random() * 4, wpIdx: wpStart - 1, reverse: true };
+  }
+  const wpN = WP[Math.min(wpStart + 1, WP.length - 1)];
+  return { mesh: g, x: wp.x, z: wp.z,
+           heading: Math.atan2(wpN.x - wp.x, wpN.z - wp.z),
+           speed: 7.5 + Math.random() * 4, wpIdx: wpStart + 1 };
 }
 
 function initNPCs() {
+  // Gleichlaufende NPCs (vorwärts)
   const step = Math.floor(WP.length / 8);
   for (let i = 0; i < 7; i++) {
     const idx = Math.min(1 + step * (i + 1), WP.length - 3);
     npcs.push(createNPC(idx, NPC_COLORS[i % NPC_COLORS.length]));
   }
+  // Gegenverkehr: 4 NPCs fahren die Route rückwärts
+  const rstep = Math.floor(WP.length / 5);
+  for (let i = 0; i < 4; i++) {
+    const idx = Math.max(WP.length - 2 - rstep * i, 1);
+    npcs.push(createNPC(idx, NPC_COLORS[(i + 2) % NPC_COLORS.length], true));
+  }
 }
 
 function updateNPCs(dt) {
   npcs.forEach(npc => {
-    if (npc.wpIdx >= WP.length) {
-      npc.wpIdx = 1; npc.x = WP[0].x; npc.z = WP[0].z;
-      npc.heading = Math.atan2(WP[1].x-WP[0].x, WP[1].z-WP[0].z);
-      return;
+    if (npc.reverse) {
+      // Gegenverkehr: rückwärts durch die WP-Kette
+      if (npc.wpIdx < 0) {
+        npc.wpIdx = WP.length - 2;
+        npc.x = WP[WP.length - 1].x; npc.z = WP[WP.length - 1].z;
+        npc.heading = Math.atan2(WP[WP.length-2].x - WP[WP.length-1].x,
+                                  WP[WP.length-2].z - WP[WP.length-1].z);
+        return;
+      }
+      const tgt = WP[npc.wpIdx];
+      const dx = tgt.x - npc.x, dz = tgt.z - npc.z;
+      if (Math.hypot(dx, dz) < 18) { npc.wpIdx--; return; }
+      let diff = Math.atan2(dx, dz) - npc.heading;
+      diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      npc.heading += diff * Math.min(1, 2.8 * dt);
+      npc.x += Math.sin(npc.heading) * npc.speed * dt;
+      npc.z += Math.cos(npc.heading) * npc.speed * dt;
+      npc.mesh.position.set(npc.x, 0, npc.z);
+      npc.mesh.rotation.y = npc.heading + Math.PI;
+    } else {
+      // Normaler NPC: vorwärts
+      if (npc.wpIdx >= WP.length) {
+        npc.wpIdx = 1; npc.x = WP[0].x; npc.z = WP[0].z;
+        npc.heading = Math.atan2(WP[1].x-WP[0].x, WP[1].z-WP[0].z);
+        return;
+      }
+      const tgt = WP[npc.wpIdx];
+      const dx = tgt.x - npc.x, dz = tgt.z - npc.z;
+      if (Math.hypot(dx, dz) < 18) { npc.wpIdx++; return; }
+      let diff = Math.atan2(dx, dz) - npc.heading;
+      diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      npc.heading += diff * Math.min(1, 2.8 * dt);
+      npc.x += Math.sin(npc.heading) * npc.speed * dt;
+      npc.z += Math.cos(npc.heading) * npc.speed * dt;
+      npc.mesh.position.set(npc.x, 0, npc.z);
+      npc.mesh.rotation.y = npc.heading + Math.PI;
     }
-    const tgt = WP[npc.wpIdx];
-    const dx = tgt.x - npc.x, dz = tgt.z - npc.z;
-    if (Math.hypot(dx, dz) < 18) { npc.wpIdx++; return; }
-    // Sanftes Nachlenken
-    let diff = Math.atan2(dx, dz) - npc.heading;
-    diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    npc.heading += diff * Math.min(1, 2.8 * dt);
-    npc.x += Math.sin(npc.heading) * npc.speed * dt;
-    npc.z += Math.cos(npc.heading) * npc.speed * dt;
-    npc.mesh.position.set(npc.x, 0, npc.z);
-    npc.mesh.rotation.y = npc.heading + Math.PI;
+  });
+}
+
+// ── Fußgänger auf Gehwegen ────────────────────────────────────────────────────
+const pedestrians = [];
+
+function buildPedestrians() {
+  const SKIN  = [0xffcc99, 0xdaa57a, 0x8d5524, 0xf1c27d];
+  const CLOTH = [0x334488, 0x884433, 0x338844, 0xaa8833, 0x444444, 0x884488];
+  const rng = (() => {
+    let s = 7654321;
+    return () => { s = (s * 1664525 + 1013904223) & 0x7fffffff; return s / 0x7fffffff; };
+  })();
+
+  for (let i = 0; i < WP.length - 1; i++) {
+    const A = WP[i], B = WP[i + 1];
+    const dx = B.x - A.x, dz = B.z - A.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 12) continue;
+    const nx = -dz / len, nz = dx / len;
+    const rw = A.width || 8;
+    const swOff = rw / 2 + 1.4;   // Mitte des Gehwegs
+
+    const count = Math.max(1, Math.floor(len / 75));
+    for (let k = 0; k < count; k++) {
+      const side = rng() > 0.5 ? 1 : -1;
+      const t0   = (k + 0.3 + rng() * 0.4) / count;
+
+      const g    = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.16, 0.95, 6),
+        new THREE.MeshLambertMaterial({ color: CLOTH[Math.floor(rng() * CLOTH.length)] })
+      );
+      body.position.y = 0.62; g.add(body);
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 6, 6),
+        new THREE.MeshLambertMaterial({ color: SKIN[Math.floor(rng() * SKIN.length)] })
+      );
+      head.position.y = 1.35; g.add(head);
+
+      const ax = A.x + nx * side * swOff, az = A.z + nz * side * swOff;
+      const bx = B.x + nx * side * swOff, bz = B.z + nz * side * swOff;
+      g.position.set(ax + (bx - ax) * t0, 0, az + (bz - az) * t0);
+      scene.add(g);
+
+      pedestrians.push({
+        mesh: g, ax, az, bx, bz, t: t0,
+        dir: rng() > 0.5 ? 1 : -1,
+        speed: 0.85 + rng() * 0.65,
+        segLen: len,
+      });
+    }
+  }
+}
+
+function updatePedestrians(dt) {
+  pedestrians.forEach(p => {
+    p.t += p.dir * p.speed * dt / p.segLen;
+    if (p.t >= 1) { p.t = 1; p.dir = -1; }
+    if (p.t <= 0) { p.t = 0; p.dir =  1; }
+    const px = p.ax + (p.bx - p.ax) * p.t;
+    const pz = p.az + (p.bz - p.az) * p.t;
+    p.mesh.position.set(px, 0, pz);
+    const fwd = p.dir > 0
+      ? Math.atan2(p.bx - p.ax, p.bz - p.az)
+      : Math.atan2(p.ax - p.bx, p.az - p.bz);
+    p.mesh.rotation.y = fwd;
   });
 }
 
@@ -1762,6 +1886,7 @@ window.addEventListener('resize', () => {
   cam.aspect = innerWidth / innerHeight;
   cam.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  if (composer) composer.setSize(innerWidth, innerHeight);
 });
 
 // ── Animation Loop ────────────────────────────────────────────────────────────
@@ -1776,6 +1901,7 @@ function loop(now) {
 
   updateCar(dt);
   updateNPCs(dt);
+  updatePedestrians(dt);
   updateCamera();
   updateHeadlights();
   if (nightLightPool.length) updateNightLights();
@@ -1790,7 +1916,24 @@ function loop(now) {
 
   document.getElementById('spd').textContent =
     (car.speed < -0.2 ? '↩ ' : '') + Math.round(Math.abs(car.speed) * 3.6);
-  renderer.render(scene, cam);
+  if (composer) composer.render();
+  else renderer.render(scene, cam);
+}
+
+// ── Bloom / Post-Processing ───────────────────────────────────────────────────
+function setupBloom() {
+  if (isMobile) return;   // Performance: kein Bloom auf Mobilgeräten
+  const isNight = cfg.time    === 'night';
+  const isRain  = cfg.weather === 'rain';
+  // Nur bei Nacht oder Regen aktivieren (tagsüber klarer Himmel braucht kein Bloom)
+  const strength = isNight && isRain ? 1.4 : isNight ? 1.15 : isRain ? 0.3 : 0;
+  if (strength === 0) return;
+  const threshold = isNight ? 0.80 : 0.90;
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, cam));
+  composer.addPass(new UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight), strength, 0.4, threshold
+  ));
 }
 
 // ── Konfiguration anwenden ────────────────────────────────────────────────────
@@ -1815,10 +1958,13 @@ function loop(now) {
   if (isNight) { applyNightMode(); buildStreetLamps(); }
   if (isNight || isRain) initHeadlights();
   if (isRain)  { rainData = buildRain(); wiperPivot.visible = true; }
+  setupBloom();
 })();
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 initNPCs();
+buildZebraAndStopLines();
+buildPedestrians();
 document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
