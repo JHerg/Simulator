@@ -265,7 +265,7 @@
     }
     #fb-header{
       display:flex;align-items:center;justify-content:space-between;
-      background:#0d1a0d;padding:10px 22px;min-height:62px;
+      background:#0d1a0d;padding:6px 18px;min-height:48px;
       border-bottom:2px solid #2a5a2a;flex-shrink:0;
     }
     .fb-team{font-size:16px;font-weight:bold;flex:1;}
@@ -1559,8 +1559,8 @@ function updateNavHUD() {
     const ax = WP[jIdx].x   - WP[jIdx-1].x, az = WP[jIdx].z   - WP[jIdx-1].z;
     const bx = WP[jIdx+1].x - WP[jIdx].x,   bz = WP[jIdx+1].z - WP[jIdx].z;
     const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
-    if      (cross >  0.15) arrow = '↱';
-    else if (cross < -0.15) arrow = '↰';
+    if      (cross >  0.15) arrow = '→';
+    else if (cross < -0.15) arrow = '←';
   }
 
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
@@ -1604,8 +1604,8 @@ function updateNavHUDHome() {
     const ax = WP[jIdx].x - WP[jIdx+1].x, az = WP[jIdx].z - WP[jIdx+1].z;
     const bx = WP[jIdx-1].x - WP[jIdx].x, bz = WP[jIdx-1].z - WP[jIdx].z;
     const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
-    if      (cross >  0.15) arrow = '↱';
-    else if (cross < -0.15) arrow = '↰';
+    if      (cross >  0.15) arrow = '→';
+    else if (cross < -0.15) arrow = '←';
   }
 
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
@@ -2653,7 +2653,7 @@ function startFootballMatch() {
   // Canvas-Größe setzen
   const fbc = document.getElementById('fb-canvas');
   fbc.width  = window.innerWidth;
-  fbc.height = Math.max(160, window.innerHeight - 62);
+  fbc.height = Math.max(160, window.innerHeight - 48);
 
   const fbs = document.getElementById('football-screen');
   fbs.style.display = 'flex';
@@ -2682,7 +2682,10 @@ function showFBBanner(text, color) {
 
 function updateFootball(dt) {
   if (FB.gameTime >= 90) return;
-  const bM = 22;
+  const bM = 14;   // = visual field margin (goal line position)
+  const goalHalf = FB_VH * 0.095;
+  const goalTop  = FB_VH / 2 - goalHalf;
+  const goalBot  = FB_VH / 2 + goalHalf;
 
   // ── Elfmeter-Modus: Spielzeit pausiert, Ball-Physik läuft ──
   if (FB.penalty) {
@@ -2691,7 +2694,7 @@ function updateFootball(dt) {
       if (FB.penalty.phase === 'setup') {
         FB.penalty.phase = 'shoot';
         FB.penalty.t = 1.4;
-        const gx  = FB.penalty.team === 0 ? FB_VW - bM - 4 : bM + 4;
+        const gx  = FB.penalty.team === 0 ? FB_VW - bM - 2 : bM + 2;
         const gy  = FB_VH / 2 + (Math.random() - 0.5) * 70;
         const ang = Math.atan2(gy - FB.ball.y, gx - FB.ball.x);
         FB.ball.vx = Math.cos(ang) * 420;
@@ -2712,11 +2715,19 @@ function updateFootball(dt) {
         }
       }
     }
-    FB.ball.vx *= 0.97; FB.ball.vy *= 0.97;
+    FB.ball.vx *= 0.986; FB.ball.vy *= 0.986;
     FB.ball.x += FB.ball.vx * dt; FB.ball.y += FB.ball.vy * dt;
-    if (FB.ball.x < bM) { FB.ball.x = bM; FB.ball.vx =  Math.abs(FB.ball.vx); }
-    if (FB.ball.x > FB_VW-bM) { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx); }
-    if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy =  Math.abs(FB.ball.vy); }
+    if (FB.ball.x < bM) {
+      if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+        FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.max(FB.ball.x, 2);
+      } else { FB.ball.x = bM; FB.ball.vx = Math.abs(FB.ball.vx) * 0.65; }
+    }
+    if (FB.ball.x > FB_VW-bM) {
+      if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+        FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.min(FB.ball.x, FB_VW-2);
+      } else { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx) * 0.65; }
+    }
+    if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
     if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
     document.getElementById('fb-time').textContent = Math.floor(FB.gameTime) + "' 🟡";
     return;
@@ -2745,102 +2756,92 @@ function updateFootball(dt) {
   document.getElementById('fb-time').textContent = Math.floor(Math.min(FB.gameTime, 90)) + "'";
   if (FB.gameTime >= 90) { showFootballResult(); return; }
 
-  FB.ball.vx *= 0.97; FB.ball.vy *= 0.97;
+  FB.ball.vx *= 0.986; FB.ball.vy *= 0.986;
   FB.ball.x += FB.ball.vx * dt; FB.ball.y += FB.ball.vy * dt;
-  if (FB.ball.x < bM) { FB.ball.x = bM; FB.ball.vx =  Math.abs(FB.ball.vx); }
-  if (FB.ball.x > FB_VW-bM) { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx); }
-  if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy =  Math.abs(FB.ball.vy); }
+  if (FB.ball.x < bM) {
+    if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+      FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.max(FB.ball.x, 2);
+    } else { FB.ball.x = bM; FB.ball.vx = Math.abs(FB.ball.vx) * 0.65; }
+  }
+  if (FB.ball.x > FB_VW-bM) {
+    if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+      FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.min(FB.ball.x, FB_VW-2);
+    } else { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx) * 0.65; }
+  }
+  if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
   if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
 
-  let nearIdx = 0, nearDist = 9999;
+  const near = [{idx:-1, dist:9999}, {idx:-1, dist:9999}];
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
-    const d = Math.hypot(p.x-FB.ball.x, p.y-FB.ball.y);
-    if (d < nearDist) { nearDist = d; nearIdx = i; }
+    const d = Math.hypot(p.x - FB.ball.x, p.y - FB.ball.y);
+    if (d < near[p.team].dist) near[p.team] = {idx: i, dist: d};
   });
-
-  // Welches Team hat den Ball? Für taktische Entscheidungen
-  const ballTeam = FB.players[nearIdx] ? FB.players[nearIdx].team : -1;
+  const nearIdx  = near[0].dist <= near[1].dist ? near[0].idx : near[1].idx;
+  const nearDist = Math.min(near[0].dist, near[1].dist);
+  const ballTeam = near[0].dist <= near[1].dist ? 0 : 1;
+  const pressIdx = near[1 - ballTeam].idx;
 
   const t = FB.gameTime;
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
-    const hasBall  = (i === nearIdx && nearDist < 16);
-    const ownAtk   = (ballTeam === p.team);           // eigenes Team am Ball
-    const losing   = FB.score[p.team] < FB.score[1 - p.team] - 1; // 2+ Tore hinten
-    const oppGoalX = p.team === 0 ? FB_VW - bM : bM; // gegnerisches Tor
-    const ownGoalX = p.team === 0 ? bM : FB_VW - bM; // eigenes Tor
+    const hasBall    = (i === nearIdx && nearDist < 20);
+    const isPressing = (i === pressIdx);
+    const ownAtk     = (ballTeam === p.team);
+    const losing     = FB.score[p.team] < FB.score[1 - p.team] - 1;
+    const oppGoalX   = p.team === 0 ? FB_VW - bM : bM;
+    const ownGoalX   = p.team === 0 ? bM : FB_VW - bM;
     const jx = Math.sin(t*0.45+p.ph)*18, jy = Math.cos(t*0.6+p.ph*1.3)*13;
     let tx, ty, spd;
 
     if (p.role === 'gk') {
-      // TW: nah am Tor, vertikal dem Ball folgen
-      tx = p.hx + (ownAtk ? 8 : 0);
-      ty = p.hy + (FB.ball.y - p.hy) * 0.38;
-      ty = Math.max(p.hy - 42, Math.min(p.hy + 42, ty));
-      spd = 3.0;
+      tx = p.hx + (ownAtk ? 6 : 0);
+      ty = p.hy + (FB.ball.y - p.hy) * 0.4;
+      ty = Math.max(p.hy - 45, Math.min(p.hy + 45, ty));
+      spd = 3.2;
 
     } else if (hasBall) {
-      // Spieler mit Ball: auf Tor schießen, taktische Richtung
-      const gx = oppGoalX + (p.team===0 ? -10 : 10);
-      const gy = FB_VH/2 + (Math.random()-.5)*FB_VH*0.4;
+      const gx = oppGoalX + (p.team===0 ? -8 : 8);
+      const gy = FB_VH/2 + (Math.random()-.5) * FB_VH * 0.28;
       const ang = Math.atan2(gy - FB.ball.y, gx - FB.ball.x);
-      const pwr = 130 + Math.random()*90 + (p.role==='fwd' ? 30 : 0);
-      FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.5) * pwr;
-      FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.5) * pwr;
+      const pwr = 280 + Math.random()*140 + (p.role==='fwd' ? 50 : 0);
+      FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.45) * pwr;
+      FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.45) * pwr;
       tx = p.hx + jx*0.4; ty = p.hy + jy*0.4;
       spd = 4.5;
 
+    } else if (isPressing) {
+      tx = FB.ball.x + jx*0.1; ty = FB.ball.y + jy*0.1;
+      spd = 5.8;
+
     } else if (p.role === 'fwd') {
       if (ownAtk) {
-        // Stürmer: Laufweg Richtung Tor, diagonal starten
-        const runX = oppGoalX + (p.team===0 ? -(20 + Math.abs(jx)) : 20 + Math.abs(jx));
-        tx = runX; ty = p.hy + jy * 1.2;
-      } else if (losing) {
-        // Pressing bei Rückstand
-        tx = FB.ball.x + jx*0.25; ty = FB.ball.y + jy*0.25;
+        const runX = oppGoalX + (p.team===0 ? -(15 + Math.abs(jx)) : 15 + Math.abs(jx));
+        tx = runX; ty = p.hy + jy * 1.1;
       } else {
-        // Hohes Angriffsdrittel halten
-        const advX = oppGoalX + (p.team===0 ? -60 : 60);
+        const advX = oppGoalX + (p.team===0 ? -80 : 80);
         tx = advX + jx; ty = p.hy + jy;
       }
-      spd = 5.6;
+      spd = 5.5;
 
     } else if (p.role === 'mid') {
-      if (ownAtk) {
-        // Mittelfeld schiebt nach vorne, unterstützt Angriff
-        const advX = p.hx + (p.team===0 ? 45 : -45);
-        const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
-        tx = d < 120 ? FB.ball.x + jx*0.3 : advX + jx;
-        ty = d < 120 ? FB.ball.y + jy*0.3 : p.hy + jy;
-      } else {
-        // Defensiv einrücken, Passwege sperren
-        const defX = p.hx + (p.team===0 ? -20 : 20);
-        const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
-        tx = d < 95 ? FB.ball.x + jx*0.28 : defX + jx;
-        ty = d < 95 ? FB.ball.y + jy*0.28 : p.hy + jy;
-      }
-      spd = 5.2;
+      if (ownAtk) { tx = p.hx + (p.team===0 ? 50 : -50) + jx; ty = p.hy + jy; }
+      else { tx = p.hx + (p.team===0 ? -15 : 15) + jx; ty = p.hy + jy; }
+      spd = 5.0;
 
     } else { // def
       if (ownAtk) {
-        // Abwehr schiebt leicht vor, hält Linie
-        const advX = p.hx + (p.team===0 ? 18 : -18);
-        tx = advX + jx*0.5; ty = p.hy + jy*0.5;
+        tx = p.hx + (p.team===0 ? 20 : -20) + jx*0.5; ty = p.hy + jy*0.5;
       } else {
-        // Ball Richtung eigenem Tor: zurück + Ball orientieren
-        const threat = p.team===0 ? FB.ball.x < p.hx+50 : FB.ball.x > p.hx-50;
-        if (threat) {
-          tx = p.hx + (FB.ball.x-p.hx)*0.22 + jx*0.25;
-          ty = p.hy + (FB.ball.y-p.hy)*0.48 + jy*0.25;
-          tx = p.team===0
-            ? Math.max(ownGoalX+10, Math.min(tx, p.hx+55))
-            : Math.min(ownGoalX-10, Math.max(tx, p.hx-55));
-        } else {
-          tx = p.hx + jx*0.45; ty = p.hy + jy*0.45;
-        }
+        const bThreat = p.team===0 ? FB.ball.x < p.hx+60 : FB.ball.x > p.hx-60;
+        if (bThreat) {
+          tx = p.hx + (FB.ball.x-p.hx)*0.18 + jx*0.3;
+          ty = p.hy + (FB.ball.y-p.hy)*0.45 + jy*0.3;
+          tx = p.team===0 ? Math.max(ownGoalX+12, Math.min(tx, p.hx+60))
+                          : Math.min(ownGoalX-12, Math.max(tx, p.hx-60));
+        } else { tx = p.hx + jx*0.5; ty = p.hy + jy*0.5; }
       }
-      spd = 4.6;
+      spd = 4.5;
     }
 
     p.x += (tx-p.x) * spd * dt;
@@ -2863,7 +2864,7 @@ function drawFootball() {
   }
 
   // ── Linien ──
-  const M = 24;
+  const M = 14;
   ctx.strokeStyle = 'rgba(255,255,255,0.88)'; ctx.lineWidth = 2;
   ctx.strokeRect(M, M, FB_VW-2*M, FB_VH-2*M);
   ctx.beginPath(); ctx.moveTo(FB_VW/2, M); ctx.lineTo(FB_VW/2, FB_VH-M); ctx.stroke();
@@ -2895,7 +2896,7 @@ function drawFootball() {
   }
 
   // ── Rote-Karte-Zähler ──
-  const M2 = 24;
+  const M2 = 14;
   [0, 1].forEach(team => {
     if (!FB.redCards[team]) return;
     ctx.font = 'bold 13px Arial, sans-serif';
