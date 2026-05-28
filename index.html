@@ -208,6 +208,67 @@
     @media(pointer:coarse),(max-width:700px){
       #limit-sign{top:272px;right:14px;}
     }
+
+    /* ── Parkplatz-Popup ──────────────────────────────── */
+    #park-popup{
+      position:fixed;inset:0;z-index:8000;display:none;
+      align-items:center;justify-content:center;
+      background:rgba(0,0,0,.78);
+    }
+    .pp-box{
+      background:#1a2632;border:2px solid #4488cc;border-radius:16px;
+      padding:30px 36px;text-align:center;color:#fff;
+      box-shadow:0 6px 36px rgba(0,0,0,.85);max-width:340px;
+    }
+    .pp-title{font-size:21px;font-weight:bold;margin-bottom:10px;}
+    .pp-sub{font-size:13px;color:#99bbdd;margin-bottom:22px;line-height:1.65;}
+    .pp-row{display:flex;gap:14px;justify-content:center;}
+    .pp-btn{padding:11px 24px;border-radius:10px;font-size:15px;font-weight:bold;
+      border:none;cursor:pointer;transition:transform .12s;}
+    .pp-btn:hover{transform:scale(1.06);}
+    #pp-yes{background:#22aa44;color:#fff;}
+    #pp-no{background:#555;color:#ccc;}
+
+    /* ── Fußball-Bildschirm ───────────────────────────────── */
+    #football-screen{
+      position:fixed;inset:0;z-index:8100;display:none;
+      flex-direction:column;background:#1a2a1a;
+    }
+    #fb-header{
+      display:flex;align-items:center;justify-content:space-between;
+      background:#0d1a0d;padding:10px 22px;min-height:62px;
+      border-bottom:2px solid #2a5a2a;flex-shrink:0;
+    }
+    .fb-team{font-size:16px;font-weight:bold;flex:1;}
+    #fb-team-home{color:#ff5555;text-align:left;}
+    #fb-team-away{color:#6699ff;text-align:right;}
+    #fb-scorebox{text-align:center;min-width:110px;}
+    #fb-score{font-size:30px;font-weight:bold;color:#fff;letter-spacing:5px;}
+    #fb-time{display:block;font-size:11px;color:#777;margin-top:2px;}
+    #fb-canvas{flex:1;width:100%;display:block;}
+    #fb-banner{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      font-size:48px;font-weight:bold;color:#fff;
+      text-shadow:0 0 28px #ffee00,0 0 55px #ff8800;
+      display:none;pointer-events:none;z-index:8200;white-space:nowrap;
+    }
+    #fb-result{
+      position:absolute;inset:0;z-index:8300;
+      display:none;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.84);flex-direction:column;gap:18px;
+    }
+    #fb-result-inner{
+      background:#1a2632;border:2px solid #4488cc;border-radius:16px;
+      padding:32px 48px;text-align:center;color:#fff;
+    }
+    #fb-result-abpfiff{font-size:16px;color:#99bbdd;margin-bottom:6px;}
+    #fb-result-score{font-size:52px;font-weight:bold;margin:10px 0;}
+    #fb-result-winner{font-size:15px;color:#aac;margin-top:6px;}
+    #fb-home-btn{
+      padding:13px 34px;border-radius:12px;font-size:16px;font-weight:bold;
+      background:#0044cc;border:2px solid #4488ff;color:#fff;cursor:pointer;
+    }
+    #fb-home-btn:hover{background:#0055ee;}
   </style>
 </head>
 <body>
@@ -270,6 +331,40 @@
 </div>
 <!-- Tempolimit-Schild -->
 <div id="limit-sign"><div id="limit-val">30</div></div>
+
+<!-- Parkplatz-Popup -->
+<div id="park-popup">
+  <div class="pp-box">
+    <div class="pp-title">🏟 RheinEnergie Stadion</div>
+    <div class="pp-sub">Sie stehen auf dem Parkplatz.<br>Möchten Sie aussteigen und<br>zum FC-Spiel gehen?</div>
+    <div class="pp-row">
+      <button id="pp-yes" class="pp-btn">⚽ Ja, zum Spiel!</button>
+      <button id="pp-no"  class="pp-btn">🚗 Nein</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fußball-Bildschirm -->
+<div id="football-screen">
+  <div id="fb-header">
+    <span class="fb-team" id="fb-team-home">⚽ CF Köln</span>
+    <div id="fb-scorebox">
+      <div id="fb-score">0 : 0</div>
+      <span id="fb-time">0'</span>
+    </div>
+    <span class="fb-team" id="fb-team-away">Bavaria München</span>
+  </div>
+  <canvas id="fb-canvas"></canvas>
+  <div id="fb-banner">⚽ TOR!</div>
+  <div id="fb-result">
+    <div id="fb-result-inner">
+      <div id="fb-result-abpfiff">⏱ Abpfiff!</div>
+      <div id="fb-result-score">— : —</div>
+      <div id="fb-result-winner"></div>
+    </div>
+    <button id="fb-home-btn">🚗 Zurück zum Auto fahren</button>
+  </div>
+</div>
 
 <div id="hint">↑W Gas &nbsp; ↓S Bremse<br>←A Links &nbsp; →D Rechts<br>Space Handbremse<br>R Neustart</div>
 
@@ -1883,6 +1978,306 @@ async function loadOSM() {
   }
 }
 
+// ── Parkplatz + Fußball-Minispiel ─────────────────────────────────────────────
+let footballActive = false;
+let _parkTimer = null, _parkShown = false;
+let PARK_CX = 0, PARK_CZ = 0;
+
+// Virtuelle Spielfeld-Koordinaten (immer 700×420, wird auf Canvas skaliert)
+const FB_VW = 700, FB_VH = 420;
+const FB = {
+  score: [0, 0], gameTime: 0, goalEvents: [],
+  players: [], ball: { x: FB_VW/2, y: FB_VH/2, vx: 0, vy: 0 },
+  halfShown: false,
+};
+
+function setupParkingAndFootball() {
+  const end = WP[WP.length - 1];
+  PARK_CX = end.x + 58;
+  PARK_CZ = end.z - 18;
+
+  // ── 3D Parkplatz ──
+  const lotMat  = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+  const lot = new THREE.Mesh(new THREE.PlaneGeometry(52, 34), lotMat);
+  lot.rotation.x = -Math.PI / 2; lot.position.set(PARK_CX, 0.02, PARK_CZ);
+  scene.add(lot);
+  // Parklinien
+  const lnMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  for (let i = -3; i <= 3; i++) {
+    const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 7), lnMat);
+    ln.rotation.x = -Math.PI / 2; ln.position.set(PARK_CX + i * 7, 0.03, PARK_CZ);
+    scene.add(ln);
+  }
+  // Querstreifen
+  const ql = new THREE.Mesh(new THREE.PlaneGeometry(52, 0.18), lnMat);
+  ql.rotation.x = -Math.PI / 2; ql.position.set(PARK_CX, 0.03, PARK_CZ - 3.3);
+  scene.add(ql);
+  // P-Schild
+  const pPost = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.08, 4, 8),
+    new THREE.MeshLambertMaterial({ color: 0x888888 })
+  );
+  pPost.position.set(PARK_CX - 23, 2, PARK_CZ - 15); scene.add(pPost);
+  const pBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 2.0, 0.12),
+    new THREE.MeshBasicMaterial({ color: 0x003399 })
+  );
+  pBoard.position.set(PARK_CX - 23, 4.6, PARK_CZ - 15); scene.add(pBoard);
+
+  // ── Button-Handler ──
+  document.getElementById('pp-yes').addEventListener('click', () => {
+    document.getElementById('park-popup').style.display = 'none';
+    _parkShown = true;
+    startFootballMatch();
+  });
+  document.getElementById('pp-no').addEventListener('click', () => {
+    document.getElementById('park-popup').style.display = 'none';
+    _parkShown = true;
+  });
+  document.getElementById('fb-home-btn').addEventListener('click', returnFromFootball);
+}
+
+function checkParking() {
+  if (footballActive) return;
+  const d = Math.hypot(car.x - PARK_CX, car.z - PARK_CZ);
+  if (d > 38) _parkShown = false;  // Reset wenn Spieler weit weg
+  if (d < 22 && Math.abs(car.speed) < 0.9 && !_parkShown) {
+    if (!_parkTimer) _parkTimer = setTimeout(() => {
+      _parkTimer = null;
+      if (Math.hypot(car.x - PARK_CX, car.z - PARK_CZ) < 22)
+        document.getElementById('park-popup').style.display = 'flex';
+    }, 1600);
+  } else if (d >= 22 || Math.abs(car.speed) >= 0.9) {
+    if (_parkTimer) { clearTimeout(_parkTimer); _parkTimer = null; }
+  }
+}
+
+function initFBPlayers() {
+  FB.players = [];
+  // Formation 4-4-2, normalisiert auf FB_VW × FB_VH
+  const positions = [
+    [0.07, 0.50],                                           // TW
+    [0.22, 0.16],[0.22, 0.38],[0.22, 0.62],[0.22, 0.84],  // ABW
+    [0.42, 0.16],[0.42, 0.38],[0.42, 0.62],[0.42, 0.84],  // MIT
+    [0.62, 0.34],[0.62, 0.66],                             // STU
+  ];
+  positions.forEach(([nx, ny], i) => {
+    const role = i===0 ? 'gk' : i<5 ? 'def' : i<9 ? 'mid' : 'fwd';
+    FB.players.push({ x:nx*FB_VW, y:ny*FB_VH, hx:nx*FB_VW, hy:ny*FB_VH, team:0, role, ph:Math.random()*6.28 });
+    FB.players.push({ x:(1-nx)*FB_VW, y:ny*FB_VH, hx:(1-nx)*FB_VW, hy:ny*FB_VH, team:1, role, ph:Math.random()*6.28 });
+  });
+}
+
+function startFootballMatch() {
+  footballActive = true;
+  FB.score = [0, 0];
+  FB.gameTime = 0;
+  FB.halfShown = false;
+  FB.ball = { x: FB_VW/2, y: FB_VH/2, vx: 50*(Math.random()-.5), vy: 50*(Math.random()-.5) };
+
+  // Zufälligen Spielausgang generieren (0–3 Tore pro Team)
+  FB.goalEvents = [];
+  const g = [Math.floor(Math.random()*4), Math.floor(Math.random()*4)];
+  for (let team = 0; team < 2; team++) {
+    for (let k = 0; k < g[team]; k++) {
+      let t, tries = 0;
+      do { t = 3 + Math.random()*83; tries++; }
+      while (tries < 60 && FB.goalEvents.some(e => Math.abs(e.time-t) < 5));
+      FB.goalEvents.push({ time: t, team, shown: false });
+    }
+  }
+  FB.goalEvents.sort((a,b) => a.time - b.time);
+  initFBPlayers();
+
+  // Canvas-Größe setzen
+  const fbc = document.getElementById('fb-canvas');
+  fbc.width  = window.innerWidth;
+  fbc.height = Math.max(160, window.innerHeight - 62);
+
+  const fbs = document.getElementById('football-screen');
+  fbs.style.display = 'flex';
+  document.getElementById('fb-score').textContent  = '0 : 0';
+  document.getElementById('fb-time').textContent   = "0'";
+  document.getElementById('fb-result').style.display = 'none';
+  document.getElementById('fb-banner').style.display = 'none';
+}
+
+function showFBBanner(text, color) {
+  const b = document.getElementById('fb-banner');
+  b.textContent = text;
+  b.style.color = color || '#fff';
+  b.style.display = 'block';
+  clearTimeout(b._t);
+  b._t = setTimeout(() => { b.style.display = 'none'; }, 2000);
+}
+
+function updateFootball(dt) {
+  if (FB.gameTime >= 90) return;
+
+  // 90 Spielminuten in ~60 Echtzeit-Sekunden (Schnellverlauf)
+  FB.gameTime += dt * 1.5;
+
+  if (FB.gameTime >= 45 && !FB.halfShown) {
+    FB.halfShown = true;
+    showFBBanner('⏸ Halbzeit', '#ffee88');
+  }
+
+  // Tor-Events prüfen
+  FB.goalEvents.forEach(ge => {
+    if (!ge.shown && FB.gameTime >= ge.time) {
+      ge.shown = true;
+      FB.score[ge.team]++;
+      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
+      const scorer = ge.team === 0 ? 'CF Köln' : 'Bavaria München';
+      showFBBanner('⚽ TOR! ' + scorer, ge.team===0 ? '#ff6666' : '#88aaff');
+      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
+    }
+  });
+
+  document.getElementById('fb-time').textContent = Math.floor(Math.min(FB.gameTime, 90)) + "'";
+
+  if (FB.gameTime >= 90) { showFootballResult(); return; }
+
+  // ── Ball-Physik ──
+  FB.ball.vx *= 0.97; FB.ball.vy *= 0.97;
+  FB.ball.x += FB.ball.vx * dt;
+  FB.ball.y += FB.ball.vy * dt;
+  const bM = 22;
+  if (FB.ball.x < bM) { FB.ball.x = bM; FB.ball.vx =  Math.abs(FB.ball.vx); }
+  if (FB.ball.x > FB_VW-bM) { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx); }
+  if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy =  Math.abs(FB.ball.vy); }
+  if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
+
+  // ── Nächster Spieler zum Ball ──
+  let nearIdx = 0, nearDist = 9999;
+  FB.players.forEach((p, i) => {
+    const d = Math.hypot(p.x-FB.ball.x, p.y-FB.ball.y);
+    if (d < nearDist) { nearDist = d; nearIdx = i; }
+  });
+
+  // ── Spieler-KI ──
+  const t = FB.gameTime;
+  FB.players.forEach((p, i) => {
+    const hasBall = i === nearIdx && nearDist < 16;
+    const jx = Math.sin(t*0.45+p.ph)*20, jy = Math.cos(t*0.6+p.ph*1.3)*14;
+    let tx, ty;
+
+    if (p.role === 'gk') {
+      tx = p.hx;
+      ty = p.hy + (FB.ball.y - p.hy) * 0.4;
+      ty = Math.max(p.hy-38, Math.min(p.hy+38, ty));
+    } else if (hasBall) {
+      const gx = p.team===0 ? FB_VW-bM-8 : bM+8;
+      const gy = FB_VH/2 + (Math.random()-.5)*FB_VH*0.35;
+      const ang = Math.atan2(gy-FB.ball.y, gx-FB.ball.x);
+      FB.ball.vx = Math.cos(ang+(Math.random()-.5)*0.55) * (140+Math.random()*80);
+      FB.ball.vy = Math.sin(ang+(Math.random()-.5)*0.55) * (140+Math.random()*80);
+      tx = p.hx+jx*0.5; ty = p.hy+jy*0.5;
+    } else {
+      const d = Math.hypot(FB.ball.x-p.x, FB.ball.y-p.y);
+      tx = d < 95 ? FB.ball.x+jx*0.35 : p.hx+jx;
+      ty = d < 95 ? FB.ball.y+jy*0.35 : p.hy+jy;
+    }
+
+    const spd = p.role==='gk' ? 2.8 : 4.8;
+    p.x += (tx-p.x) * spd * dt;
+    p.y += (ty-p.y) * spd * dt;
+  });
+}
+
+function drawFootball() {
+  const cv = document.getElementById('fb-canvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.save();
+  ctx.scale(W/FB_VW, H/FB_VH);
+
+  // ── Rasen ──
+  ctx.fillStyle = '#2d7d2d'; ctx.fillRect(0, 0, FB_VW, FB_VH);
+  for (let i = 0; i < 12; i++) {
+    if (i%2===0) { ctx.fillStyle='rgba(0,0,0,0.045)'; ctx.fillRect(i*FB_VW/12, 0, FB_VW/12, FB_VH); }
+  }
+
+  // ── Linien ──
+  const M = 24;
+  ctx.strokeStyle = 'rgba(255,255,255,0.88)'; ctx.lineWidth = 2;
+  ctx.strokeRect(M, M, FB_VW-2*M, FB_VH-2*M);
+  ctx.beginPath(); ctx.moveTo(FB_VW/2, M); ctx.lineTo(FB_VW/2, FB_VH-M); ctx.stroke();
+  ctx.beginPath(); ctx.arc(FB_VW/2, FB_VH/2, FB_VH*0.16, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(FB_VW/2, FB_VH/2, 3, 0, Math.PI*2); ctx.fill();
+
+  // Strafräume
+  const paw=FB_VW*0.14, pah=FB_VH*0.52;
+  ctx.strokeRect(M, FB_VH/2-pah/2, paw, pah);
+  ctx.strokeRect(FB_VW-M-paw, FB_VH/2-pah/2, paw, pah);
+  const gaw=FB_VW*0.055, gah=FB_VH*0.28;
+  ctx.strokeRect(M, FB_VH/2-gah/2, gaw, gah);
+  ctx.strokeRect(FB_VW-M-gaw, FB_VH/2-gah/2, gaw, gah);
+  // Tore
+  const gh=FB_VH*0.19, gd=14;
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.fillRect(M-gd, FB_VH/2-gh/2, gd, gh);
+  ctx.fillRect(FB_VW-M, FB_VH/2-gh/2, gd, gh);
+  ctx.strokeRect(M-gd, FB_VH/2-gh/2, gd, gh);
+  ctx.strokeRect(FB_VW-M, FB_VH/2-gh/2, gd, gh);
+
+  // ── Spieler ──
+  FB.players.forEach(p => {
+    const r = p.role==='gk' ? 9 : 7;
+    const col = p.team===0
+      ? (p.role==='gk' ? '#ff9900' : '#e5001e')
+      : (p.role==='gk' ? '#88ccff' : '#0055cc');
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Trikotnummer als Punkt-Highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.arc(p.x-r*0.22, p.y-r*0.22, r*0.32, 0, Math.PI*2); ctx.fill();
+  });
+
+  // ── Ball ──
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath(); ctx.arc(FB.ball.x, FB.ball.y, 6.5, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1;  ctx.stroke();
+  // Schwarze Fünfecke andeuten
+  ctx.fillStyle = '#222';
+  [[2,1],[-2,2],[3,-2]].forEach(([ox,oy]) => {
+    ctx.beginPath(); ctx.arc(FB.ball.x+ox, FB.ball.y+oy, 1.4, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+function showFootballResult() {
+  const sc = document.getElementById('fb-result-score');
+  sc.textContent = FB.score[0] + ' : ' + FB.score[1];
+  const win = document.getElementById('fb-result-winner');
+  if (FB.score[0] > FB.score[1]) {
+    sc.style.color = '#ff6655'; win.textContent = '🎉 CF Köln gewinnt!';
+  } else if (FB.score[1] > FB.score[0]) {
+    sc.style.color = '#88aaff'; win.textContent = 'Bavaria München gewinnt.';
+  } else {
+    sc.style.color = '#fff'; win.textContent = '🤝 Unentschieden!';
+  }
+  document.getElementById('fb-result').style.display = 'flex';
+}
+
+function returnFromFootball() {
+  footballActive = false;
+  document.getElementById('football-screen').style.display = 'none';
+  // Auto steht am Stadion, Kopf Richtung Start
+  car.x = WP[WP.length-1].x;
+  car.z = WP[WP.length-1].z;
+  const prev = WP[WP.length-2];
+  car.heading = Math.atan2(prev.x - car.x, prev.z - car.z);
+  car.speed = 0; car.steer = 0;
+  setTimeout(() => { _parkShown = false; }, 4000);  // nach 4s wieder aktivierbar
+  toast('🚗 Gute Heimfahrt!');
+}
+
 // ── Resize ────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
   cam.aspect = innerWidth / innerHeight;
@@ -1899,9 +2294,17 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - lastT) / 1000, 0.05);
   lastT = now;
-  const elapsed = clock.getElapsedTime();
 
+  // Fußball-Modus: 3D pausieren, nur Fußball-Canvas zeichnen
+  if (footballActive) {
+    updateFootball(dt);
+    drawFootball();
+    return;
+  }
+
+  const elapsed = clock.getElapsedTime();
   updateCar(dt);
+  checkParking();
   updateNPCs(dt);
   updatePedestrians(dt);
   updateCamera();
@@ -1967,6 +2370,7 @@ function setupBloom() {
 initNPCs();
 buildZebraAndStopLines();
 buildPedestrians();
+setupParkingAndFootball();
 document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
