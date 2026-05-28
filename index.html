@@ -651,59 +651,9 @@ function roadGeo(ax, az, bx, bz, width, y) {
 })();
 
 // ── Gebäude ───────────────────────────────────────────────────────────────────
+// Zufällige Box-Gebäude entfernt – echte OSM-Footprints werden in loadOSM() extrudiert
 const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
-(function buildBuildings() {
-  const COLORS  = [0xd4a574,0xc9b8a2,0xbbb0a5,0xe8d8b8,0xa8946e,0xcc9966,0x9b8b7a,0xd0c0a0];
-  const winMat  = new THREE.MeshBasicMaterial({ color:0xffffbb });
-  const rng = (() => { let s=1234567; return ()=>{ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; }; })();
 
-  const spacing = isMobile ? 30 : 18;
-
-  for (let i = 0; i < WP.length-1; i++) {
-    const A = WP[i], B = WP[i+1];
-    const dx = B.x-A.x, dz = B.z-A.z;
-    const len = Math.hypot(dx, dz);
-    const ux = dx/len, uz = dz/len;  // Richtung
-    const nx = -uz, nz = ux;         // Senkrecht
-
-    const count = Math.floor(len / spacing);
-    for (let k = 0; k < count; k++) {
-      const t = (k + 0.5) / count;
-      if (t < 0.13 || t > 0.87) continue;  // Kreuzungsbereich freihalten
-      const bx = A.x + dx*t, bz = A.z + dz*t;
-
-      [-1,1].forEach(side => {
-        const w = 7  + rng()*11;
-        const h = 5  + rng()*25;
-        const d = 7  + rng()*10;
-        const roadHW = (WP[i].width||8)/2;
-        const off = roadHW + Math.max(w,d)/2 + 4 + rng()*4;
-
-        const px = bx + nx*side*off + (rng()-.5)*1.5;
-        const pz = bz + nz*side*off + (rng()-.5)*1.5;
-
-        const mat  = new THREE.MeshLambertMaterial({ color: COLORS[Math.floor(rng()*COLORS.length)] });
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-        mesh.position.set(px, h/2, pz);
-        if (!isMobile) mesh.castShadow = mesh.receiveShadow = true;
-        scene.add(mesh);
-        collidables.push({ x:px, z:pz, hw:w/2+0.4, hd:d/2+0.4 });
-
-        // Fenster
-        if (h > 8 && !isMobile) {
-          for (let wy = 2; wy < h-1; wy += 3.5) {
-            for (let wx = -w/2+1.2; wx < w/2-0.8; wx += 2.8) {
-              const wm = new THREE.Mesh(new THREE.PlaneGeometry(1,1.4), winMat);
-              wm.position.set(px+wx, wy, pz + (side > 0 ? -d/2-0.02 : d/2+0.02));
-              if (side < 0) wm.rotation.y = Math.PI;
-              scene.add(wm);
-            }
-          }
-        }
-      });
-    }
-  }
-})();
 
 // ── Bäume ─────────────────────────────────────────────────────────────────────
 (function buildTrees() {
@@ -1566,12 +1516,168 @@ function drawMinimap() {
   mmCtx.restore();
 }
 
+// ── OSM-Gebäude: Hilfsfunktionen ─────────────────────────────────────────────
+
+function nearRoute(cx, cz, maxDist) {
+  for (const wp of WP)
+    if (Math.hypot(cx - wp.x, cz - wp.z) < maxDist) return true;
+  return false;
+}
+
+function makeFacadeTex(wallColor, isNight, seed) {
+  const W = 256, H = 512;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const r = (wallColor >> 16) & 0xff;
+  const g = (wallColor >> 8)  & 0xff;
+  const b =  wallColor        & 0xff;
+
+  // Wand-Grundfarbe
+  ctx.fillStyle = `rgb(${r},${g},${b})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtile Horizontalfugen (Putzstruktur)
+  ctx.strokeStyle = 'rgba(0,0,0,0.055)'; ctx.lineWidth = 0.6;
+  for (let y = 9; y < H; y += 9) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+
+  // Fenster (4 Reihen × 3 Spalten)
+  const ROWS = 4, COLS = 3;
+  const GF_H = Math.round(H * 0.19);
+  const WIN_H = Math.round((H - GF_H) / ROWS);
+  const WIN_W = Math.round(W / COLS);
+  const ww = 36, wh = Math.round(WIN_H * 0.58);
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const wx = col * WIN_W + Math.round((WIN_W - ww) / 2);
+      const wy = Math.round(row * WIN_H + (WIN_H - wh) / 2);
+      const lit = isNight && ((seed * 7 + row * 5 + col * 3) % 4 > 0);
+      ctx.fillStyle = lit
+        ? `rgba(255,235,155,0.92)`
+        : `rgba(${r-45},${g-35},${b-25},0.55)`;
+      ctx.fillRect(wx, wy, ww, wh);
+      // Rahmen
+      ctx.strokeStyle = `rgba(${r+22},${g+18},${b+14},0.55)`;
+      ctx.lineWidth = 1.5; ctx.strokeRect(wx, wy, ww, wh);
+      // Fensterkreuz
+      ctx.beginPath();
+      ctx.moveTo(wx+ww/2, wy); ctx.lineTo(wx+ww/2, wy+wh);
+      ctx.moveTo(wx, wy+wh*0.44); ctx.lineTo(wx+ww, wy+wh*0.44);
+      ctx.strokeStyle = `rgba(${r+22},${g+18},${b+14},0.3)`;
+      ctx.lineWidth = 0.8; ctx.stroke();
+    }
+  }
+
+  // Erdgeschoss
+  ctx.fillStyle = 'rgba(0,0,0,0.13)';
+  ctx.fillRect(0, H - GF_H, W, GF_H);
+  if (seed % 2 === 0) {
+    // Schaufenster
+    ctx.fillStyle = 'rgba(150,195,235,0.62)';
+    ctx.fillRect(10, H-GF_H+9, W-20, GF_H-18);
+  } else {
+    // Haustür + seitliche Fenster
+    ctx.fillStyle = 'rgba(55,38,20,0.82)';
+    ctx.fillRect(W/2-14, H-GF_H+9, 28, GF_H-13);
+    ctx.fillStyle = 'rgba(135,175,220,0.5)';
+    ctx.fillRect(16, H-GF_H+13, 22, GF_H-22);
+    ctx.fillRect(W-38, H-GF_H+13, 22, GF_H-22);
+  }
+
+  // Dachgesims
+  ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(0, 0, W, 13);
+
+  return new THREE.CanvasTexture(cv);
+}
+
+function buildOSMBuildings(elements, nodes) {
+  const isNight = cfg.time === 'night';
+
+  // 8 Fassaden-Varianten (Material-Paare [Dach, Wand]), geteilt über alle Gebäude
+  const WALL_COLS = [0xd4c5a9, 0xc9b89a, 0xb8b0a8, 0xa89e9a,
+                     0xc8a882, 0xbba070, 0xb4c0b4, 0xc8beb0];
+  const ROOF_COLS = [0x4a4540, 0x484848, 0x515548, 0x454040];
+  const matPairs  = WALL_COLS.map((wc, i) => {
+    const tex = makeFacadeTex(wc, isNight, i);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.repeat.set(3, 1);   // ~3 Wiederholungen über Gebäudeumfang
+    return [
+      new THREE.MeshLambertMaterial({ color: ROOF_COLS[i % ROOF_COLS.length] }),
+      new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }),
+    ];
+  });
+
+  const maxBld = isMobile ? 130 : 400;
+  let count = 0;
+
+  elements.filter(e => e.type === 'way' && e.tags && e.tags.building).forEach(way => {
+    if (count >= maxBld) return;
+
+    const pts = way.nodes.map(id => nodes[id]).filter(Boolean);
+    if (pts.length < 4) return;
+
+    const cx = pts.reduce((s,p) => s+p[0], 0) / pts.length;
+    const cz = pts.reduce((s,p) => s+p[1], 0) / pts.length;
+    if (!nearRoute(cx, cz, 72)) return;
+
+    // Fläche (Shoelace)
+    let area2 = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [ax,az] = pts[i], [bx,bz] = pts[(i+1) % pts.length];
+      area2 += ax*bz - bx*az;
+    }
+    if (Math.abs(area2) / 2 < 14) return;
+
+    // Höhe aus OSM-Tag oder deterministisch geschätzt
+    const lvls = parseInt(way.tags['building:levels'] || '') ||
+                 (2 + Math.abs(Math.round(cx*11 + cz*7)) % 5);
+    const height = lvls * 3.15 + 1.5;
+
+    // Shape: (x, -z) dann rotateX(-π/2) → korrekte Weltposition
+    // area2>0 = CCW in XZ; nach -z-Negation CW → umkehren für richtiges Face-Normal
+    const raw = pts.slice(0, -1);  // letzter Punkt = erster → überspringen
+    const ordered = area2 > 0 ? [...raw].reverse() : raw;
+
+    const shape = new THREE.Shape();
+    shape.moveTo(ordered[0][0], -ordered[0][1]);
+    for (let i = 1; i < ordered.length; i++)
+      shape.lineTo(ordered[i][0], -ordered[i][1]);
+
+    let geo;
+    try {
+      geo = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false });
+    } catch(e) { return; }
+    geo.rotateX(-Math.PI / 2);
+
+    const mIdx = Math.abs(Math.round(cx*5 + cz*9)) % matPairs.length;
+    const mesh = new THREE.Mesh(geo, matPairs[mIdx]);
+    mesh.position.y = 0;
+    scene.add(mesh);
+
+    // AABB für Kollisionserkennung
+    const minX = Math.min(...pts.map(p=>p[0])), maxX = Math.max(...pts.map(p=>p[0]));
+    const minZ = Math.min(...pts.map(p=>p[1])), maxZ = Math.max(...pts.map(p=>p[1]));
+    collidables.push({ x:(minX+maxX)/2, z:(minZ+maxZ)/2,
+                       hw:(maxX-minX)/2+0.5, hd:(maxZ-minZ)/2+0.5 });
+    count++;
+  });
+
+  console.log(`OSM-Gebäude: ${count} extrudiert`);
+  return count;
+}
+
 // ── OSM-Daten laden (Overpass API) ───────────────────────────────────────────
 async function loadOSM() {
-  // Bounding box rund um unsere Route
-  // Bounding box: deckt komplette Route von Bilderstöckchen bis Müngersdorf ab
-  const bbox = '50.930,6.872,50.970,6.942';
-  const q = `[out:json][timeout:30];(way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox}););(._;>;);out body;`;
+  // Bbox erweitert: deckt komplette Route inkl. Stadion-Bereich ab
+  const bbox = '50.926,6.868,50.972,6.944';
+  // Kombinierte Abfrage: Straßen + Gebäude in einem Request
+  const q = `[out:json][timeout:50];(
+    way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox});
+    way["building"](${bbox});
+  );(._;>;);out body;`;
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
 
   try {
@@ -1585,30 +1691,26 @@ async function loadOSM() {
       nodes[n.id] = [pos.x, pos.z];
     });
 
-    // Straßen in Szene rendern (als dünne Plane-Segmente)
+    // Straßen (nur Ways mit highway-Tag)
     const osmMat = new THREE.MeshBasicMaterial({ color:0x1e2e1e });
     let roadCount = 0;
-
-    data.elements.filter(e=>e.type==='way').forEach(way => {
+    data.elements.filter(e=>e.type==='way' && e.tags && e.tags.highway).forEach(way => {
       const pts = way.nodes.map(id=>nodes[id]).filter(Boolean);
       if (pts.length < 2) return;
-
-      // Für Minimap speichern
       osmRoads.push(pts);
-
-      // 3D-Geometrie (nur wenn nah genug an Route)
       for (let i = 0; i < pts.length-1; i++) {
-        const [ax,az] = pts[i];
-        const [bx,bz] = pts[i+1];
-        const geo = roadGeo(ax,az,bx,bz, 5.5, 0.005);
-        scene.add(new THREE.Mesh(geo, osmMat));
+        const [ax,az] = pts[i], [bx,bz] = pts[i+1];
+        scene.add(new THREE.Mesh(roadGeo(ax,az,bx,bz, 5.5, 0.005), osmMat));
         roadCount++;
       }
     });
 
-    document.getElementById('osm-lbl').textContent = `🗺 OSM ✓ (${roadCount} Segmente)`;
-    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 4000);
-    console.log('OSM geladen:', roadCount, 'Straßensegmente');
+    // Gebäude extrudieren (OSM-Footprints)
+    const bldCount = buildOSMBuildings(data.elements, nodes);
+
+    document.getElementById('osm-lbl').textContent =
+      `🗺 OSM ✓ (${roadCount} Str. · ${bldCount} Geb.)`;
+    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 5000);
   } catch(err) {
     console.warn('OSM nicht geladen:', err);
     document.getElementById('osm-lbl').textContent = '🗺 OSM (offline)';
