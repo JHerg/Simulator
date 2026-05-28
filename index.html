@@ -24,7 +24,7 @@
 
     /* ── Fortschrittsbalken ─────────────────────────── */
     #prog{position:fixed;top:0;left:0;right:0;height:5px;background:#111;z-index:50;}
-    #prog-fill{height:100%;width:0%;background:linear-gradient(90deg,#0af,#0f8);transition:width .3s;}
+    #prog-fill{height:100%;width:0%;background:linear-gradient(90deg,#0af,#0f8);transition:width .15s linear;}
 
     /* ── Titel-Bar ──────────────────────────────────── */
     #info{
@@ -149,6 +149,11 @@
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
       max-width:158px;
     }
+    /* Abbiegung steht unmittelbar bevor (< 60 m) */
+    @keyframes navPulse{ 0%,100%{background:#283593;} 50%{background:#e65100;} }
+    #nav-panel.nav-soon{ border-color:#ffb300; box-shadow:0 0 22px #ff9100; }
+    #nav-panel.nav-soon #nav-arrow-wrap{ animation:navPulse .5s ease-in-out infinite; }
+    #nav-panel.nav-soon #nav-next{ color:#ffd180; }
     @media(pointer:coarse),(max-width:700px){
       #nav-panel{
         top:14px; right:14px;
@@ -595,7 +600,7 @@ const WP = [
   //   (−307, 343) Mittelpunkt
   { street:"Schiefersburger Weg",       ...ll(50.96432,6.93382), tl:false, width:7  },
   //   (−426, 343) → 239 m West
-  { street:"Schiefersburger Weg",       ...ll(50.96432,6.93212), tl:false, width:7  },
+  { street:"Schiefersburger Weg",       ...ll(50.96432,6.93212), tl:false, width:7, kv:2 },
 
   // ── 5. Escher Str.  (9 m, 666 m südwärts, 2. Ausfahrt KV) ──────────
   //   (−426, 510)
@@ -645,7 +650,7 @@ const WP = [
   //   (−2781, 3993)
   { street:"Kitschburger Str.",         ...ll(50.93152,6.89852), tl:false, width:8  },
   //   (−2781, 4158) → 330 m Süd
-  { street:"Kitschburger Str.",         ...ll(50.93004,6.89852), tl:false, width:8  },
+  { street:"Kitschburger Str.",         ...ll(50.93004,6.89852), tl:false, width:8, kv:1 },
 
   // ── 11. Friedrich-Schmidt-Str.  (10 m, 1.023 m westwärts, RECHTS KV) ─
   //   (−3122, 4158)
@@ -1486,8 +1491,6 @@ function checkWaypoint() {
     const wp = WP[car.wpIdx];
     if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
       car.wpIdx--;
-      const pct = Math.max(0, car.wpIdx + 1) / (WP.length - 1) * 100;
-      document.getElementById('prog-fill').style.width = pct.toFixed(1) + '%';
       if (car.wpIdx >= 0) {
         const prev = WP[car.wpIdx];
         const just = WP[car.wpIdx + 1];
@@ -1499,7 +1502,6 @@ function checkWaypoint() {
         car.homeMode = false;
         car.wpIdx = 1;
         _homeJourneyDone = true;
-        document.getElementById('prog-fill').style.width = '0%';
         document.getElementById('street-lbl').textContent = WP[0].street;
         setTimeout(() => toast('🏠 Zuhause! Altbaumburgweg'), 600);
       }
@@ -1511,8 +1513,6 @@ function checkWaypoint() {
   const wp = WP[car.wpIdx];
   if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
     car.wpIdx++;
-    document.getElementById('prog-fill').style.width =
-      ((car.wpIdx-1)/(WP.length-1)*100).toFixed(1) + '%';
     if (car.wpIdx < WP.length) {
       const cur = WP[car.wpIdx];
       const prv = WP[car.wpIdx - 1];
@@ -1524,6 +1524,65 @@ function checkWaypoint() {
     if (car.wpIdx >= WP.length)
       setTimeout(() => toast('🏟 Ziel erreicht! RheinEnergie Stadion'), 600);
   }
+}
+
+// ── Pfeil + Richtung aus dem (normierten) Kreuzprodukt ────────────────────────
+// Zwei Schwellen: >0.7 scharfe Kurve (→/←), 0.15–0.7 leichte Kurve (↗/↖).
+function navArrowFor(cross) {
+  if (cross >  0.7)  return { arrow:'→', dir:'rechts' };
+  if (cross >  0.15) return { arrow:'↗', dir:'leicht rechts' };
+  if (cross < -0.7)  return { arrow:'←', dir:'links' };
+  if (cross < -0.15) return { arrow:'↖', dir:'leicht links' };
+  return { arrow:'⬆', dir:'geradeaus' };
+}
+
+// ── Abbiege-Warnung (Panel pulsiert orange + kurzer Ton) ──────────────────────
+let _navWarnJ = null;
+function _navBeep() {
+  if (!_actx || _actx.state === 'suspended') return;
+  const t = _actx.currentTime;
+  const o = _actx.createOscillator(), g = _actx.createGain();
+  o.type = 'sine'; o.frequency.value = 880;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(g); g.connect(_actx.destination);
+  o.start(t); o.stop(t + 0.24);
+}
+function _navWarn(key, active) {
+  const panel = document.getElementById('nav-panel');
+  if (active) {
+    panel.classList.add('nav-soon');
+    if (_navWarnJ !== key) { _navWarnJ = key; _navBeep(); }
+  } else {
+    panel.classList.remove('nav-soon');
+    _navWarnJ = null;
+  }
+}
+
+// ── Routen-Fortschritt (kontinuierlich, beide Richtungen) ─────────────────────
+const _routeCum = [0];
+for (let i = 1; i < WP.length; i++)
+  _routeCum[i] = _routeCum[i-1] + Math.hypot(WP[i].x - WP[i-1].x, WP[i].z - WP[i-1].z);
+const _routeLen = _routeCum[WP.length - 1];
+
+function updateProgress() {
+  let pct;
+  if (car.homeMode) {
+    if (car.wpIdx < 0) { pct = 0; }
+    else {
+      const rem = _routeCum[car.wpIdx] + Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
+      pct = rem / _routeLen * 100;
+    }
+  } else {
+    if (car.wpIdx >= WP.length) { pct = 100; }
+    else {
+      const trav = _routeCum[car.wpIdx] - Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
+      pct = trav / _routeLen * 100;
+    }
+  }
+  pct = Math.max(0, Math.min(100, pct));
+  document.getElementById('prog-fill').style.width = pct.toFixed(1) + '%';
 }
 
 // ── Navigations-HUD (Turn-by-Turn) ───────────────────────────────────────────
@@ -1547,6 +1606,7 @@ function updateNavHUD() {
     distEl.textContent  = d < 1000 ? Math.round(d) + ' m' : (d/1000).toFixed(1) + ' km';
     arrowEl.textContent = '🏟';
     nextEl.textContent  = 'RheinEnergie Stadion';
+    _navWarn(null, false);
     return;
   }
 
@@ -1554,18 +1614,22 @@ function updateNavHUD() {
   for (let i = car.wpIdx; i < jIdx; i++)
     dist += Math.hypot(WP[i+1].x - WP[i].x, WP[i+1].z - WP[i].z);
 
-  let arrow = '⬆';
+  let arrow = '⬆', dir = 'geradeaus';
   if (jIdx >= 1 && jIdx + 1 < WP.length) {
     const ax = WP[jIdx].x   - WP[jIdx-1].x, az = WP[jIdx].z   - WP[jIdx-1].z;
     const bx = WP[jIdx+1].x - WP[jIdx].x,   bz = WP[jIdx+1].z - WP[jIdx].z;
     const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
-    if      (cross >  0.15) arrow = '→';
-    else if (cross < -0.15) arrow = '←';
+    ({ arrow, dir } = navArrowFor(cross));
   }
+  const kv     = WP[jIdx].kv;   // Kreisverkehr-Info am Abbiege-Eckpunkt
+  const street = WP[jIdx+1].name || WP[jIdx+1].street || '—';
+  const soon   = dist < 60;
 
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
-  arrowEl.textContent = arrow;
-  nextEl.textContent  = WP[jIdx+1].name || WP[jIdx+1].street || '—';
+  arrowEl.textContent = kv ? '🔄' : arrow;
+  if (soon)     nextEl.textContent = kv ? `⚠ ${kv}. Ausfahrt!` : `⚠ Gleich ${dir}!`;
+  else          nextEl.textContent = kv ? `${kv}. Ausfahrt → ${street}` : street;
+  _navWarn('f' + jIdx, soon);
 }
 
 // ── Rückfahrt-Navigation ──────────────────────────────────────────────────────
@@ -1590,6 +1654,7 @@ function updateNavHUDHome() {
     distEl.textContent  = d < 1000 ? Math.round(d) + ' m' : (d/1000).toFixed(1) + ' km';
     arrowEl.textContent = '🏠';
     nextEl.textContent  = 'Altbaumburgweg';
+    _navWarn(null, false);
     return;
   }
 
@@ -1599,18 +1664,22 @@ function updateNavHUDHome() {
     dist += Math.hypot(WP[i].x - WP[i-1].x, WP[i].z - WP[i-1].z);
 
   // Richtung: eingehend = WP[jIdx]→WP[jIdx+1] gespiegelt, ausgehend = WP[jIdx]→WP[jIdx-1]
-  let arrow = '⬆';
+  let arrow = '⬆', dir = 'geradeaus';
   if (jIdx >= 1 && jIdx + 1 < WP.length) {
     const ax = WP[jIdx].x - WP[jIdx+1].x, az = WP[jIdx].z - WP[jIdx+1].z;
     const bx = WP[jIdx-1].x - WP[jIdx].x, bz = WP[jIdx-1].z - WP[jIdx].z;
     const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
-    if      (cross >  0.15) arrow = '→';
-    else if (cross < -0.15) arrow = '←';
+    ({ arrow, dir } = navArrowFor(cross));
   }
+  const kv     = WP[jIdx].kv;
+  const street = WP[jIdx - 1]?.street || '—';
+  const soon   = dist < 60;
 
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
-  arrowEl.textContent = arrow;
-  nextEl.textContent  = WP[jIdx - 1]?.street || '—';
+  arrowEl.textContent = kv ? '🔄' : arrow;
+  if (soon)     nextEl.textContent = kv ? `⚠ ${kv}. Ausfahrt!` : `⚠ Gleich ${dir}!`;
+  else          nextEl.textContent = kv ? `${kv}. Ausfahrt → ${street}` : street;
+  _navWarn('h' + jIdx, soon);
 }
 
 // ── Engine Sound – Noise-Engine (Web Audio API) ───────────────────────────────
@@ -1718,15 +1787,21 @@ function updateVoice() {
   const bx = WP[jIdx+1].x - WP[jIdx].x;
   const bz = WP[jIdx+1].z - WP[jIdx].z;
   const cross = (ax*bz - az*bx) / (Math.hypot(ax,az)*Math.hypot(bx,bz)+1e-9);
-  const dir = cross > 0.15 ? 'rechts' : cross < -0.15 ? 'links' : 'geradeaus';
+  const { dir } = navArrowFor(cross);
+  const kv   = WP[jIdx].kv;
   const next = WP[jIdx+1].name || WP[jIdx+1].street;
 
   if (dist < 330 && dist > 260 && !_voiceDone.has(jIdx+':far')) {
     _voiceDone.add(jIdx+':far');
-    _speak(`In ${Math.round(dist/50)*50} Metern ${dir} abbiegen auf ${next}`);
+    const m = Math.round(dist/50)*50;
+    _speak(kv ? `In ${m} Metern in den Kreisverkehr, dann die ${kv}. Ausfahrt auf ${next}`
+         : dir === 'geradeaus' ? `In ${m} Metern weiter auf ${next}`
+         : `In ${m} Metern ${dir} abbiegen auf ${next}`);
   } else if (dist < 90 && dist > 25 && !_voiceDone.has(jIdx+':near')) {
     _voiceDone.add(jIdx+':near');
-    _speak(`Jetzt ${dir} abbiegen`);
+    _speak(kv ? `Jetzt die ${kv}. Ausfahrt nehmen`
+         : dir === 'geradeaus' ? `Weiter auf ${next}`
+         : `Jetzt ${dir} abbiegen`);
   }
 }
 
@@ -1745,15 +1820,21 @@ function updateVoiceHome() {
   const ax = WP[jIdx].x - WP[jIdx+1].x, az = WP[jIdx].z - WP[jIdx+1].z;
   const bx = WP[jIdx-1].x - WP[jIdx].x, bz = WP[jIdx-1].z - WP[jIdx].z;
   const cross = (ax*bz - az*bx) / (Math.hypot(ax,az)*Math.hypot(bx,bz)+1e-9);
-  const dir = cross > 0.15 ? 'rechts' : cross < -0.15 ? 'links' : 'geradeaus';
+  const { dir } = navArrowFor(cross);
+  const kv   = WP[jIdx].kv;
   const next = WP[jIdx-1]?.name || WP[jIdx-1]?.street || '—';
 
   if (dist < 330 && dist > 260 && !_voiceDone.has('h:'+jIdx+':far')) {
     _voiceDone.add('h:'+jIdx+':far');
-    _speak(`In ${Math.round(dist/50)*50} Metern ${dir} abbiegen auf ${next}`);
+    const m = Math.round(dist/50)*50;
+    _speak(kv ? `In ${m} Metern in den Kreisverkehr, dann die ${kv}. Ausfahrt auf ${next}`
+         : dir === 'geradeaus' ? `In ${m} Metern weiter auf ${next}`
+         : `In ${m} Metern ${dir} abbiegen auf ${next}`);
   } else if (dist < 90 && dist > 25 && !_voiceDone.has('h:'+jIdx+':near')) {
     _voiceDone.add('h:'+jIdx+':near');
-    _speak(`Jetzt ${dir} abbiegen`);
+    _speak(kv ? `Jetzt die ${kv}. Ausfahrt nehmen`
+         : dir === 'geradeaus' ? `Weiter auf ${next}`
+         : `Jetzt ${dir} abbiegen`);
   }
 }
 
@@ -3044,6 +3125,7 @@ function loop(now) {
   drawMinimap();
   updateNavHUD();
   updateVoice();
+  updateProgress();
   updateLimitHUD();
   updateEngineSound();
 
