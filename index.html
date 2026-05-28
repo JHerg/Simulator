@@ -158,6 +158,39 @@
       }
     }
 
+    /* ── Konfigurations-Bildschirm ─────────────────────── */
+    #cfg-screen{
+      position:fixed;inset:0;z-index:9998;
+      background:linear-gradient(160deg,#000e1c 0%,#001e30 60%,#000a18 100%);
+      display:none;flex-direction:column;
+      align-items:center;justify-content:center;gap:26px;
+      color:#fff;font-family:Arial,sans-serif;
+    }
+    .cfg-title{font-size:34px;font-weight:bold;letter-spacing:1px;}
+    .cfg-sub{font-size:13px;color:#7aaac8;margin-top:-18px;}
+    .cfg-block{display:flex;flex-direction:column;align-items:center;gap:10px;}
+    .cfg-lbl{font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#778899;}
+    .cfg-row{display:flex;gap:12px;}
+    .cfg-btn{
+      padding:13px 30px;border-radius:12px;font-size:15px;
+      border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.07);
+      color:#ddd;cursor:pointer;transition:all .18s;
+    }
+    .cfg-btn:hover{background:rgba(255,255,255,.17);color:#fff;}
+    .cfg-btn.sel{
+      background:rgba(0,110,255,.5);border-color:rgba(100,170,255,.85);
+      color:#fff;box-shadow:0 0 14px rgba(0,120,255,.4);
+    }
+    #cfg-start{
+      margin-top:6px;padding:15px 54px;border-radius:14px;
+      font-size:20px;font-weight:bold;
+      background:linear-gradient(135deg,#0044cc,#0080ff);
+      border:2px solid rgba(100,180,255,.55);color:#fff;cursor:pointer;
+      box-shadow:0 4px 22px rgba(0,100,255,.45);
+      transition:transform .15s,box-shadow .15s;
+    }
+    #cfg-start:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(0,130,255,.6);}
+
     /* ── Tempolimit-Schild ──────────────────────────────── */
     #limit-sign{
       position:fixed;z-index:40;pointer-events:none;
@@ -179,14 +212,37 @@
 </head>
 <body>
 
-<!-- ── Fehler-Overlay (erscheint wenn JS-Fehler) ── -->
-<!-- Boot-Screen (verschwindet sobald Three.js geladen ist) -->
+<!-- Boot-Screen -->
 <div id="boot-screen">
   <div style="font-size:36px">🚗</div>
   <div style="font-size:20px;color:#fff;font-weight:bold">Köln Fahrsimulator</div>
   <div id="boot-bar"><div id="boot-bar-fill"></div></div>
   <div id="boot-msg">Starte…</div>
   <div id="boot-err"></div>
+</div>
+
+<!-- Konfigurations-Bildschirm (erscheint nach Three.js-Ladevorgang) -->
+<div id="cfg-screen">
+  <div class="cfg-title">🚗 Köln Fahrsimulator</div>
+  <div class="cfg-sub">Altbaumburgweg → RheinEnergie Stadion · 8,7 km</div>
+
+  <div class="cfg-block">
+    <div class="cfg-lbl">Tageszeit</div>
+    <div class="cfg-row">
+      <button class="cfg-btn sel" data-group="time" data-val="day">☀️ Tag</button>
+      <button class="cfg-btn"     data-group="time" data-val="night">🌙 Nacht</button>
+    </div>
+  </div>
+
+  <div class="cfg-block">
+    <div class="cfg-lbl">Wetter</div>
+    <div class="cfg-row">
+      <button class="cfg-btn sel" data-group="weather" data-val="clear">🌤 Klar</button>
+      <button class="cfg-btn"     data-group="weather" data-val="rain">🌧 Regen</button>
+    </div>
+  </div>
+
+  <button id="cfg-start">▶ Fahrt starten</button>
 </div>
 
 <div id="prog"><div id="prog-fill"></div></div>
@@ -281,22 +337,44 @@ async function boot() {
     return;
   }
 
-  bootMsg('Baue Szene…', 80);
-  // Kurze Pause damit Browser den Fortschrittsbalken rendern kann
-  await new Promise(r => setTimeout(r, 60));
+  bootMsg('Bereit…', 95);
+  await new Promise(r => setTimeout(r, 40));
 
-  try {
-    startSimulator();
-    document.getElementById('boot-screen').style.display = 'none';
-  } catch(e) {
-    bootError('Render-Fehler: ' + e.message);
-    console.error(e);
-  }
+  // Three.js geladen → Konfigurations-Bildschirm zeigen
+  document.getElementById('boot-screen').style.display = 'none';
+  const cfgEl = document.getElementById('cfg-screen');
+  cfgEl.style.display = 'flex';
+
+  // Optionen-Buttons (Toggle innerhalb Gruppe)
+  cfgEl.querySelectorAll('.cfg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      cfgEl.querySelectorAll(`.cfg-btn[data-group="${btn.dataset.group}"]`)
+        .forEach(b => b.classList.remove('sel'));
+      btn.classList.add('sel');
+    });
+  });
+
+  // Start-Button
+  document.getElementById('cfg-start').addEventListener('click', () => {
+    const cfg = {
+      time:    cfgEl.querySelector('.cfg-btn[data-group="time"].sel')?.dataset.val    || 'day',
+      weather: cfgEl.querySelector('.cfg-btn[data-group="weather"].sel')?.dataset.val || 'clear',
+    };
+    cfgEl.style.display = 'none';
+    try {
+      startSimulator(cfg);
+    } catch(e) {
+      bootError('Render-Fehler: ' + e.message);
+      document.getElementById('boot-screen').style.display = 'flex';
+      console.error(e);
+    }
+  });
 }
 
 boot();
 
-function startSimulator() {
+function startSimulator(cfg) {
+cfg = cfg || { time:'day', weather:'clear' };
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
@@ -573,6 +651,7 @@ function roadGeo(ax, az, bx, bz, width, y) {
 })();
 
 // ── Gebäude ───────────────────────────────────────────────────────────────────
+const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
 (function buildBuildings() {
   const COLORS  = [0xd4a574,0xc9b8a2,0xbbb0a5,0xe8d8b8,0xa8946e,0xcc9966,0x9b8b7a,0xd0c0a0];
   const winMat  = new THREE.MeshBasicMaterial({ color:0xffffbb });
@@ -608,6 +687,7 @@ function roadGeo(ax, az, bx, bz, width, y) {
         mesh.position.set(px, h/2, pz);
         if (!isMobile) mesh.castShadow = mesh.receiveShadow = true;
         scene.add(mesh);
+        collidables.push({ x:px, z:pz, hw:w/2+0.4, hd:d/2+0.4 });
 
         // Fenster
         if (h > 8 && !isMobile) {
@@ -922,6 +1002,18 @@ const hood = new THREE.Mesh(
 hood.position.set(0, -0.52, -1.05);
 cockpit.add(hood);
 
+// Scheibenwischer (Pivot links, Arm schwingt nach rechts)
+let wiperPivot = new THREE.Group();
+wiperPivot.position.set(-0.2, -0.37, -0.53);
+cockpit.add(wiperPivot);
+const wiperArm = new THREE.Mesh(
+  new THREE.BoxGeometry(0.018, 0.012, 0.52),
+  new THREE.MeshLambertMaterial({ color: 0x111111 })
+);
+wiperArm.position.z = -0.26;  // Pivot an einem Ende
+wiperPivot.add(wiperArm);
+wiperPivot.visible = false;  // nur im Regen sichtbar
+
 cam.add(cockpit);
 scene.add(cam);
 
@@ -1181,6 +1273,141 @@ function updateLimitHUD() {
   setTimeout(() => { s.style.borderColor = '#cc1111'; }, 600);
 }
 
+// ── Nacht / Regen / Scheinwerfer / Kollision ─────────────────────────────────
+let rainData = null;
+const nightLightPool = [];
+let headlightL = null, headlightR = null, headlightTgtL = null, headlightTgtR = null;
+let _shakeAmt = 0;
+
+function applyNightMode() {
+  scene.background = new THREE.Color(0x040810);
+  scene.fog = new THREE.Fog(0x040810, cfg.weather==='rain' ? 18 : 25,
+    isMobile ? (cfg.weather==='rain' ? 130 : 175) : (cfg.weather==='rain' ? 220 : 340));
+  sun.intensity = 0.04;
+  scene.children.forEach(c => {
+    if (c.isAmbientLight)    c.intensity = 0.07;
+    if (c.isHemisphereLight) c.intensity = 0.06;
+  });
+  // PointLight-Pool (bewegt sich mit dem Auto → simuliert Straßenbeleuchtung)
+  const n = isMobile ? 3 : 5;
+  for (let i = 0; i < n; i++) {
+    const l = new THREE.PointLight(0xff9944, 1.8, 44);
+    scene.add(l);
+    nightLightPool.push(l);
+  }
+}
+
+function buildStreetLamps() {
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xffdd88 });
+  const spacing = 36;
+  for (let i = 0; i < WP.length - 1; i++) {
+    const A = WP[i], B = WP[i+1];
+    const dx = B.x-A.x, dz = B.z-A.z;
+    const len = Math.hypot(dx, dz);
+    const nx = -dz/len, nz = dx/len;
+    const steps = Math.max(1, Math.floor(len / spacing));
+    for (let k = 0; k < steps; k++) {
+      const t = (k + 0.5) / steps;
+      const bx = A.x + dx*t, bz = A.z + dz*t;
+      const off = (A.width || 8) / 2 + 2;
+      [1, -1].forEach(side => {
+        const px = bx + nx*side*off, pz = bz + nz*side*off;
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,5,6), postMat);
+        post.position.set(px, 2.5, pz); scene.add(post);
+        const glow = new THREE.Mesh(new THREE.SphereGeometry(0.2,6,6), glowMat);
+        glow.position.set(px, 5.3, pz); scene.add(glow);
+      });
+    }
+  }
+}
+
+function updateNightLights() {
+  const n = nightLightPool.length;
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2 + car.heading;
+    nightLightPool[i].position.set(car.x + Math.sin(angle)*24, 5, car.z + Math.cos(angle)*24);
+  }
+}
+
+function initHeadlights() {
+  headlightL = new THREE.SpotLight(0xfff5cc, 3.5, 150, Math.PI/9, 0.35);
+  headlightR = new THREE.SpotLight(0xfff5cc, 3.5, 150, Math.PI/9, 0.35);
+  headlightTgtL = new THREE.Object3D();
+  headlightTgtR = new THREE.Object3D();
+  scene.add(headlightL, headlightR, headlightTgtL, headlightTgtR);
+  headlightL.target = headlightTgtL;
+  headlightR.target = headlightTgtR;
+}
+
+function updateHeadlights() {
+  if (!headlightL) return;
+  const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+  const rx = Math.cos(car.heading), rz = -Math.sin(car.heading);
+  headlightL.position.set(car.x - rx*0.5, 1.1, car.z - rz*0.5);
+  headlightR.position.set(car.x + rx*0.5, 1.1, car.z + rz*0.5);
+  headlightTgtL.position.set(car.x + fx*55 - rx*0.5, 0, car.z + fz*55 - rz*0.5);
+  headlightTgtR.position.set(car.x + fx*55 + rx*0.5, 0, car.z + fz*55 + rz*0.5);
+}
+
+function buildRain() {
+  const count = isMobile ? 1200 : 2600;
+  const pos = new Float32Array(count * 6);
+  for (let i = 0; i < count; i++) {
+    const x = car.x + (Math.random()-.5)*220;
+    const y = Math.random() * 62;
+    const z = car.z + (Math.random()-.5)*220;
+    pos[i*6]=x; pos[i*6+1]=y;   pos[i*6+2]=z;
+    pos[i*6+3]=x; pos[i*6+4]=y-1.9; pos[i*6+5]=z;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  const mesh = new THREE.LineSegments(geo,
+    new THREE.LineBasicMaterial({color:0x99aacc,transparent:true,opacity:0.36}));
+  scene.add(mesh);
+  return { mesh, pos };
+}
+
+function updateRain(rd, dt) {
+  const pos = rd.pos, n = pos.length/6;
+  for (let i = 0; i < n; i++) {
+    pos[i*6+1] -= 30*dt; pos[i*6+4] -= 30*dt;
+    if (pos[i*6+1] < -2) {
+      const x = car.x+(Math.random()-.5)*220;
+      const y = 60+Math.random()*8;
+      const z = car.z+(Math.random()-.5)*220;
+      pos[i*6]=x; pos[i*6+1]=y;   pos[i*6+2]=z;
+      pos[i*6+3]=x; pos[i*6+4]=y-1.9; pos[i*6+5]=z;
+    }
+  }
+  rd.mesh.geometry.attributes.position.needsUpdate = true;
+}
+
+function checkCollisions() {
+  // Gebäude (AABB)
+  for (const b of collidables) {
+    if (Math.abs(b.x-car.x) > 52 || Math.abs(b.z-car.z) > 52) continue;
+    const dx = car.x-b.x, dz = car.z-b.z;
+    if (Math.abs(dx) < b.hw && Math.abs(dz) < b.hd) {
+      const ox = b.hw-Math.abs(dx), oz = b.hd-Math.abs(dz);
+      if (ox < oz) car.x += Math.sign(dx)*ox; else car.z += Math.sign(dz)*oz;
+      car.speed *= 0.18;
+      _shakeAmt = Math.max(_shakeAmt, 0.06);
+    }
+  }
+  // NPCs (Radialabstand)
+  for (const npc of npcs) {
+    const d = Math.hypot(car.x-npc.x, car.z-npc.z);
+    if (d < 4 && d > 0.1) {
+      const ang = Math.atan2(car.x-npc.x, car.z-npc.z);
+      car.x += Math.sin(ang)*(4-d)*0.65;
+      car.z += Math.cos(ang)*(4-d)*0.65;
+      car.speed *= 0.22;
+      _shakeAmt = Math.max(_shakeAmt, 0.055);
+    }
+  }
+}
+
 // ── Physik ────────────────────────────────────────────────────────────────────
 const MAX_SPD = 22, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
 
@@ -1234,14 +1461,21 @@ function updateCar(dt) {
   wheelGrp.rotation.z = car.steer * 0.55;
 
   checkWaypoint();
+  checkCollisions();
 }
 
 // ── Kamera setzen ─────────────────────────────────────────────────────────────
 function updateCamera() {
   cam.position.set(car.x, 1.25, car.z);
-  cam.rotation.y = car.heading + Math.PI;  // +PI weil Three.js-Kamera in -Z schaut
+  cam.rotation.y = car.heading + Math.PI;
   cam.rotation.x = 0;
-  cam.rotation.z = car.steer * 0.025;  // leichte Kurvenneigung in Lenkrichtung
+  cam.rotation.z = car.steer * 0.025;
+  // Kamera-Shake bei Kollision
+  if (_shakeAmt > 0.001) {
+    cam.rotation.x += (Math.random()-.5) * _shakeAmt;
+    cam.rotation.z += (Math.random()-.5) * _shakeAmt * 0.6;
+    _shakeAmt *= 0.80;
+  }
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
@@ -1402,6 +1636,10 @@ function loop(now) {
   updateCar(dt);
   updateNPCs(dt);
   updateCamera();
+  updateHeadlights();
+  if (nightLightPool.length) updateNightLights();
+  if (rainData) updateRain(rainData, dt);
+  if (cfg.weather === 'rain') wiperPivot.rotation.y = Math.sin(elapsed * 2.3) * 0.52;
   updateTrafficLights(elapsed);
   drawMinimap();
   updateNavHUD();
@@ -1412,6 +1650,30 @@ function loop(now) {
   document.getElementById('spd').textContent = Math.round(car.speed * 3.6);
   renderer.render(scene, cam);
 }
+
+// ── Konfiguration anwenden ────────────────────────────────────────────────────
+(function applyConfig() {
+  const isNight = cfg.time    === 'night';
+  const isRain  = cfg.weather === 'rain';
+
+  // Himmel + Nebel
+  let skyCol, fogNear, fogFar;
+  if (isNight && isRain) {
+    skyCol=0x030810; fogNear=16; fogFar=isMobile?120:210;
+  } else if (isNight) {
+    skyCol=0x040810; fogNear=25; fogFar=isMobile?175:340;
+  } else if (isRain) {
+    skyCol=0x7a8fa8; fogNear=40; fogFar=isMobile?260:560;
+  } else {
+    skyCol=0x6ab4e8; fogNear=150; fogFar=isMobile?600:1100;
+  }
+  scene.background = new THREE.Color(skyCol);
+  scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
+
+  if (isNight) { applyNightMode(); buildStreetLamps(); }
+  if (isNight || isRain) initHeadlights();
+  if (isRain)  { rainData = buildRain(); wiperPivot.visible = true; }
+})();
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 initNPCs();
