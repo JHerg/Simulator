@@ -84,7 +84,7 @@
     @media(pointer:coarse),(max-width:700px){
       #mctrl{display:block;}
       #hint{display:none;}
-      #speedo{bottom:auto;top:14px;right:14px;}
+      #speedo{bottom:auto;top:160px;right:14px;}
       #mm{bottom:auto;top:14px;left:14px;}
     }
     @media(pointer:fine){
@@ -151,10 +151,10 @@
     }
     @media(pointer:coarse),(max-width:700px){
       #nav-panel{
-        top:auto;bottom:195px;
-        left:50%;transform:translateX(-50%);
-        min-width:200px;
-        flex-direction:row;
+        top:14px; right:14px;
+        bottom:auto; left:auto;
+        transform:none;
+        min-width:145px;
       }
     }
   </style>
@@ -840,6 +840,17 @@ window.addEventListener('keydown', e => { keys[e.code] = true; });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 window.addEventListener('keydown', e => { if (e.code==='KeyR') resetCar(); });
 
+// Web Audio API: start on first user gesture (browser autoplay policy)
+function _startAudioOnce() {
+  initAudio();
+  window.removeEventListener('keydown',    _startAudioOnce);
+  window.removeEventListener('touchstart', _startAudioOnce);
+  window.removeEventListener('mousedown',  _startAudioOnce);
+}
+window.addEventListener('keydown',    _startAudioOnce);
+window.addEventListener('touchstart', _startAudioOnce);
+window.addEventListener('mousedown',  _startAudioOnce);
+
 // Mobile Buttons
 const touch = { left:false, right:false, gas:false, brake:false };
 function bindBtn(id, prop) {
@@ -934,6 +945,64 @@ function updateNavHUD() {
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
   arrowEl.textContent = arrow;
   nextEl.textContent  = WP[jIdx+1].name || WP[jIdx+1].street || '—';
+}
+
+// ── Engine Sound (Web Audio API) ─────────────────────────────────────────────
+let _actx = null, _engOsc = null, _engFilt = null, _engGain = null;
+let _revOsc = null, _revGain = null;
+
+function initAudio() {
+  if (_actx) return;
+  try {
+    _actx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Primary layer: sawtooth → fat engine hum
+    _engOsc  = _actx.createOscillator();
+    _engOsc.type = 'sawtooth';
+    _engOsc.frequency.value = 58;
+
+    _engFilt = _actx.createBiquadFilter();
+    _engFilt.type = 'lowpass';
+    _engFilt.frequency.value = 420;
+    _engFilt.Q.value = 1.4;
+
+    _engGain = _actx.createGain();
+    _engGain.gain.value = 0.05;
+
+    _engOsc.connect(_engFilt);
+    _engFilt.connect(_engGain);
+    _engGain.connect(_actx.destination);
+    _engOsc.start();
+
+    // Rev layer: square → higher harmonic bite at speed
+    _revOsc  = _actx.createOscillator();
+    _revOsc.type = 'square';
+    _revOsc.frequency.value = 116;
+
+    _revGain = _actx.createGain();
+    _revGain.gain.value = 0;
+
+    _revOsc.connect(_revGain);
+    _revGain.connect(_actx.destination);
+    _revOsc.start();
+  } catch(e) {
+    console.warn('Web Audio nicht verfügbar:', e);
+  }
+}
+
+function updateEngineSound() {
+  if (!_actx || _actx.state === 'suspended') return;
+  const spd = Math.min(car.speed / MAX_SPD, 1);  // 0 → 1
+  const now = _actx.currentTime;
+
+  // Base hum: 58 Hz idle → 195 Hz full throttle
+  _engOsc.frequency.setTargetAtTime(58 + spd * 137, now, 0.10);
+  _engFilt.frequency.setTargetAtTime(320 + spd * 1100, now, 0.10);
+  _engGain.gain.setTargetAtTime(0.04 + spd * 0.07, now, 0.08);
+
+  // Rev bite: appears quadratically with speed
+  _revOsc.frequency.setTargetAtTime(116 + spd * 260, now, 0.07);
+  _revGain.gain.setTargetAtTime(spd * spd * 0.032, now, 0.09);
 }
 
 // ── Physik ────────────────────────────────────────────────────────────────────
@@ -1159,6 +1228,7 @@ function loop(now) {
   updateTrafficLights(elapsed);
   drawMinimap();
   updateNavHUD();
+  updateEngineSound();
 
   document.getElementById('spd').textContent = Math.round(car.speed * 3.6);
   renderer.render(scene, cam);
