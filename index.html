@@ -251,69 +251,102 @@ function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 //  ROUTE: Altbaumburgweg 2 (50739) → RheinEnergieSTADION  –  8,7 km
 //  Quell-Koordinaten direkt vom Routenplaner des Nutzers
 // ══════════════════════════════════════════════════════════════════════════
+// ── Routen-Geometrie ──────────────────────────────────────────────────────────
+// Alle Koordinaten aus exakten Szenen-Positionen berechnet:
+//   x = 0  → Startpunkt (Altbaumburgweg, reine Südrichtung)
+//   Jeder WP-Abstand entspricht der Navigationslänge der Straße.
+//   Abbiegungen: Rechtskurve = heading sinkt (→ Westen),
+//                Linkskurve  = heading steigt (→ Osten).
+//   Szene → GPS:  lat = LAT0 − z/mLat   |   lng = LNG0 + x/mLng
 const WP = [
 
-  // ── 1. Altbaumburgweg  (Wohnstraße ~6 m, 55 m) ───────────────────────
-  { street:"Altbaumburgweg",            ...ll(50.9674,6.9382), tl:false, width:6  },
-  { street:"Altbaumburgweg",            ...ll(50.9669,6.9377), tl:false, width:6  },
+  // ── 1. Altbaumburgweg  (6 m, 55 m südwärts) ──────────────────────────
+  //   Startpunkt (0, 0)
+  { street:"Altbaumburgweg",            ...ll(50.96740,6.93820), tl:false, width:6  },
+  //   (0, 55) → 55 m Süd
+  { street:"Altbaumburgweg",            ...ll(50.96691,6.93820), tl:false, width:6  },
 
-  // ── 2. Trifelsstraße  (Wohnstraße ~6 m, 187 m, rechts) ───────────────
-  { street:"Trifelsstraße",             ...ll(50.9668,6.9361), tl:false, width:6  },
-  { street:"Trifelsstraße",             ...ll(50.9667,6.9349), tl:false, width:6  },
+  // ── 2. Trifelsstraße  (6 m, 187 m westwärts, RECHTS) ─────────────────
+  //   (−93, 55) Mittelpunkt
+  { street:"Trifelsstraße",             ...ll(50.96691,6.93687), tl:false, width:6  },
+  //   (−187, 55) → 187 m West
+  { street:"Trifelsstraße",             ...ll(50.96691,6.93553), tl:false, width:6  },
 
-  // ── 3. Ebernburgweg  (Wohnstraße ~6 m, 288 m, links) ─────────────────
-  { street:"Ebernburgweg",              ...ll(50.9654,6.9347), tl:false, width:6  },
-  { street:"Ebernburgweg",              ...ll(50.9641,6.9344), tl:false, width:6  },
+  // ── 3. Ebernburgweg  (6 m, 288 m südwärts, LINKS) ────────────────────
+  //   (−187, 199) Mittelpunkt
+  { street:"Ebernburgweg",              ...ll(50.96561,6.93553), tl:false, width:6  },
+  //   (−187, 343) → 288 m Süd
+  { street:"Ebernburgweg",              ...ll(50.96432,6.93553), tl:false, width:6  },
 
-  // ── 4. Schiefersburger Weg  (~7 m, 239 m, rechts) ────────────────────
-  { street:"Schiefersburger Weg",       ...ll(50.9641,6.9327), tl:false, width:7  },
-  { street:"Schiefersburger Weg",       ...ll(50.9640,6.9310), tl:false, width:7  },
+  // ── 4. Schiefersburger Weg  (7 m, 239 m westwärts, RECHTS) ──────────
+  //   (−307, 343) Mittelpunkt
+  { street:"Schiefersburger Weg",       ...ll(50.96432,6.93382), tl:false, width:7  },
+  //   (−426, 343) → 239 m West
+  { street:"Schiefersburger Weg",       ...ll(50.96432,6.93212), tl:false, width:7  },
 
-  // ── 5. Escher Str.  (~9 m, 666 m, 2. Ausfahrt Kreisverkehr) ──────────
-  //       Kreisverkehr an der Einmündung, dann südwärts
-  { street:"Escher Str.",               ...ll(50.9624,6.9298), tl:false, width:9  },
-  { street:"Escher Str.",               ...ll(50.9605,6.9284), tl:false, width:9  },
-  { street:"Escher Str.",               ...ll(50.9586,6.9270), tl:true,  width:9  },
-  { street:"Escher Str.",               ...ll(50.9572,6.9258), tl:false, width:9  },
+  // ── 5. Escher Str.  (9 m, 666 m südwärts, 2. Ausfahrt KV) ──────────
+  //   (−426, 510)
+  { street:"Escher Str.",               ...ll(50.96282,6.93212), tl:false, width:9  },
+  //   (−426, 677)
+  { street:"Escher Str.",               ...ll(50.96132,6.93212), tl:false, width:9  },
+  //   (−426, 843) Ampel
+  { street:"Escher Str.",               ...ll(50.95983,6.93212), tl:true,  width:9  },
+  //   (−426, 1009) → 666 m Süd
+  { street:"Escher Str.",               ...ll(50.95834,6.93212), tl:false, width:9  },
 
-  // ── 6. Parkgürtel  (~12 m, 647 m, Auffahren auf den Grüngürtel) ──────
-  { street:"Parkgürtel",                ...ll(50.9563,6.9205), tl:false, width:12 },
-  { street:"Parkgürtel",                ...ll(50.9555,6.9158), tl:false, width:12 },
+  // ── 6. Parkgürtel  (12 m, 647 m westwärts, RECHTS auffahren) ─────────
+  //   (−749, 1009) Mittelpunkt
+  { street:"Parkgürtel",                ...ll(50.95834,6.92751), tl:false, width:12 },
+  //   (−1073, 1009) → 647 m West
+  { street:"Parkgürtel",                ...ll(50.95834,6.92289), tl:false, width:12 },
 
-  // ── 7. Auffahrt Richtung Zentrum / K4  (~10 m, 357 m, links halten) ──
-  { street:"Auffahrt Richtung Zentrum", ...ll(50.9539,6.9148), tl:false, width:10 },
-  { street:"Auffahrt Richtung Zentrum", ...ll(50.9523,6.9141), tl:false, width:10 },
+  // ── 7. Auffahrt Richtung Zentrum / K4  (10 m, 357 m südwärts, LINKS) ─
+  //   (−1073, 1187)
+  { street:"Auffahrt Richtung Zentrum", ...ll(50.95674,6.92289), tl:false, width:10 },
+  //   (−1073, 1366) → 357 m Süd
+  { street:"Auffahrt Richtung Zentrum", ...ll(50.95513,6.92289), tl:false, width:10 },
 
-  // ── 8. Innere Kanalstraße / K4  (~14 m, 2.462 m) ─────────────────────
-  //       lange, gerade Stadtstraße südwärts durch Neuehrenfeld / Ehrenfeld
-  { street:"Innere Kanalstraße",        ...ll(50.9493,6.9133), tl:false, width:14 },
-  { street:"Innere Kanalstraße",        ...ll(50.9461,6.9123), tl:true,  width:14 },
-  { street:"Innere Kanalstraße",        ...ll(50.9429,6.9113), tl:false, width:14 },
-  { street:"Innere Kanalstraße",        ...ll(50.9397,6.9104), tl:true,  width:14 },
-  { street:"Innere Kanalstraße",        ...ll(50.9368,6.9095), tl:false, width:14 },
+  // ── 8. Innere Kanalstraße / K4  (14 m, 2.462 m südwärts) ─────────────
+  //   (−1073, 1958)
+  { street:"Innere Kanalstraße",        ...ll(50.94981,6.92289), tl:false, width:14 },
+  //   (−1073, 2450) Ampel
+  { street:"Innere Kanalstraße",        ...ll(50.94539,6.92289), tl:true,  width:14 },
+  //   (−1073, 2942)
+  { street:"Innere Kanalstraße",        ...ll(50.94097,6.92289), tl:false, width:14 },
+  //   (−1073, 3434) Ampel
+  { street:"Innere Kanalstraße",        ...ll(50.93655,6.92289), tl:true,  width:14 },
+  //   (−1073, 3828) → 2.462 m Süd
+  { street:"Innere Kanalstraße",        ...ll(50.93300,6.92289), tl:false, width:14 },
 
-  // ── 9. Aachener Str. B55  (~18 m, 1.708 m, rechts) ───────────────────
-  //       breite Bundesstraße mit Straßenbahn, westwärts nach Müngersdorf
-  { street:"Aachener Str.",             ...ll(50.9364,6.9032), tl:false, width:18 },
-  { street:"Aachener Str.",             ...ll(50.9360,6.8963), tl:true,  width:18 },
-  { street:"Aachener Str.",             ...ll(50.9357,6.8897), tl:false, width:18 },
-  { street:"Aachener Str.",             ...ll(50.9354,6.8836), tl:true,  width:18 },
+  // ── 9. Aachener Str. B55  (18 m, 1.708 m westwärts, RECHTS) ──────────
+  //   (−1500, 3828)
+  { street:"Aachener Str.",             ...ll(50.93300,6.91680), tl:false, width:18 },
+  //   (−1927, 3828) Ampel
+  { street:"Aachener Str.",             ...ll(50.93300,6.91071), tl:true,  width:18 },
+  //   (−2354, 3828)
+  { street:"Aachener Str.",             ...ll(50.93300,6.90462), tl:false, width:18 },
+  //   (−2781, 3828) → 1.708 m West
+  { street:"Aachener Str.",             ...ll(50.93300,6.89852), tl:true,  width:18 },
 
-  // ── 10. Kitschburger Str.  (~8 m, 330 m, links) ───────────────────────
-  { street:"Kitschburger Str.",         ...ll(50.9340,6.8833), tl:false, width:8  },
-  { street:"Kitschburger Str.",         ...ll(50.9325,6.8831), tl:false, width:8  },
+  // ── 10. Kitschburger Str.  (8 m, 330 m südwärts, LINKS) ───────────────
+  //   (−2781, 3993)
+  { street:"Kitschburger Str.",         ...ll(50.93152,6.89852), tl:false, width:8  },
+  //   (−2781, 4158) → 330 m Süd
+  { street:"Kitschburger Str.",         ...ll(50.93004,6.89852), tl:false, width:8  },
 
-  // ── 11. Friedrich-Schmidt-Straße  (~10 m, 1.023 m, 1. Ausfahrt KV) ───
-  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9328,6.8800), tl:false, width:10 },
-  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9332,6.8770), tl:false, width:10 },
-  { street:"Friedrich-Schmidt-Str.",    ...ll(50.9336,6.8740), tl:false, width:10 },
+  // ── 11. Friedrich-Schmidt-Str.  (10 m, 1.023 m westwärts, RECHTS KV) ─
+  //   (−3122, 4158)
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.93004,6.89366), tl:false, width:10 },
+  //   (−3463, 4158)
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.93004,6.88880), tl:false, width:10 },
+  //   (−3804, 4158) → 1.023 m West
+  { street:"Friedrich-Schmidt-Str.",    ...ll(50.93004,6.88393), tl:false, width:10 },
 
-  // ── 12. Junkersdorfer Str.  (~10 m, 788 m, direkt zum Stadion) ────────
-  { street:"Junkersdorfer Str.",        ...ll(50.9338,6.8782), tl:false, width:10 },
-  { street:"Junkersdorfer Str.",        ...ll(50.9337,6.8770), tl:false, width:10 },
-  { street:"Junkersdorfer Str.",        ...ll(50.9336,6.8759), tl:false, width:10 },
+  // ── 12. Junkersdorfer Str.  (10 m, ~720 m nordwestwärts zum Stadion) ──
+  //   (−4113, 3972) Mittelpunkt
+  { street:"Junkersdorfer Str.",        ...ll(50.93172,6.87951), tl:false, width:10 },
 
-  // ── Ziel: RheinEnergieSTADION  50.9334° N, 6.8751° E ─────────────────
+  // ── Ziel: RheinEnergieSTADION  (−4422, 3785) ─────────────────────────
   { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion",
     ...ll(50.9334,6.8751), tl:false, width:14 },
 ];
