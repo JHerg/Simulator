@@ -1193,9 +1193,10 @@ const car = {
   x:       WP[0].x,
   z:       WP[0].z,
   heading: Math.atan2(_dx0, _dz0),
-  speed:   0,
-  steer:   0,
-  wpIdx:   1,
+  speed:    0,
+  steer:    0,
+  wpIdx:    1,
+  homeMode: false,   // true = Heimfahrt (WP rückwärts)
 };
 
 // ── Eingabe ───────────────────────────────────────────────────────────────────
@@ -1245,13 +1246,38 @@ function getGamepadInput() {
 }
 
 function checkWaypoint() {
+  if (car.homeMode) {
+    // ── Heimfahrt: WP rückwärts abarbeiten ──
+    if (car.wpIdx < 0) return;
+    const wp = WP[car.wpIdx];
+    if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
+      car.wpIdx--;
+      const pct = Math.max(0, car.wpIdx + 1) / (WP.length - 1) * 100;
+      document.getElementById('prog-fill').style.width = pct.toFixed(1) + '%';
+      if (car.wpIdx >= 0) {
+        const prev = WP[car.wpIdx];
+        const just = WP[car.wpIdx + 1];
+        if (just.street !== prev.street) {
+          toast('🛣 ' + prev.street);
+          document.getElementById('street-lbl').textContent = prev.street;
+        }
+      } else {
+        car.homeMode = false;
+        car.wpIdx = 1;
+        document.getElementById('prog-fill').style.width = '0%';
+        document.getElementById('street-lbl').textContent = WP[0].street;
+        setTimeout(() => toast('🏠 Zuhause! Altbaumburgweg'), 600);
+      }
+    }
+    return;
+  }
+  // ── Vorwärtsfahrt ──
   if (car.wpIdx >= WP.length) return;
   const wp = WP[car.wpIdx];
   if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
     car.wpIdx++;
     document.getElementById('prog-fill').style.width =
       ((car.wpIdx-1)/(WP.length-1)*100).toFixed(1) + '%';
-    // Straßenwechsel sofort beim Überfahren des Kreuzungs-WP anzeigen
     if (car.wpIdx < WP.length) {
       const cur = WP[car.wpIdx];
       const prv = WP[car.wpIdx - 1];
@@ -1267,6 +1293,7 @@ function checkWaypoint() {
 
 // ── Navigations-HUD (Turn-by-Turn) ───────────────────────────────────────────
 function updateNavHUD() {
+  if (car.homeMode) { updateNavHUDHome(); return; }
   if (car.wpIdx >= WP.length) return;
 
   const distEl  = document.getElementById('nav-dist');
@@ -1280,7 +1307,6 @@ function updateNavHUD() {
   }
 
   if (jIdx === -1) {
-    // Keine Abbiegung mehr – Ziel anfahren
     const dst = WP[WP.length-1];
     const d = Math.hypot(dst.x - car.x, dst.z - car.z);
     distEl.textContent  = d < 1000 ? Math.round(d) + ' m' : (d/1000).toFixed(1) + ' km';
@@ -1289,26 +1315,67 @@ function updateNavHUD() {
     return;
   }
 
-  // Pfad-Distanz bis zur Kreuzung (WP-Kette)
   let dist = Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
   for (let i = car.wpIdx; i < jIdx; i++)
     dist += Math.hypot(WP[i+1].x - WP[i].x, WP[i+1].z - WP[i].z);
 
-  // Abbiegungsrichtung aus Kreuzprodukt bestimmen
-  // (In diesem Koord.-System z=Süd: cross>0 = Rechtskurve, cross<0 = Linkskurve)
   let arrow = '⬆';
   if (jIdx >= 1 && jIdx + 1 < WP.length) {
     const ax = WP[jIdx].x   - WP[jIdx-1].x, az = WP[jIdx].z   - WP[jIdx-1].z;
     const bx = WP[jIdx+1].x - WP[jIdx].x,   bz = WP[jIdx+1].z - WP[jIdx].z;
-    const cross = (ax * bz - az * bx) /
-                  (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
-    if      (cross >  0.15) arrow = '↱';  // Rechtskurve
-    else if (cross < -0.15) arrow = '↰';  // Linkskurve
+    const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
+    if      (cross >  0.15) arrow = '↱';
+    else if (cross < -0.15) arrow = '↰';
   }
 
   distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
   arrowEl.textContent = arrow;
   nextEl.textContent  = WP[jIdx+1].name || WP[jIdx+1].street || '—';
+}
+
+// ── Rückfahrt-Navigation ──────────────────────────────────────────────────────
+// Gleiche Logik wie vorwärts, aber WP-Kette wird rückwärts durchlaufen.
+// Kreuzprodukt: eingehende/ausgehende Vektoren gespiegelt → Rechts/Links kehren um.
+function updateNavHUDHome() {
+  if (car.wpIdx < 0) return;
+  const distEl  = document.getElementById('nav-dist');
+  const arrowEl = document.getElementById('nav-arrow');
+  const nextEl  = document.getElementById('nav-next');
+
+  // Nächsten Straßenwechsel rückwärts suchen:
+  // jIdx ist der WP, an dem WP[jIdx+1].street != WP[jIdx].street
+  let jIdx = -1;
+  for (let i = car.wpIdx; i >= 1; i--) {
+    if (WP[i + 1] && WP[i + 1].street !== WP[i].street) { jIdx = i; break; }
+  }
+
+  if (jIdx === -1) {
+    const dst = WP[0];
+    const d = Math.hypot(dst.x - car.x, dst.z - car.z);
+    distEl.textContent  = d < 1000 ? Math.round(d) + ' m' : (d/1000).toFixed(1) + ' km';
+    arrowEl.textContent = '🏠';
+    nextEl.textContent  = 'Altbaumburgweg';
+    return;
+  }
+
+  // Pfaddistanz rückwärts bis zur Kreuzung
+  let dist = Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
+  for (let i = car.wpIdx; i > jIdx; i--)
+    dist += Math.hypot(WP[i].x - WP[i-1].x, WP[i].z - WP[i-1].z);
+
+  // Richtung: eingehend = WP[jIdx]→WP[jIdx+1] gespiegelt, ausgehend = WP[jIdx]→WP[jIdx-1]
+  let arrow = '⬆';
+  if (jIdx >= 1 && jIdx + 1 < WP.length) {
+    const ax = WP[jIdx].x - WP[jIdx+1].x, az = WP[jIdx].z - WP[jIdx+1].z;
+    const bx = WP[jIdx-1].x - WP[jIdx].x, bz = WP[jIdx-1].z - WP[jIdx].z;
+    const cross = (ax * bz - az * bx) / (Math.hypot(ax,az) * Math.hypot(bx,bz) + 1e-9);
+    if      (cross >  0.15) arrow = '↱';
+    else if (cross < -0.15) arrow = '↰';
+  }
+
+  distEl.textContent  = dist < 1000 ? Math.round(dist) + ' m' : (dist/1000).toFixed(1) + ' km';
+  arrowEl.textContent = arrow;
+  nextEl.textContent  = WP[jIdx - 1]?.street || '—';
 }
 
 // ── Engine Sound – Noise-Engine (Web Audio API) ───────────────────────────────
@@ -1396,6 +1463,7 @@ function _speak(text) {
 }
 
 function updateVoice() {
+  if (car.homeMode) { updateVoiceHome(); return; }
   if (car.wpIdx >= WP.length) return;
   // Nächste Kreuzung suchen
   let jIdx = -1;
@@ -1423,6 +1491,33 @@ function updateVoice() {
     _speak(`In ${Math.round(dist/50)*50} Metern ${dir} abbiegen auf ${next}`);
   } else if (dist < 90 && dist > 25 && !_voiceDone.has(jIdx+':near')) {
     _voiceDone.add(jIdx+':near');
+    _speak(`Jetzt ${dir} abbiegen`);
+  }
+}
+
+function updateVoiceHome() {
+  if (car.wpIdx < 0) return;
+  let jIdx = -1;
+  for (let i = car.wpIdx; i >= 1; i--) {
+    if (WP[i+1] && WP[i+1].street !== WP[i].street) { jIdx = i; break; }
+  }
+  if (jIdx === -1) return;
+
+  let dist = Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
+  for (let i = car.wpIdx; i > jIdx; i--)
+    dist += Math.hypot(WP[i].x - WP[i-1].x, WP[i].z - WP[i-1].z);
+
+  const ax = WP[jIdx].x - WP[jIdx+1].x, az = WP[jIdx].z - WP[jIdx+1].z;
+  const bx = WP[jIdx-1].x - WP[jIdx].x, bz = WP[jIdx-1].z - WP[jIdx].z;
+  const cross = (ax*bz - az*bx) / (Math.hypot(ax,az)*Math.hypot(bx,bz)+1e-9);
+  const dir = cross > 0.15 ? 'rechts' : cross < -0.15 ? 'links' : 'geradeaus';
+  const next = WP[jIdx-1]?.name || WP[jIdx-1]?.street || '—';
+
+  if (dist < 330 && dist > 260 && !_voiceDone.has('h:'+jIdx+':far')) {
+    _voiceDone.add('h:'+jIdx+':far');
+    _speak(`In ${Math.round(dist/50)*50} Metern ${dir} abbiegen auf ${next}`);
+  } else if (dist < 90 && dist > 25 && !_voiceDone.has('h:'+jIdx+':near')) {
+    _voiceDone.add('h:'+jIdx+':near');
     _speak(`Jetzt ${dir} abbiegen`);
   }
 }
@@ -2268,13 +2363,16 @@ function showFootballResult() {
 function returnFromFootball() {
   footballActive = false;
   document.getElementById('football-screen').style.display = 'none';
-  // Auto steht am Stadion, Kopf Richtung Start
   car.x = WP[WP.length-1].x;
   car.z = WP[WP.length-1].z;
   const prev = WP[WP.length-2];
   car.heading = Math.atan2(prev.x - car.x, prev.z - car.z);
   car.speed = 0; car.steer = 0;
-  setTimeout(() => { _parkShown = false; }, 4000);  // nach 4s wieder aktivierbar
+  car.homeMode = true;
+  car.wpIdx = WP.length - 2;
+  document.getElementById('street-lbl').textContent = WP[WP.length-1].street || '';
+  document.getElementById('prog-fill').style.width = '100%';
+  setTimeout(() => { _parkShown = false; }, 4000);
   toast('🚗 Gute Heimfahrt!');
 }
 
