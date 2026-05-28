@@ -157,6 +157,24 @@
         min-width:145px;
       }
     }
+
+    /* ── Tempolimit-Schild ──────────────────────────────── */
+    #limit-sign{
+      position:fixed;z-index:40;pointer-events:none;
+      width:62px;height:62px;border-radius:50%;
+      border:6px solid #cc1111;background:#fff;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 2px 10px rgba(0,0,0,.45);
+    }
+    #limit-val{font-size:22px;font-weight:bold;color:#111;line-height:1;}
+    /* Desktop: links neben Tacho (Tacho bottom:20px right:20px, 100px breit) */
+    @media(pointer:fine){
+      #limit-sign{bottom:28px;right:130px;}
+    }
+    /* Mobil: unter Tacho (Tacho top:160px, 100px hoch → 160+100+12=272) */
+    @media(pointer:coarse),(max-width:700px){
+      #limit-sign{top:272px;right:14px;}
+    }
   </style>
 </head>
 <body>
@@ -194,6 +212,8 @@
   <div id="nav-arrow-wrap"><div id="nav-arrow">⬆</div></div>
   <div id="nav-next">Trifelsstraße</div>
 </div>
+<!-- Tempolimit-Schild -->
+<div id="limit-sign"><div id="limit-val">30</div></div>
 
 <div id="hint">↑W Gas &nbsp; ↓S Bremse<br>←A Links &nbsp; →D Rechts<br>Space Handbremse<br>R Neustart</div>
 
@@ -392,6 +412,17 @@ const WP = [
   { name:"RheinEnergie Stadion 🏟", street:"RheinEnergie Stadion",
     ...ll(50.9334,6.8751), tl:false, width:14 },
 ];
+
+// ── Tempolimits je Straße ────────────────────────────────────────────────────
+const LIMITS = {
+  'Altbaumburgweg':30,'Trifelsstraße':30,'Ebernburgweg':30,
+  'Schiefersburger Weg':30,'Escher Str.':50,'Parkgürtel':70,
+  'Auffahrt Richtung Zentrum':50,'Innere Kanalstraße':50,
+  'Aachener Str.':50,'Kitschburger Str.':30,
+  'Friedrich-Schmidt-Str.':50,'Junkersdorfer Str.':50,
+  'RheinEnergie Stadion':10,
+};
+function streetLimit(s){ return LIMITS[s] || 50; }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
@@ -761,6 +792,75 @@ function updateTrafficLights(t) {
   });
 })();
 
+// ── NPC-Verkehr ───────────────────────────────────────────────────────────────
+const NPC_COLORS = [0xcc3322,0x228833,0xddcc11,0xffffff,0x2255cc,0xdd7722,0x882288];
+const npcs = [];
+
+function createNPC(wpStart, color) {
+  const g   = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const blk = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const gls = new THREE.MeshBasicMaterial({ color: 0x223344 });
+
+  // Karosserie
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 4.0), mat);
+  body.position.y = 0.75; g.add(body);
+  // Dach
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.7, 2.1), mat);
+  roof.position.set(0, 1.6, -0.25); g.add(roof);
+  // Frontscheibe
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.6), gls);
+  ws.position.set(0, 1.55, 0.8); ws.rotation.x = -0.28; g.add(ws);
+  // Heckscheibe
+  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.55), gls);
+  rw.position.set(0, 1.57, -1.3); rw.rotation.set(0.28, Math.PI, 0); g.add(rw);
+  // Räder (4 Stück)
+  [[-0.88,0.3,1.2],[0.88,0.3,1.2],[-0.88,0.3,-1.2],[0.88,0.3,-1.2]].forEach(([rx,ry,rz])=>{
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.22,12), blk);
+    w.rotation.z = Math.PI/2; w.position.set(rx,ry,rz); g.add(w);
+  });
+
+  scene.add(g);
+  const wp = WP[wpStart];
+  const wpN = WP[Math.min(wpStart+1, WP.length-1)];
+  return {
+    mesh: g,
+    x: wp.x, z: wp.z,
+    heading: Math.atan2(wpN.x - wp.x, wpN.z - wp.z),
+    speed: 7.5 + Math.random() * 4,  // 27–42 km/h
+    wpIdx: wpStart + 1,
+  };
+}
+
+function initNPCs() {
+  const step = Math.floor(WP.length / 8);
+  for (let i = 0; i < 7; i++) {
+    const idx = Math.min(1 + step * (i + 1), WP.length - 3);
+    npcs.push(createNPC(idx, NPC_COLORS[i % NPC_COLORS.length]));
+  }
+}
+
+function updateNPCs(dt) {
+  npcs.forEach(npc => {
+    if (npc.wpIdx >= WP.length) {
+      npc.wpIdx = 1; npc.x = WP[0].x; npc.z = WP[0].z;
+      npc.heading = Math.atan2(WP[1].x-WP[0].x, WP[1].z-WP[0].z);
+      return;
+    }
+    const tgt = WP[npc.wpIdx];
+    const dx = tgt.x - npc.x, dz = tgt.z - npc.z;
+    if (Math.hypot(dx, dz) < 18) { npc.wpIdx++; return; }
+    // Sanftes Nachlenken
+    let diff = Math.atan2(dx, dz) - npc.heading;
+    diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    npc.heading += diff * Math.min(1, 2.8 * dt);
+    npc.x += Math.sin(npc.heading) * npc.speed * dt;
+    npc.z += Math.cos(npc.heading) * npc.speed * dt;
+    npc.mesh.position.set(npc.x, 0, npc.z);
+    npc.mesh.rotation.y = npc.heading + Math.PI;
+  });
+}
+
 // ── Cockpit ───────────────────────────────────────────────────────────────────
 const cockpit = new THREE.Group();
 
@@ -947,62 +1047,135 @@ function updateNavHUD() {
   nextEl.textContent  = WP[jIdx+1].name || WP[jIdx+1].street || '—';
 }
 
-// ── Engine Sound (Web Audio API) ─────────────────────────────────────────────
-let _actx = null, _engOsc = null, _engFilt = null, _engGain = null;
-let _revOsc = null, _revGain = null;
+// ── Engine Sound – Noise-Engine (Web Audio API) ───────────────────────────────
+// Weißes Rauschen → Bandpass-Filter (Frequenz folgt RPM) + Sub-Bass-Sinus
+// Klingt erheblich organischer als reine Oszillatoren.
+let _actx = null, _noise = null, _engFilt = null, _engGain = null;
+let _subOsc = null, _subGain = null, _lfoOsc = null, _lfoMod = null;
 
 function initAudio() {
   if (_actx) return;
   try {
     _actx = new (window.AudioContext || window.webkitAudioContext)();
+    const sr = _actx.sampleRate;
 
-    // Primary layer: sawtooth → fat engine hum
-    _engOsc  = _actx.createOscillator();
-    _engOsc.type = 'sawtooth';
-    _engOsc.frequency.value = 58;
+    // 2-Sekunden Weißrauschen-Buffer (loopend)
+    const buf = _actx.createBuffer(1, sr * 2, sr);
+    const ch  = buf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    _noise = _actx.createBufferSource();
+    _noise.buffer = buf;
+    _noise.loop   = true;
+    _noise.start();
 
+    // Bandpass – Mittenfrequenz = RPM-Grundfrequenz
     _engFilt = _actx.createBiquadFilter();
-    _engFilt.type = 'lowpass';
-    _engFilt.frequency.value = 420;
-    _engFilt.Q.value = 1.4;
+    _engFilt.type = 'bandpass';
+    _engFilt.frequency.value = 80;
+    _engFilt.Q.value = 6;
 
+    // Master-Gain
     _engGain = _actx.createGain();
-    _engGain.gain.value = 0.05;
+    _engGain.gain.value = 0.18;
 
-    _engOsc.connect(_engFilt);
+    _noise.connect(_engFilt);
     _engFilt.connect(_engGain);
     _engGain.connect(_actx.destination);
-    _engOsc.start();
 
-    // Rev layer: square → higher harmonic bite at speed
-    _revOsc  = _actx.createOscillator();
-    _revOsc.type = 'square';
-    _revOsc.frequency.value = 116;
+    // Sub-Bass-Sinus (Körper/Wummern)
+    _subOsc  = _actx.createOscillator();
+    _subOsc.type = 'sine';
+    _subOsc.frequency.value = 40;
+    _subGain = _actx.createGain();
+    _subGain.gain.value = 0.06;
+    _subOsc.connect(_subGain);
+    _subGain.connect(_actx.destination);
+    _subOsc.start();
 
-    _revGain = _actx.createGain();
-    _revGain.gain.value = 0;
-
-    _revOsc.connect(_revGain);
-    _revGain.connect(_actx.destination);
-    _revOsc.start();
+    // LFO – simuliert Zündimpulse (Amplitudenmodulation des Rauschens)
+    _lfoOsc = _actx.createOscillator();
+    _lfoOsc.type = 'sine';
+    _lfoOsc.frequency.value = 22;
+    _lfoMod = _actx.createGain();
+    _lfoMod.gain.value = 0.06;   // sanfte Modulation, bleibt immer positiv
+    _lfoOsc.connect(_lfoMod);
+    _lfoMod.connect(_engGain.gain);
+    _lfoOsc.start();
   } catch(e) {
-    console.warn('Web Audio nicht verfügbar:', e);
+    console.warn('Web Audio:', e);
   }
 }
 
 function updateEngineSound() {
   if (!_actx || _actx.state === 'suspended') return;
-  const spd = Math.min(car.speed / MAX_SPD, 1);  // 0 → 1
+  const spd = Math.min(car.speed / MAX_SPD, 1);
   const now = _actx.currentTime;
+  const hz  = 62 + spd * 128;  // 62 Hz Leerlauf → 190 Hz Vollgas
 
-  // Base hum: 58 Hz idle → 195 Hz full throttle
-  _engOsc.frequency.setTargetAtTime(58 + spd * 137, now, 0.10);
-  _engFilt.frequency.setTargetAtTime(320 + spd * 1100, now, 0.10);
-  _engGain.gain.setTargetAtTime(0.04 + spd * 0.07, now, 0.08);
+  _engFilt.frequency.setTargetAtTime(hz,          now, 0.08);
+  _engGain.gain.setTargetAtTime(0.14 + spd * 0.11, now, 0.07);
+  _lfoOsc.frequency.setTargetAtTime(hz * 2,        now, 0.07);
+  _lfoMod.gain.setTargetAtTime(0.04 + spd * 0.07,  now, 0.08);
+  _subOsc.frequency.setTargetAtTime(hz * 0.5,      now, 0.10);
+  _subGain.gain.setTargetAtTime(0.04 + spd * 0.08, now, 0.09);
+}
 
-  // Rev bite: appears quadratically with speed
-  _revOsc.frequency.setTargetAtTime(116 + spd * 260, now, 0.07);
-  _revGain.gain.setTargetAtTime(spd * spd * 0.032, now, 0.09);
+// ── GPS-Sprachausgabe (Web Speech API, Deutsch) ───────────────────────────────
+const _voiceDone = new Set();  // "jIdx:far" / "jIdx:near" bereits angesagt
+
+function _speak(text) {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'de-DE'; u.rate = 0.92; u.pitch = 1.0;
+  window.speechSynthesis.cancel();  // laufende Ansage abbrechen
+  window.speechSynthesis.speak(u);
+}
+
+function updateVoice() {
+  if (car.wpIdx >= WP.length) return;
+  // Nächste Kreuzung suchen
+  let jIdx = -1;
+  for (let i = car.wpIdx; i < WP.length - 1; i++) {
+    if (WP[i].street !== WP[i+1].street) { jIdx = i; break; }
+  }
+  if (jIdx === -1) return;
+
+  // Distanz bis zur Kreuzung
+  let dist = Math.hypot(WP[car.wpIdx].x - car.x, WP[car.wpIdx].z - car.z);
+  for (let i = car.wpIdx; i < jIdx; i++)
+    dist += Math.hypot(WP[i+1].x - WP[i].x, WP[i+1].z - WP[i].z);
+
+  // Abbiegungsrichtung
+  const ax = WP[jIdx].x   - WP[Math.max(jIdx-1,0)].x;
+  const az = WP[jIdx].z   - WP[Math.max(jIdx-1,0)].z;
+  const bx = WP[jIdx+1].x - WP[jIdx].x;
+  const bz = WP[jIdx+1].z - WP[jIdx].z;
+  const cross = (ax*bz - az*bx) / (Math.hypot(ax,az)*Math.hypot(bx,bz)+1e-9);
+  const dir = cross > 0.15 ? 'rechts' : cross < -0.15 ? 'links' : 'geradeaus';
+  const next = WP[jIdx+1].name || WP[jIdx+1].street;
+
+  if (dist < 330 && dist > 260 && !_voiceDone.has(jIdx+':far')) {
+    _voiceDone.add(jIdx+':far');
+    _speak(`In ${Math.round(dist/50)*50} Metern ${dir} abbiegen auf ${next}`);
+  } else if (dist < 90 && dist > 25 && !_voiceDone.has(jIdx+':near')) {
+    _voiceDone.add(jIdx+':near');
+    _speak(`Jetzt ${dir} abbiegen`);
+  }
+}
+
+// ── Tempolimit-HUD ────────────────────────────────────────────────────────────
+let _curLimit = 30;
+
+function updateLimitHUD() {
+  const cur = WP[Math.max(car.wpIdx - 1, 0)];
+  const lim = streetLimit(cur.street);
+  if (lim === _curLimit) return;
+  _curLimit = lim;
+  document.getElementById('limit-val').textContent = lim;
+  // Schild leicht aufblitzen (Farbe kurz highlight)
+  const s = document.getElementById('limit-sign');
+  s.style.borderColor = '#ff4444';
+  setTimeout(() => { s.style.borderColor = '#cc1111'; }, 600);
 }
 
 // ── Physik ────────────────────────────────────────────────────────────────────
@@ -1224,10 +1397,13 @@ function loop(now) {
   const elapsed = clock.getElapsedTime();
 
   updateCar(dt);
+  updateNPCs(dt);
   updateCamera();
   updateTrafficLights(elapsed);
   drawMinimap();
   updateNavHUD();
+  updateVoice();
+  updateLimitHUD();
   updateEngineSound();
 
   document.getElementById('spd').textContent = Math.round(car.speed * 3.6);
@@ -1235,6 +1411,8 @@ function loop(now) {
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+initNPCs();
+document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
 requestAnimationFrame(loop);
