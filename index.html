@@ -1797,12 +1797,31 @@ function getGamepadInput() {
   return gps[pad.index] || null;
 }
 
+// Prüft ob das Auto WP[idx] passiert hat:
+// (a) Radius < 45 m, ODER
+// (b) Auto hat die senkrechte Linie des WPs in Fahrtrichtung überquert
+//     und ist nicht mehr als 65 m seitlich versetzt.
+function _wpPassed(wpIdx, towardNext) {
+  const wp   = WP[wpIdx];
+  const dx   = car.x - wp.x, dz = car.z - wp.z;
+  const dist = Math.hypot(dx, dz);
+  if (dist < 45) return true;
+  // Überholprüfung: Vorwärts-Einheitsvektor wp → nächster WP
+  const nx = towardNext.x - wp.x, nz = towardNext.z - wp.z;
+  const nl = Math.hypot(nx, nz);
+  if (nl < 0.1) return false;
+  const fxn = nx / nl, fzn = nz / nl;
+  const proj    = dx * fxn + dz * fzn;      // positiv = Auto ist "vorbei"
+  const lateral = Math.abs(dx * (-fzn) + dz * fxn); // seitlicher Abstand
+  return proj > 0 && lateral < 65;
+}
+
 function checkWaypoint() {
   if (car.homeMode) {
     // ── Heimfahrt: WP rückwärts abarbeiten ──
     if (car.wpIdx < 0) return;
-    const wp = WP[car.wpIdx];
-    if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
+    const toward = WP[Math.max(car.wpIdx - 1, 0)];
+    if (_wpPassed(car.wpIdx, toward)) {
       car.wpIdx--;
       if (car.wpIdx >= 0) {
         const prev = WP[car.wpIdx];
@@ -1823,8 +1842,8 @@ function checkWaypoint() {
   }
   // ── Vorwärtsfahrt ──
   if (car.wpIdx >= WP.length) return;
-  const wp = WP[car.wpIdx];
-  if (Math.hypot(wp.x - car.x, wp.z - car.z) < 25) {
+  const toward = WP[Math.min(car.wpIdx + 1, WP.length - 1)];
+  if (_wpPassed(car.wpIdx, toward)) {
     car.wpIdx++;
     if (car.wpIdx < WP.length) {
       const cur = WP[car.wpIdx];
