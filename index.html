@@ -3168,10 +3168,10 @@ function _initFootball3D() {
     arm.position.set(sx * (FW / 2 + 9), 29.5, sz * (FH / 2 + 7)); fbScene.add(arm);
   });
 
-  // Camera — sideline spectator view (FIFA diagonal)
-  fbCamera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.5, 500);
-  fbCamera.position.set(0, 34, -62);
-  fbCamera.lookAt(0, 2, 0);
+  // Camera — Zuschauerperspektive im Stadion (Seitenlinie, leicht erhöht)
+  fbCamera = new THREE.PerspectiveCamera(64, innerWidth / innerHeight, 0.3, 400);
+  fbCamera.position.set(0, 14, -33);
+  fbCamera.lookAt(0, 0, 8);
 
   // Player meshes
   _fbPlayerMeshes = [];
@@ -3218,9 +3218,9 @@ function _syncFootball3D() {
   });
 
   // Smooth camera pan following ball (X only)
-  const targetX = bx * 0.32;
+  const targetX = bx * 0.30;
   fbCamera.position.x += (targetX - fbCamera.position.x) * 0.04;
-  fbCamera.lookAt(fbCamera.position.x * 0.4, 2, 0);
+  fbCamera.lookAt(fbCamera.position.x * 0.4, 0, 8);
 }
 
 function startFootballMatch() {
