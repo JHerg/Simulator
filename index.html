@@ -192,15 +192,25 @@
       background:rgba(0,110,255,.5);border-color:rgba(100,170,255,.85);
       color:#fff;box-shadow:0 0 14px rgba(0,120,255,.4);
     }
+    #cfg-btn-row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:6px;}
     #cfg-start{
-      margin-top:6px;padding:15px 54px;border-radius:14px;
-      font-size:20px;font-weight:bold;
+      padding:15px 42px;border-radius:14px;
+      font-size:18px;font-weight:bold;
       background:linear-gradient(135deg,#0044cc,#0080ff);
       border:2px solid rgba(100,180,255,.55);color:#fff;cursor:pointer;
       box-shadow:0 4px 22px rgba(0,100,255,.45);
       transition:transform .15s,box-shadow .15s;
     }
     #cfg-start:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(0,130,255,.6);}
+    #cfg-football{
+      padding:15px 42px;border-radius:14px;
+      font-size:18px;font-weight:bold;
+      background:linear-gradient(135deg,#226622,#44aa44);
+      border:2px solid rgba(80,200,80,.6);color:#fff;cursor:pointer;
+      box-shadow:0 4px 22px rgba(0,160,0,.38);
+      transition:transform .15s,box-shadow .15s;
+    }
+    #cfg-football:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(0,200,0,.5);}
 
     /* ── Tempolimit-Schild ──────────────────────────────── */
     #limit-sign{
@@ -366,7 +376,10 @@
     </div>
   </div>
 
-  <button id="cfg-start">▶ Fahrt starten</button>
+  <div id="cfg-btn-row">
+    <button id="cfg-start">🚗 Fahrt starten</button>
+    <button id="cfg-football">⚽ Zum Fußball</button>
+  </div>
 </div>
 
 <div id="prog"><div id="prog-fill"></div></div>
@@ -533,15 +546,33 @@ async function boot() {
     });
   });
 
-  // Start-Button
-  document.getElementById('cfg-start').addEventListener('click', () => {
-    const cfg = {
+  function getCfg() {
+    return {
       time:    cfgEl.querySelector('.cfg-btn[data-group="time"].sel')?.dataset.val    || 'day',
       weather: cfgEl.querySelector('.cfg-btn[data-group="weather"].sel')?.dataset.val || 'clear',
     };
+  }
+
+  // Fahrt-Start-Button
+  document.getElementById('cfg-start').addEventListener('click', () => {
     cfgEl.style.display = 'none';
     try {
-      startSimulator(cfg);
+      startSimulator(getCfg());
+    } catch(e) {
+      bootError('Render-Fehler: ' + e.message);
+      document.getElementById('boot-screen').style.display = 'flex';
+      console.error(e);
+    }
+  });
+
+  // Direkt zum Fußball
+  document.getElementById('cfg-football').addEventListener('click', () => {
+    cfgEl.style.display = 'none';
+    try {
+      startSimulator(getCfg());
+      // Auto direkt auf den Stadion-Parkplatz teleportieren
+      car.x = PARK_CX; car.z = PARK_CZ; car.speed = 0;
+      startFootballMatch();
     } catch(e) {
       bootError('Render-Fehler: ' + e.message);
       document.getElementById('boot-screen').style.display = 'flex';
@@ -3213,6 +3244,12 @@ function startFootballMatch() {
   ['cockpit-cv','info','speedo','mm','nav-panel','limit-sign','hint','mctrl','prog','osm-lbl']
     .forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
 
+  // Haupt-Canvas explizit fixed + knapp unter dem Football-Screen-z-index positionieren
+  const _cnv = document.getElementById('canvas');
+  _cnv.style.position = 'fixed'; _cnv.style.top = '0'; _cnv.style.left = '0';
+  _cnv.style.width = '100%'; _cnv.style.height = '100%'; _cnv.style.zIndex = '8095';
+  renderer.setSize(innerWidth, innerHeight);
+
   const fbs = document.getElementById('football-screen');
   fbs.style.display = 'flex';
   document.getElementById('fb-score').textContent  = '0 : 0';
@@ -3598,6 +3635,11 @@ function returnFromFootball() {
   // Fahrszene-UI wiederherstellen
   ['cockpit-cv','info','speedo','mm','nav-panel','limit-sign','hint','mctrl','prog']
     .forEach(id => { const e = document.getElementById(id); if (e) e.style.display = ''; });
+  // Canvas-Position zurücksetzen
+  const _cnv2 = document.getElementById('canvas');
+  _cnv2.style.position = ''; _cnv2.style.top = ''; _cnv2.style.left = '';
+  _cnv2.style.width = '100vw'; _cnv2.style.height = '100vh'; _cnv2.style.zIndex = '';
+  renderer.setSize(innerWidth, innerHeight);
   car.x = WP[WP.length-1].x;
   car.z = WP[WP.length-1].z;
   const prev = WP[WP.length-2];
