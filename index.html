@@ -3401,71 +3401,78 @@ function updateFootball(dt) {
   FB.ball.y3  += FB.ball.vy3 * dt;
   if (FB.ball.y3 < 0) { FB.ball.y3 = 0; FB.ball.vy3 = (Math.abs(FB.ball.vy3) > 1.2) ? -FB.ball.vy3 * 0.5 : 0; }
 
-  // ── Spieler-KI ──
-  // Nächster & zweitnächster Spieler je Team zur Ballposition
-  const near  = [{idx:-1, dist:1e9}, {idx:-1, dist:1e9}];
-  const near2 = [{idx:-1, dist:1e9}, {idx:-1, dist:1e9}];
+  // ── Spieler-KI: mannschaftliches Verhalten (Team-Block + Pressing + Anspiele) ──
+  const bX = FB.ball.x, bY = FB.ball.y;
+
+  // Feldspieler je Team nach Ballnähe sortieren (Torwart ausgenommen)
+  const rank = [[], []];
   FB.players.forEach((p, i) => {
     if (p.redCard || p.role === 'gk') return;
-    const d = Math.hypot(p.x - FB.ball.x, p.y - FB.ball.y);
-    if (d < near[p.team].dist) {
-      near2[p.team] = near[p.team];
-      near[p.team]  = { idx: i, dist: d };
-    } else if (d < near2[p.team].dist) {
-      near2[p.team] = { idx: i, dist: d };
-    }
+    rank[p.team].push({ idx: i, dist: Math.hypot(p.x - bX, p.y - bY) });
   });
+  rank[0].sort((a, b) => a.dist - b.dist);
+  rank[1].sort((a, b) => a.dist - b.dist);
+  const n0 = rank[0][0] ? rank[0][0].dist : 1e9;
+  const n1 = rank[1][0] ? rank[1][0].dist : 1e9;
 
-  // Ballbesitz mit Hysterese — verhindert Rollen-Flackern bei fast gleichen Distanzen
-  if (FB.possTeam !== 0 && FB.possTeam !== 1)
-    FB.possTeam = near[0].dist <= near[1].dist ? 0 : 1;
-  if (near[0].dist + 16 < near[1].dist) FB.possTeam = 0;
-  else if (near[1].dist + 16 < near[0].dist) FB.possTeam = 1;
-  const ballTeam = FB.possTeam;
-  const defTeam  = 1 - ballTeam;
+  // Ballbesitz mit Hysterese (verhindert Rollen-Flackern)
+  if (FB.possTeam !== 0 && FB.possTeam !== 1) FB.possTeam = n0 <= n1 ? 0 : 1;
+  if (n0 + 16 < n1) FB.possTeam = 0;
+  else if (n1 + 16 < n0) FB.possTeam = 1;
+  const atkTeam = FB.possTeam, defTeam = 1 - atkTeam;
 
-  // Absolut nächster Spieler darf schießen/klären (Team-unabhängig)
-  const closeTeam  = near[0].dist <= near[1].dist ? 0 : 1;
-  const kickerIdx  = near[closeTeam].idx;
-  const kickerDist = near[closeTeam].dist;
+  // Absolut nächster Spieler darf schießen/klären
+  const closeTeam  = n0 <= n1 ? 0 : 1;
+  const kickerIdx  = rank[closeTeam][0] ? rank[closeTeam][0].idx : -1;
+  const kickerDist = rank[closeTeam][0] ? rank[closeTeam][0].dist : 1e9;
 
-  // Abfangpunkt: kurze Vorhersage der Ballbewegung
-  const pBX = Math.max(bM, Math.min(FB_VW - bM, FB.ball.x + FB.ball.vx * 0.18));
-  const pBY = Math.max(bM, Math.min(FB_VH - bM, FB.ball.y + FB.ball.vy * 0.18));
+  // Abfangpunkt (kurze Vorhersage)
+  const pBX = Math.max(bM, Math.min(FB_VW - bM, bX + FB.ball.vx * 0.18));
+  const pBY = Math.max(bM, Math.min(FB_VH - bM, bY + FB.ball.vy * 0.18));
 
   if (FB.kickCd > 0) FB.kickCd -= dt;
 
   const t = FB.gameTime;
+  // Team-Block: linePush schiebt die ganze Mannschaft mit dem Ball auf-/abwärts,
+  // lateral folgt der Block der Ballseite → kompakte, zusammenhängende Form
+  const linePush = bX - FB_VW / 2;
+  const latShift = (bY - FB_VH / 2) * 0.22;
+
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
-    const ownAtk   = (ballTeam === p.team);
-    const dir      = p.team === 0 ? 1 : -1;            // Angriffsrichtung (+x / -x)
+    const dir      = p.team === 0 ? 1 : -1;            // Angriffsrichtung
     const oppGoalX = p.team === 0 ? FB_VW - bM : bM;
     const ownGoalX = p.team === 0 ? bM : FB_VW - bM;
-    const jx = Math.sin(t*0.4 + p.ph)*11, jy = Math.cos(t*0.55 + p.ph*1.3)*8;
-    const isChaser = (i === near[p.team].idx);          // nächster jagt den Ball (beide Teams)
-    const isCover  = (p.team === defTeam && i === near2[defTeam].idx && near2[defTeam].dist < 230);
-    const canKick  = (i === kickerIdx && kickerDist < 22 && FB.ball.y3 < 1.8 && FB.kickCd <= 0);
+    const ownAtk   = (p.team === atkTeam);
+    const r        = rank[p.team];
+    const myRank   = (r[0] && r[0].idx === i) ? 0 : (r[1] && r[1].idx === i) ? 1 : (r[2] && r[2].idx === i) ? 2 : 9;
+    const jx = Math.sin(t*0.4 + p.ph)*6, jy = Math.cos(t*0.55 + p.ph*1.3)*6;
+
+    // Mannschaftsform-Anker für diesen Spieler
+    const roleK = p.role === 'def' ? 0.30 : p.role === 'mid' ? 0.46 : 0.60;
+    let ax = p.hx + linePush * roleK + (ownAtk ? dir*16 : -dir*8);
+    let ay = p.hy + latShift * (p.role === 'def' ? 0.8 : 1.0);
+    ax = Math.max(bM + 8, Math.min(FB_VW - bM - 8, ax));
+    ay = Math.max(bM + 6, Math.min(FB_VH - bM - 6, ay));
+
+    const canKick = (i === kickerIdx && kickerDist < 22 && FB.ball.y3 < 1.8 && FB.kickCd <= 0);
     let tx, ty, spd;
 
     if (p.role === 'gk') {
-      // Vorhersage: wo trifft der Ball die Torlinie?
-      let predictY = FB.ball.y;
+      let predictY = bY;
       if (Math.abs(FB.ball.vx) > 5) {
-        const timeToGK = (p.hx - FB.ball.x) / FB.ball.vx;
+        const timeToGK = (p.hx - bX) / FB.ball.vx;
         if (timeToGK > 0 && timeToGK < 2.5) {
-          predictY = FB.ball.y + FB.ball.vy * timeToGK;
+          predictY = bY + FB.ball.vy * timeToGK;
           predictY = Math.max(bM, Math.min(FB_VH - bM, predictY));
         }
       }
       const paW = FB_VW * 0.18, paH = FB_VH * 0.52;
       const ballInPA = p.team === 0
-        ? FB.ball.x < bM + paW && Math.abs(FB.ball.y - FB_VH/2) < paH/2
-        : FB.ball.x > FB_VW - bM - paW && Math.abs(FB.ball.y - FB_VH/2) < paH/2;
-      // Torwart kommt heraus, wenn ein Gegner den Ball gefährlich im Strafraum führt
+        ? bX < bM + paW && Math.abs(bY - FB_VH/2) < paH/2
+        : bX > FB_VW - bM - paW && Math.abs(bY - FB_VH/2) < paH/2;
       if (ballInPA && closeTeam !== p.team && kickerDist < 60) {
-        tx = FB.ball.x + dir * 6;
-        ty = FB.ball.y;
+        tx = bX + dir*6; ty = bY;
         tx = p.team === 0 ? Math.max(bM, Math.min(tx, p.hx + 42))
                           : Math.min(FB_VW - bM, Math.max(tx, p.hx - 42));
       } else {
@@ -3476,94 +3483,98 @@ function updateFootball(dt) {
       spd = 5.0;
 
     } else if (canKick) {
-      // ── Ball am Fuß: Entscheidung Torschuss / Pass / Vortrieb ──
+      // ── Ball am Fuß: Schuss / Pass / Dribbling ──
       FB.lastTouchTeam = p.team;
-      FB.kickCd = 0.45;
-      const distGoal = Math.abs(oppGoalX - FB.ball.x);
-      if (distGoal < FB_VW * 0.34) {
-        // Torschuss in eine Ecke
-        const gy  = FB_VH/2 + (Math.random()<.5 ? -1 : 1) * goalHalf * (0.4 + Math.random()*0.5);
-        const ang = Math.atan2(gy - FB.ball.y, (oppGoalX + dir*4) - FB.ball.x);
-        const pwr = 230 + Math.random()*85 + (p.role==='fwd' ? 25 : 0);
-        FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.13) * pwr;
-        FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.13) * pwr;
-        FB.ball.vy3 = 2.5 + Math.random()*4;
-      } else {
-        // Pass zu freiem, weiter vorne stehendem Mitspieler — sonst Dribbling Richtung Tor
-        let bestX = null, bestY = null, bestScore = -1e9;
-        FB.players.forEach(mate => {
-          if (mate === p || mate.redCard || mate.team !== p.team || mate.role === 'gk') return;
-          const ahead = (mate.x - FB.ball.x) * dir;     // >0 = weiter vorne
-          if (ahead < 6) return;
-          const dd = Math.hypot(mate.x - FB.ball.x, mate.y - FB.ball.y);
-          if (dd < 45 || dd > 330) return;
-          const score = ahead - dd * 0.25;
-          if (score > bestScore) { bestScore = score; bestX = mate.x; bestY = mate.y; }
-        });
-        let tgX, tgY;
-        if (bestX !== null && Math.random() < 0.72) { tgX = bestX; tgY = bestY; }
-        else { tgX = FB.ball.x + dir*110; tgY = FB.ball.y + (Math.random()-.5)*55; }
-        const ang = Math.atan2(tgY - FB.ball.y, tgX - FB.ball.x);
-        const dd  = Math.hypot(tgX - FB.ball.x, tgY - FB.ball.y);
-        const pwr = Math.min(245, 95 + dd*1.25);
-        FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.11) * pwr;
-        FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.11) * pwr;
-        FB.ball.vy3 = 1 + Math.random()*2;
-      }
-      tx = FB.ball.x; ty = FB.ball.y; spd = 4.0;
+      const distGoal = Math.abs(oppGoalX - bX);
+      const inRange  = distGoal < FB_VW * 0.29 && Math.abs(bY - FB_VH/2) < FB_VH * 0.36;
 
-    } else if (isChaser) {
-      // Jeweils nächster Spieler beider Teams läuft zum Abfangpunkt
-      tx = pBX; ty = pBY; spd = 6.6;
-
-    } else if (isCover) {
-      // Zweiter Verteidiger doppelt leicht versetzt
-      tx = pBX - dir*22; ty = pBY + (p.y < FB.ball.y ? -16 : 16); spd = 5.6;
-
-    } else if (p.role === 'fwd') {
-      if (ownAtk) { tx = oppGoalX - dir*(20 + Math.abs(jx)); ty = p.hy + jy*1.2; }
-      else        { tx = FB_VW/2 + dir*12 + jx;              ty = p.hy + jy; }
-      spd = 5.4;
-
-    } else if (p.role === 'mid') {
-      if (ownAtk) { tx = p.hx + dir*55 + jx; ty = p.hy + jy; }
-      else {
-        // Mittelfeld deckt nächsten Gegner in seiner Zone (geglättet)
-        let markX = p.hx, markY = p.hy, minD = 9999;
-        FB.players.forEach(opp => {
-          if (!opp.redCard && opp.team !== p.team && opp.role !== 'gk') {
-            const od = Math.hypot(opp.x - p.hx, opp.y - p.hy);
-            if (od < minD && od < 150) { minD = od; markX = opp.x; markY = opp.y; }
+      // bestes Anspiel suchen: weiter vorne + viel Raum (Abstand zum nächsten Gegner)
+      let best = null, bestScore = -1e9;
+      FB.players.forEach(mate => {
+        if (mate === p || mate.redCard || mate.team !== p.team || mate.role === 'gk') return;
+        const ahead = (mate.x - bX) * dir;
+        const dd = Math.hypot(mate.x - bX, mate.y - bY);
+        if (dd < 45 || dd > 340) return;
+        let space = 1e9;
+        FB.players.forEach(o => {
+          if (!o.redCard && o.team !== p.team) {
+            const od = Math.hypot(o.x - mate.x, o.y - mate.y);
+            if (od < space) space = od;
           }
         });
-        tx = p.hx*0.55 + markX*0.45 - dir*8 + jx*0.25;
-        ty = p.hy*0.55 + markY*0.45 + jy*0.25;
-        tx = p.team===0 ? Math.max(ownGoalX+12, Math.min(tx, p.hx+38))
-                        : Math.min(ownGoalX-12, Math.max(tx, p.hx-38));
-      }
-      spd = 5.0;
+        const score = ahead * 1.0 + space * 0.7 - dd * 0.12;
+        if (score > bestScore) { bestScore = score; best = mate; }
+      });
 
-    } else { // def
-      if (ownAtk) {
-        tx = p.hx + dir*20 + jx*0.5; ty = p.hy + jy*0.5;
+      if (inRange && (best === null || Math.random() < 0.55)) {
+        // Torschuss in eine Ecke
+        const gy  = FB_VH/2 + (Math.random()<.5 ? -1 : 1) * goalHalf * (0.4 + Math.random()*0.5);
+        const ang = Math.atan2(gy - bY, (oppGoalX + dir*4) - bX);
+        const pwr = 235 + Math.random()*80 + (p.role==='fwd' ? 25 : 0);
+        FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.12) * pwr;
+        FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.12) * pwr;
+        FB.ball.vy3 = 2.5 + Math.random()*4;
+        FB.kickCd = 0.5;
+      } else if (best && bestScore > 40) {
+        // Pass zum freien Mitspieler (leichte Vorlage in den Lauf)
+        const lead = 16;
+        const tgX = best.x + ((best.x - bX) > 0 ? lead : -lead) * 0.4;
+        const tgY = best.y;
+        const ang = Math.atan2(tgY - bY, tgX - bX);
+        const dd  = Math.hypot(tgX - bX, tgY - bY);
+        const pwr = Math.min(255, 100 + dd*1.2);
+        FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.08) * pwr;
+        FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.08) * pwr;
+        FB.ball.vy3 = 0.8 + Math.random()*1.5;
+        FB.kickCd = 0.4;
       } else {
-        const bThreat = p.team===0 ? FB.ball.x < p.hx+75 : FB.ball.x > p.hx-75;
-        if (bThreat) {
-          // Zwischen nächstem Angreifer/Ball und eigenem Tor positionieren
-          let foeX = FB.ball.x, foeY = FB.ball.y, minFD = 9999;
-          FB.players.forEach(opp => {
-            if (!opp.redCard && opp.team !== p.team && (opp.role==='fwd'||opp.role==='mid')) {
-              const od = Math.hypot(opp.x - p.hx, opp.y - p.hy);
-              if (od < minFD) { minFD = od; foeX = opp.x; foeY = opp.y; }
-            }
-          });
-          const markX = foeX*0.35 + FB.ball.x*0.35 + ownGoalX*0.30;
-          tx = p.team===0 ? Math.max(ownGoalX+10, Math.min(markX, p.hx+75))
-                          : Math.min(ownGoalX-10, Math.max(markX, p.hx-75));
-          ty = foeY*0.5 + p.hy*0.5 + jy*0.18;
-        } else { tx = p.hx + jx*0.5; ty = p.hy + jy*0.5; }
+        // Dribbling: kurzer Vortrieb Richtung gegnerisches Tor, Spieler bleibt am Ball
+        FB.ball.vx = dir * (85 + Math.random()*25);
+        FB.ball.vy = (FB_VH/2 - bY)*0.25 + (Math.random()-.5)*30;
+        FB.ball.vy3 = 0.3;
+        FB.kickCd = 0.32;
       }
-      spd = 4.8;
+      tx = bX; ty = bY; spd = 4.5;
+
+    } else if (!ownAtk) {
+      // ── Verteidigen ──
+      if (myRank === 0) {
+        // direkter Gegenspieler presst den Ballführenden
+        tx = pBX; ty = pBY; spd = 6.6;
+      } else if (myRank === 1) {
+        // Absicherung: torseitig hinter dem Presser
+        tx = pBX - dir*30; ty = pBY*0.55 + ay*0.45; spd = 5.8;
+      } else {
+        // kompakte Zonendeckung im Block, leicht zur Ballseite gezogen
+        tx = ax*0.7 + bX*0.3 - dir*4 + jx;
+        ty = ay*0.6 + bY*0.4 + jy;
+        tx = p.team === 0 ? Math.max(ownGoalX+10, Math.min(tx, FB_VW/2+40))
+                          : Math.min(ownGoalX-10, Math.max(tx, FB_VW/2-40));
+        spd = 5.0;
+      }
+
+    } else {
+      // ── Angreifen (eigenes Team am Ball) ──
+      if (myRank === 0) {
+        // Ballführender läuft zum Ball
+        tx = pBX; ty = pBY; spd = 6.4;
+      } else if (myRank === 1 || myRank === 2) {
+        // Anspielstationen: vor dem Ball, nach außen versetzt (kurze + tiefe Option)
+        const sideSign = (myRank === 1) ? 1 : -1;
+        tx = bX + dir*(myRank === 1 ? 60 : 95);
+        ty = bY + sideSign*(60 + Math.abs(jy)*2);
+        tx = Math.max(bM+8, Math.min(FB_VW-bM-8, tx));
+        ty = Math.max(bM+8, Math.min(FB_VH-bM-8, ty));
+        spd = 5.8;
+      } else if (p.role === 'fwd') {
+        // Stürmer laufen in die Box / in die Halbräume
+        tx = oppGoalX - dir*(30 + Math.abs(jx));
+        ty = FB_VH/2 + (p.hy < FB_VH/2 ? -1 : 1) * (goalHalf*1.5) + jy;
+        spd = 5.6;
+      } else {
+        // Rest rückt im Block nach, hält die Form
+        tx = ax + jx; ty = ay + jy; spd = 5.0;
+      }
     }
 
     p.x += (tx - p.x) * spd * dt;
