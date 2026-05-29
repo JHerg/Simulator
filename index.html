@@ -1634,18 +1634,20 @@ function _drawMFD(ctx, cx, cy, w, h, kmh, gear, street) {
   ctx.fillText('D' + gear, rx + w*0.06, cy - h*0.08);
 }
 
-function _speedToRPM(kmh) {
-  if (Math.abs(kmh) < 0.5) return 850;
-  const ak = Math.abs(kmh);
-  const g = ak < 15 ? 1 : ak < 30 ? 2 : ak < 50 ? 3 : ak < 80 ? 4 : ak < 110 ? 5 : 6;
-  const tops = [15, 30, 50, 80, 110, 260];
-  const bots = [0, 15, 30, 50, 80, 110];
-  const t = (ak - bots[g-1]) / (tops[g-1] - bots[g-1]);
-  return 1100 + t * 2100;
-}
+// 7-Gang-DSG: Schaltpunkte in km/h
+const _DSG_TOPS = [18, 35, 58, 88, 118, 152, 190];
+const _DSG_BOTS = [0,  18, 35, 58, 88, 118, 152];
 function _estGear(kmh) {
   const ak = Math.abs(kmh);
-  return ak < 15 ? 1 : ak < 30 ? 2 : ak < 50 ? 3 : ak < 80 ? 4 : ak < 110 ? 5 : 6;
+  for (let g = 0; g < 7; g++) if (ak <= _DSG_TOPS[g]) return g + 1;
+  return 7;
+}
+function _speedToRPM(kmh) {
+  if (Math.abs(kmh) < 0.5) return 850;
+  const g  = _estGear(Math.abs(kmh)) - 1;
+  const t  = (Math.abs(kmh) - _DSG_BOTS[g]) / (_DSG_TOPS[g] - _DSG_BOTS[g]);
+  // DSG: fällt bei Schaltung auf ~1200, steigt bis ~3400
+  return 1200 + t * 2200;
 }
 
 function drawCockpit() {
@@ -2300,7 +2302,8 @@ function checkCollisions() {
 }
 
 // ── Physik ────────────────────────────────────────────────────────────────────
-const MAX_SPD = 22, MAX_REV = 5, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
+const MAX_SPD = 52.8, MAX_REV = 5, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 1.6;
+// 52.8 m/s = 190 km/h
 
 function updateCar(dt) {
   // Eingabe zusammenführen
