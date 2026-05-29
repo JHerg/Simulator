@@ -272,7 +272,7 @@
     /* ── Fußball-Bildschirm ───────────────────────────────── */
     #football-screen{
       position:fixed;inset:0;z-index:8100;display:none;
-      flex-direction:column;background:#1a2a1a;
+      flex-direction:column;background:transparent;
     }
     #fb-header{
       display:flex;align-items:center;justify-content:space-between;
@@ -286,6 +286,7 @@
     #fb-score{font-size:30px;font-weight:bold;color:#fff;letter-spacing:5px;}
     #fb-time{display:block;font-size:11px;color:#777;margin-top:2px;}
     #fb-canvas{flex:1;width:100%;display:block;}
+    #fb-canvas { display: none; }
     #fb-banner{
       position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
       font-size:48px;font-weight:bold;color:#fff;
@@ -2739,6 +2740,10 @@ const FB = {
   goalCooldown: 0,
 };
 
+const FB3S = 0.15;
+let fbScene = null, fbCamera = null;
+let _fbPlayerMeshes = [], _fbBallMesh = null;
+
 function setupParkingAndFootball() {
   const end = WP[WP.length - 1];
   PARK_CX = end.x + 58;
@@ -3039,6 +3044,161 @@ function _playWhistle(long) {
   }
 }
 
+function _initFootball3D() {
+  if (fbScene) return;
+  const S = FB3S;
+  fbScene = new THREE.Scene();
+  fbScene.background = new THREE.Color(0x4a80c4);
+  fbScene.fog = new THREE.Fog(0x4a80c4, 120, 260);
+
+  fbScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const sun = new THREE.DirectionalLight(0xfffae0, 1.0);
+  sun.position.set(40, 80, -20); fbScene.add(sun);
+
+  const FW = FB_VW * S, FH = FB_VH * S; // 105 × 63
+
+  // Pitch
+  const pitchMat = new THREE.MeshLambertMaterial({ color: 0x3a7d34 });
+  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(FW + 20, FH + 14), pitchMat);
+  pitch.rotation.x = -Math.PI / 2; fbScene.add(pitch);
+
+  // Alternating stripes
+  const darkMat = new THREE.MeshLambertMaterial({ color: 0x347030 });
+  const stripeW = FW / 12;
+  for (let i = 0; i < 12; i += 2) {
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(stripeW, FH), darkMat);
+    s.rotation.x = -Math.PI / 2;
+    s.position.set(-FW / 2 + (i + 0.5) * stripeW, 0.005, 0);
+    fbScene.add(s);
+  }
+
+  // Field lines
+  const lMat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false });
+  const bM3 = 14 * S;
+  const gZ  = FB_VH * 0.095 * S; // half-goal width in 3D ≈ 5.985
+  const pX1 = -FW / 2 + bM3, pX2 = FW / 2 - bM3;
+  const pZ1 = -FH / 2 + bM3, pZ2 = FH / 2 - bM3;
+  const pW  = pX2 - pX1, pH = pZ2 - pZ1;
+  const LW  = 0.22;
+
+  function fl(x, z, w, d) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), lMat);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.025, z); fbScene.add(m);
+  }
+  fl(0, pZ1, pW, LW); fl(0, pZ2, pW, LW); // top/bottom boundary
+  fl(pX1, 0, LW, pH); fl(pX2, 0, LW, pH); // left/right boundary
+  fl(0, 0, LW, pH);                         // center line
+  fl(0, 0, 0.5, 0.5);                       // center spot
+
+  const cc = new THREE.Mesh(new THREE.RingGeometry(9.15, 9.15 + LW, 40), lMat);
+  cc.rotation.x = -Math.PI / 2; cc.position.y = 0.025; fbScene.add(cc);
+
+  const paW = 16.5, paH = 40.32; // penalty area in 3D units (≈ meters)
+  // Left penalty box
+  fl(pX1 + paW, 0, LW, paH);
+  fl(pX1 + paW / 2, -paH / 2, paW, LW);
+  fl(pX1 + paW / 2,  paH / 2, paW, LW);
+  // Right penalty box
+  fl(pX2 - paW, 0, LW, paH);
+  fl(pX2 - paW / 2, -paH / 2, paW, LW);
+  fl(pX2 - paW / 2,  paH / 2, paW, LW);
+
+  // Goals
+  function buildGoal(gx, flipped) {
+    const postR = 0.2, postH = 3.8, netD = 3.8;
+    const gMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const lp = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, postH, 8), gMat);
+    lp.position.set(gx, postH / 2, -gZ); fbScene.add(lp);
+    const rp = lp.clone(); rp.position.set(gx, postH / 2, gZ); fbScene.add(rp);
+    const cb = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, gZ * 2, 8), gMat);
+    cb.rotation.z = Math.PI / 2; cb.position.set(gx, postH, 0); fbScene.add(cb);
+    const nMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.30, side: THREE.DoubleSide });
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(gZ * 2, postH), nMat);
+    net.rotation.y = Math.PI / 2;
+    net.position.set(gx + (flipped ? netD / 2 : -netD / 2), postH / 2, 0); fbScene.add(net);
+    // Back post
+    const bp = lp.clone();
+    bp.position.set(gx + (flipped ? netD : -netD), postH / 2, 0); fbScene.add(bp);
+  }
+  buildGoal(pX1, false);
+  buildGoal(pX2, true);
+
+  // Stadium stands
+  const sMat0 = new THREE.MeshLambertMaterial({ color: 0x3a4a8a });
+  const sMat1 = new THREE.MeshLambertMaterial({ color: 0x344080 });
+  const sMat2 = new THREE.MeshLambertMaterial({ color: 0x4a3830 });
+  const ns = new THREE.Mesh(new THREE.BoxGeometry(FW + 28, 22, 14), sMat0);
+  ns.position.set(0, 11, FH / 2 + 10); fbScene.add(ns);
+  const ss = new THREE.Mesh(new THREE.BoxGeometry(FW + 28, 26, 16), sMat1);
+  ss.position.set(0, 13, -FH / 2 - 11); fbScene.add(ss);
+  const es = new THREE.Mesh(new THREE.BoxGeometry(14, 20, FH + 30), sMat2);
+  es.position.set(FW / 2 + 10, 10, 0); fbScene.add(es);
+  const ws = es.clone(); ws.position.x = -FW / 2 - 10; fbScene.add(ws);
+
+  // Floodlight towers
+  const ftMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sz]) => {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.65, 30, 6), ftMat);
+    t.position.set(sx * (FW / 2 + 11), 15, sz * (FH / 2 + 9)); fbScene.add(t);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(5, 0.5, 0.5), ftMat);
+    arm.position.set(sx * (FW / 2 + 9), 29.5, sz * (FH / 2 + 7)); fbScene.add(arm);
+  });
+
+  // Camera — sideline spectator view (FIFA diagonal)
+  fbCamera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.5, 500);
+  fbCamera.position.set(0, 34, -62);
+  fbCamera.lookAt(0, 2, 0);
+
+  // Player meshes
+  _fbPlayerMeshes = [];
+  const mKoeln   = new THREE.MeshLambertMaterial({ color: 0xcc1111 });
+  const mBayern  = new THREE.MeshLambertMaterial({ color: 0x1133cc });
+  const mGKoeln  = new THREE.MeshLambertMaterial({ color: 0x22aa33 });
+  const mGBayern = new THREE.MeshLambertMaterial({ color: 0xddaa00 });
+  FB.players.forEach(p => {
+    const isGK = p.role === 'gk';
+    const mat  = p.team === 0 ? (isGK ? mGKoeln : mKoeln) : (isGK ? mGBayern : mBayern);
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.2, 4, 8), mat);
+    body.position.y = 1.4;
+    fbScene.add(body);
+    _fbPlayerMeshes.push(body);
+  });
+
+  // Ball
+  _fbBallMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 14, 10),
+    new THREE.MeshLambertMaterial({ color: 0xf8f8f8 })
+  );
+  fbScene.add(_fbBallMesh);
+}
+
+function _syncFootball3D() {
+  if (!fbScene || !_fbBallMesh) return;
+  const S = FB3S;
+  const bx = (FB.ball.x - FB_VW / 2) * S;
+  const bz = (FB.ball.y - FB_VH / 2) * S;
+  const by = (FB.ball.y3 || 0) + 0.6;
+  _fbBallMesh.position.set(bx, by, bz);
+  _fbBallMesh.rotation.x += 0.06;
+  _fbBallMesh.rotation.z += 0.04;
+
+  FB.players.forEach((p, i) => {
+    const m = _fbPlayerMeshes[i];
+    if (!m) return;
+    const px = (p.x - FB_VW / 2) * S;
+    const pz = (p.y - FB_VH / 2) * S;
+    m.position.set(px, 1.4, pz);
+    m.visible = !p.redCard;
+    const dx = bx - px, dz = bz - pz;
+    if (Math.hypot(dx, dz) > 0.5) m.rotation.y = Math.atan2(dx, dz);
+  });
+
+  // Smooth camera pan following ball (X only)
+  const targetX = bx * 0.32;
+  fbCamera.position.x += (targetX - fbCamera.position.x) * 0.04;
+  fbCamera.lookAt(fbCamera.position.x * 0.4, 2, 0);
+}
+
 function startFootballMatch() {
   footballActive = true;
   FB.score = [0, 0];
@@ -3052,11 +3212,9 @@ function startFootballMatch() {
   FB.redCards = [0, 0];
   FB.penalty = null;
   FB.players.forEach(p => { p.redCard = false; });
-
-  // Canvas-Größe setzen
-  const fbc = document.getElementById('fb-canvas');
-  fbc.width  = window.innerWidth;
-  fbc.height = Math.max(160, window.innerHeight - 48);
+  FB.ball.y3 = 0;
+  FB.ball.vy3 = 0;
+  _initFootball3D();
 
   const fbs = document.getElementById('football-screen');
   fbs.style.display = 'flex';
@@ -3102,6 +3260,7 @@ function updateFootball(dt) {
         const ang = Math.atan2(gy - FB.ball.y, gx - FB.ball.x);
         FB.ball.vx = Math.cos(ang) * 420;
         FB.ball.vy = Math.sin(ang) * 420;
+        FB.ball.vy3 = 2 + Math.random() * 3.5;
       } else {
         const { team, scored } = FB.penalty;
         FB.penalty = null;
@@ -3132,6 +3291,9 @@ function updateFootball(dt) {
     }
     if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
     if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
+    FB.ball.vy3 -= 30 * dt;
+    FB.ball.y3  += FB.ball.vy3 * dt;
+    if (FB.ball.y3 < 0) { FB.ball.y3 = 0; FB.ball.vy3 = (Math.abs(FB.ball.vy3) > 1.2) ? -FB.ball.vy3 * 0.5 : 0; }
     document.getElementById('fb-time').textContent = Math.floor(FB.gameTime) + "' 🟡";
     return;
   }
@@ -3184,6 +3346,9 @@ function updateFootball(dt) {
   }
   if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
   if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
+  FB.ball.vy3 -= 30 * dt;
+  FB.ball.y3  += FB.ball.vy3 * dt;
+  if (FB.ball.y3 < 0) { FB.ball.y3 = 0; FB.ball.vy3 = (Math.abs(FB.ball.vy3) > 1.2) ? -FB.ball.vy3 * 0.5 : 0; }
 
   // ── Spieler-KI ──
   const near = [{idx:-1, dist:9999}, {idx:-1, dist:9999}];
@@ -3446,6 +3611,7 @@ function returnFromFootball() {
 window.addEventListener('resize', () => {
   cam.aspect = innerWidth / innerHeight;
   cam.updateProjectionMatrix();
+  if (fbCamera) { fbCamera.aspect = innerWidth / innerHeight; fbCamera.updateProjectionMatrix(); }
   renderer.setSize(innerWidth, innerHeight);
   if (composer) composer.setSize(innerWidth, innerHeight);
   _resizeCockpit();
@@ -3460,10 +3626,11 @@ function loop(now) {
   const dt = Math.min((now - lastT) / 1000, 0.05);
   lastT = now;
 
-  // Fußball-Modus: 3D pausieren, nur Fußball-Canvas zeichnen
+  // Fußball-Modus: 3D-Szene rendern
   if (footballActive) {
     updateFootball(dt);
-    drawFootball();
+    _syncFootball3D();
+    renderer.render(fbScene, fbCamera);
     return;
   }
 
