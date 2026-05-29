@@ -107,8 +107,14 @@
     #bgas{bottom:20px;right:12px;width:88px;height:68px;background:rgba(0,120,0,.6);}
     #bbrk{bottom:20px;right:110px;width:68px;height:68px;background:rgba(160,0,0,.5);}
     /* ── Desktop: Speedo + Minimap immer sichtbar ──── */
-    #speedo{ bottom:20px; right:20px; }
+    #speedo{ display:none; }   /* ersetzt durch Cockpit-Canvas */
     #mm    { bottom:20px; left:20px;  }
+
+    /* ── Cockpit-Canvas-Overlay ───────────────────────── */
+    #cockpit-cv{
+      position:fixed;bottom:0;left:0;width:100%;
+      height:42vh;z-index:36;pointer-events:none;
+    }
 
     /* ── Fehler-Box ────────────────────────────────── */
     #err-box{
@@ -364,6 +370,7 @@
 
 <div id="prog"><div id="prog-fill"></div></div>
 <canvas id="canvas" style="width:100vw;height:100vh;display:block;"></canvas>
+<canvas id="cockpit-cv"></canvas>
 
 <div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
 <div id="toast"></div>
@@ -1355,12 +1362,13 @@ function updatePedestrians(dt) {
 // ── Cockpit ───────────────────────────────────────────────────────────────────
 const cockpit = new THREE.Group();
 
-// Armaturenbrett
+// Armaturenbrett (durch 2D-Cockpit-Canvas ersetzt)
 const dashMesh = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 0.22, 0.45),
   new THREE.MeshLambertMaterial({ color:0x151515 })
 );
 dashMesh.position.set(0, -0.40, -0.52);
+dashMesh.visible = false;
 cockpit.add(dashMesh);
 
 // Windschutzscheibenrahmen (oben)
@@ -1371,23 +1379,8 @@ const wsTop = new THREE.Mesh(
 wsTop.position.set(0, 0.38, -0.38);
 cockpit.add(wsTop);
 
-// Lenkrad
-const wheelGrp = new THREE.Group();
-wheelGrp.position.set(0, -0.23, -0.55);
-wheelGrp.rotation.x = 0.32;
-const rimMat   = new THREE.MeshLambertMaterial({ color:0x0d0d0d });
-const spokeMat = new THREE.MeshLambertMaterial({ color:0x1a1a1a });
-// Felge
-wheelGrp.add(new THREE.Mesh(new THREE.TorusGeometry(0.155,0.016,8,32), rimMat));
-// 3 Speichen
-[0,120,240].forEach(deg => {
-  const a = deg * Math.PI / 180;
-  const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.01,0.155,6), spokeMat);
-  sp.position.set(Math.sin(a)*0.077, Math.cos(a)*0.077, 0);
-  sp.rotation.z = -a;
-  wheelGrp.add(sp);
-});
-wheelGrp.add(new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.04,10), rimMat));
+// Lenkrad wird auf dem 2D-Cockpit-Canvas gezeichnet – kein 3D-Objekt nötig
+const wheelGrp = new THREE.Group(); // Dummy-Gruppe für Kompatibilität
 cockpit.add(wheelGrp);
 
 // A-Säulen (vorne links/rechts, schräggestellt)
@@ -1424,6 +1417,324 @@ wiperPivot.visible = false;  // nur im Regen sichtbar
 
 cam.add(cockpit);
 scene.add(cam);
+
+// ── Rückspiegel (WebGLRenderTarget) ──────────────────────────────────────────
+const mirrorRT = new THREE.WebGLRenderTarget(480, 140, {
+  minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+});
+const rearCam = new THREE.PerspectiveCamera(95, 480/140, 0.3, 600);
+rearCam.rotation.order = 'YXZ';
+scene.add(rearCam);
+
+// Chrome-Rahmen (etwas größer, etwas weiter weg)
+const mirrorFrame = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.56, 0.167),
+  new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide })
+);
+mirrorFrame.position.set(0, 0.265, -0.518);
+cam.add(mirrorFrame);
+
+// Spiegelfläche (Render-Textur)
+const mirrorPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.51, 0.138),
+  new THREE.MeshBasicMaterial({ map: mirrorRT.texture, side: THREE.DoubleSide })
+);
+mirrorPlane.position.set(0, 0.265, -0.515);
+cam.add(mirrorPlane);
+
+// ── 2D-Cockpit-Canvas ─────────────────────────────────────────────────────────
+const cockpitCv  = document.getElementById('cockpit-cv');
+let   _cCtx      = null;
+let   _cW = 0,   _cH = 0;
+
+function _resizeCockpit() {
+  _cW = window.innerWidth;
+  _cH = Math.round(window.innerHeight * 0.42);
+  cockpitCv.width  = _cW;
+  cockpitCv.height = _cH;
+  _cCtx = cockpitCv.getContext('2d');
+}
+_resizeCockpit();
+
+// ── Hilfsfunktionen für die Instrumenten-Darstellung ─────────────────────────
+
+// Kreisausschnitt-Anzeige (Golf-7-Stil): 135° Startwinkel, 270° Sweep
+function _gauge(ctx, cx, cy, r, cfg) {
+  const DEG = Math.PI / 180;
+  const aS = 135 * DEG;            // Startwinkel (8-Uhr-Position)
+  const SW = 270 * DEG;            // Sweep 270°
+  const aE = aS + SW;
+
+  // Hintergrundkreis
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.fillStyle = '#141414'; ctx.fill();
+  ctx.strokeStyle = '#5c5c5c'; ctx.lineWidth = r*0.055; ctx.stroke();
+
+  // Innenfläche
+  ctx.beginPath(); ctx.arc(cx, cy, r*0.92, 0, Math.PI*2);
+  const ig = ctx.createRadialGradient(cx, cy-r*0.1, r*0.05, cx, cy, r*0.92);
+  ig.addColorStop(0, '#202020'); ig.addColorStop(1, '#0e0e0e');
+  ctx.fillStyle = ig; ctx.fill();
+
+  // Roter Bereich (optional)
+  if (cfg.redFrom !== undefined) {
+    const rzA = aS + (cfg.redFrom / cfg.maxV) * SW;
+    ctx.beginPath(); ctx.arc(cx, cy, r*0.80, rzA, aE);
+    ctx.strokeStyle = '#cc1100'; ctx.lineWidth = r*0.075; ctx.lineCap = 'round'; ctx.stroke();
+  }
+
+  // Track-Ring
+  ctx.beginPath(); ctx.arc(cx, cy, r*0.80, aS, aE);
+  ctx.strokeStyle = '#2c2c2c'; ctx.lineWidth = r*0.065; ctx.lineCap = 'butt'; ctx.stroke();
+
+  // Ticks + Labels
+  const n = Math.round(cfg.maxV / cfg.step);
+  for (let i = 0; i <= n; i++) {
+    const v = i * cfg.step;
+    const a = aS + (v / cfg.maxV) * SW;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const inR = r * 0.71, ouR = r * 0.87;
+    const isRed = cfg.redFrom !== undefined && v >= cfg.redFrom;
+    ctx.beginPath();
+    ctx.moveTo(cx + ca*inR, cy + sa*inR);
+    ctx.lineTo(cx + ca*ouR, cy + sa*ouR);
+    ctx.strokeStyle = isRed ? '#cc3300' : '#d0d0d0';
+    ctx.lineWidth = r * 0.022; ctx.lineCap = 'round'; ctx.stroke();
+
+    if (cfg.labelEvery && v % cfg.labelEvery === 0) {
+      const lr = r * 0.56;
+      ctx.fillStyle = isRed ? '#ff5533' : '#cccccc';
+      ctx.font = `bold ${r*0.135}px 'Segoe UI',Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(cfg.labelFn ? cfg.labelFn(v) : v), cx+ca*lr, cy+sa*lr);
+    }
+  }
+
+  // Kleine Zwischenticks
+  if (cfg.subStep) {
+    const ns = Math.round(cfg.maxV / cfg.subStep);
+    for (let i = 0; i <= ns; i++) {
+      const v = i * cfg.subStep;
+      if (v % cfg.step === 0) continue;
+      const a = aS + (v / cfg.maxV) * SW;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a)*r*0.79, cy + Math.sin(a)*r*0.79);
+      ctx.lineTo(cx + Math.cos(a)*r*0.87, cy + Math.sin(a)*r*0.87);
+      ctx.strokeStyle = '#484848'; ctx.lineWidth = r*0.012; ctx.stroke();
+    }
+  }
+
+  // Nadel
+  const frac = Math.max(0, Math.min(1, cfg.value / cfg.maxV));
+  const nA   = aS + frac * SW;
+  const cn   = Math.cos(nA), sn = Math.sin(nA);
+  const perp = nA + Math.PI / 2;
+  const pw   = r * 0.028;
+
+  ctx.save();
+  ctx.shadowColor = '#ff5500'; ctx.shadowBlur = r * 0.18;
+  ctx.beginPath();
+  ctx.moveTo(cx + Math.cos(perp)*pw,    cy + Math.sin(perp)*pw);
+  ctx.lineTo(cx + cn*r*0.74,            cy + sn*r*0.74);
+  ctx.lineTo(cx - Math.cos(perp)*pw,    cy - Math.sin(perp)*pw);
+  ctx.lineTo(cx - cn*r*0.12,            cy - sn*r*0.12);
+  ctx.closePath();
+  ctx.fillStyle = '#ff3200'; ctx.fill();
+  ctx.restore();
+
+  // Mittelnabe
+  ctx.beginPath(); ctx.arc(cx, cy, r*0.075, 0, Math.PI*2);
+  ctx.fillStyle = '#383838'; ctx.fill();
+  ctx.strokeStyle = '#888'; ctx.lineWidth = r*0.02; ctx.stroke();
+
+  // Einheit
+  ctx.fillStyle = '#999'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `${r*0.11}px 'Segoe UI',Arial`;
+  ctx.fillText(cfg.unit, cx, cy + r*0.46);
+}
+
+function _drawSteeringWheel(ctx, cx, cy, r, steerAngle) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(steerAngle);
+
+  // Rim-Schatten
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = r*0.15;
+
+  // Äußerer Felgenkranz
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2);
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = r*0.16; ctx.stroke();
+
+  // Glanz-Highlight
+  ctx.beginPath(); ctx.arc(0, 0, r, -2.4, -0.8);
+  ctx.strokeStyle = 'rgba(90,90,90,0.5)'; ctx.lineWidth = r*0.06; ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  // 3 Speichen (VW-Stil: oben eine, unten zwei)
+  const spokeW = r * 0.22;
+  [90, 210, 330].forEach(deg => {
+    const a = deg * Math.PI / 180;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*r*0.18, Math.sin(a)*r*0.18);
+    ctx.lineTo(Math.cos(a)*r*0.84, Math.sin(a)*r*0.84);
+    ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = spokeW; ctx.lineCap = 'round'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(50,50,50,0.4)'; ctx.lineWidth = spokeW*0.35; ctx.stroke();
+  });
+
+  // Hupplatte (Mittelblende)
+  ctx.beginPath(); ctx.arc(0, 0, r*0.22, 0, Math.PI*2);
+  ctx.fillStyle = '#111'; ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = r*0.03; ctx.stroke();
+
+  // VW-Logo (vereinfacht)
+  ctx.fillStyle = '#aaa';
+  ctx.font = `bold ${r*0.20}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('VW', 0, 0);
+
+  ctx.restore();
+}
+
+function _drawMFD(ctx, cx, cy, w, h, kmh, gear, street) {
+  // Gehäuse
+  const rx = cx - w/2, ry = cy - h/2;
+  ctx.fillStyle = '#0a0a0a';
+  ctx.beginPath();
+  ctx.roundRect(rx, ry, w, h, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Innenrahmen-Gradient (Bildschirm-Glanz)
+  const gl = ctx.createLinearGradient(rx, ry, rx, ry+h*0.4);
+  gl.addColorStop(0, 'rgba(255,255,255,0.04)');
+  gl.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.roundRect(rx+2, ry+2, w-4, h*0.4, 6); ctx.fill();
+
+  // Digitale Geschwindigkeit (groß, blau)
+  ctx.fillStyle = '#00ccff';
+  ctx.font = `bold ${h*0.42}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(Math.round(kmh)), cx, cy - h*0.12);
+
+  ctx.fillStyle = '#5599bb';
+  ctx.font = `${h*0.15}px 'Segoe UI',Arial`;
+  ctx.fillText('km/h', cx, cy + h*0.18);
+
+  // Straßenname
+  ctx.fillStyle = '#888';
+  ctx.font = `${h*0.12}px 'Segoe UI',Arial`;
+  ctx.fillText(street.length > 18 ? street.slice(0, 17) + '…' : street, cx, cy + h*0.38);
+
+  // Gang-Anzeige (links)
+  ctx.fillStyle = '#ffcc00';
+  ctx.font = `bold ${h*0.35}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('D' + gear, rx + w*0.06, cy - h*0.08);
+}
+
+function _speedToRPM(kmh) {
+  if (Math.abs(kmh) < 0.5) return 850;
+  const ak = Math.abs(kmh);
+  const g = ak < 15 ? 1 : ak < 30 ? 2 : ak < 50 ? 3 : ak < 80 ? 4 : ak < 110 ? 5 : 6;
+  const tops = [15, 30, 50, 80, 110, 260];
+  const bots = [0, 15, 30, 50, 80, 110];
+  const t = (ak - bots[g-1]) / (tops[g-1] - bots[g-1]);
+  return 1100 + t * 2100;
+}
+function _estGear(kmh) {
+  const ak = Math.abs(kmh);
+  return ak < 15 ? 1 : ak < 30 ? 2 : ak < 50 ? 3 : ak < 80 ? 4 : ak < 110 ? 5 : 6;
+}
+
+function drawCockpit() {
+  if (!_cCtx) return;
+  const ctx = _cCtx, W = _cW, H = _cH;
+  ctx.clearRect(0, 0, W, H);
+
+  const kmh = Math.abs(car.speed) * 3.6;
+  const rpm = _speedToRPM(kmh);
+  const gear = _estGear(kmh);
+
+  // ── Armaturenbrett-Karosserie ──────────────────────────────────────────────
+  ctx.beginPath();
+  ctx.moveTo(0, H*0.32);
+  ctx.bezierCurveTo(W*0.12, H*0.08, W*0.88, H*0.08, W, H*0.32);
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  const dashGrad = ctx.createLinearGradient(0, H*0.08, 0, H);
+  dashGrad.addColorStop(0,   '#252525');
+  dashGrad.addColorStop(0.2, '#181818');
+  dashGrad.addColorStop(1,   '#111111');
+  ctx.fillStyle = dashGrad; ctx.fill();
+
+  // Zier-Chromleiste oben
+  ctx.beginPath();
+  ctx.moveTo(0, H*0.32);
+  ctx.bezierCurveTo(W*0.12, H*0.08, W*0.88, H*0.08, W, H*0.32);
+  ctx.strokeStyle = 'rgba(160,160,160,0.35)'; ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // ── Instrumenten-Bereich (leicht hervorgehoben) ────────────────────────────
+  const instrX = W*0.08, instrY = H*0.06, instrW = W*0.84, instrH = H*0.80;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.roundRect(instrX, instrY, instrW, instrH, 14);
+  ctx.fill();
+
+  // ── Instrumenten-Skalen ────────────────────────────────────────────────────
+  const gaugeR = Math.min(H * 0.43, W * 0.14);
+  const gY     = H * 0.52;
+  const gLX    = W * 0.22;   // Drehzahl links
+  const gRX    = W * 0.78;   // Tacho rechts
+
+  // Drehzahlmesser (links)
+  _gauge(ctx, gLX, gY, gaugeR, {
+    maxV: 7, step: 1, subStep: 0.5,
+    labelEvery: 1, labelFn: v => v > 0 ? String(v) : '',
+    unit: '×1000/min',
+    value: rpm / 1000,
+    redFrom: 6
+  });
+
+  // Geschwindigkeitsmesser (rechts)
+  _gauge(ctx, gRX, gY, gaugeR, {
+    maxV: 260, step: 20, subStep: 10,
+    labelEvery: 40, labelFn: v => String(v),
+    unit: 'km/h',
+    value: kmh
+  });
+
+  // Warnanzeige 0-Markierung (linker weißer Strich)
+  // (schon durch Tick enthalten)
+
+  // ── MFD-Mitteldisplay ──────────────────────────────────────────────────────
+  const mfdW = Math.min(W*0.26, gaugeR*2.2);
+  const mfdH = mfdW * 0.60;
+  const street = document.getElementById('street-lbl')?.textContent || '';
+  _drawMFD(ctx, W*0.50, gY - gaugeR*0.10, mfdW, mfdH, kmh, gear, street);
+
+  // ── Lenkrad (unten mittig, halb sichtbar) ─────────────────────────────────
+  const swR = Math.min(H * 0.55, W * 0.18);
+  _drawSteeringWheel(ctx, W*0.5, H + swR*0.05, swR, car.steer * 1.3);
+
+  // ── Rückspiegel-Chromrahmen (oben mittig, sichtbar über 3D-Plane) ─────────
+  // Die eigentliche Spiegelfläche ist die 3D-RenderTarget-Plane.
+  // Hier zeichnen wir nur Beschriftung + untere Ziernaht.
+  const mfW = Math.min(W*0.28, 280), mfH = 20;
+  const mfX = (W - mfW) / 2, mfY = 2;
+  ctx.strokeStyle = 'rgba(180,180,180,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(mfX - 2, mfY, mfW + 4, mfH + 4, 4);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.roundRect(mfX - 2, mfY, mfW + 4, mfH + 4, 4); ctx.fill();
+  ctx.fillStyle = 'rgba(180,180,180,0.45)';
+  ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('◀ Rückansicht ▶', W/2, mfY + mfH/2 + 2);
+}
 
 // ── Fahrzeugzustand ───────────────────────────────────────────────────────────
 // Startrichtung: Richtung zum 1. Wegpunkt
@@ -2055,9 +2366,6 @@ function updateCar(dt) {
   // Position
   car.x += Math.sin(car.heading) * car.speed * dt;
   car.z += Math.cos(car.heading) * car.speed * dt;
-
-  // Lenkrad animieren (positives steer = Links → Lenkrad gegen Uhrzeigersinn)
-  wheelGrp.rotation.z = car.steer * 0.55;
 
   checkWaypoint();
   checkCollisions();
@@ -3092,6 +3400,7 @@ window.addEventListener('resize', () => {
   cam.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
   if (composer) composer.setSize(innerWidth, innerHeight);
+  _resizeCockpit();
 });
 
 // ── Animation Loop ────────────────────────────────────────────────────────────
@@ -3131,8 +3440,25 @@ function loop(now) {
 
   document.getElementById('spd').textContent =
     (car.speed < -0.2 ? '↩ ' : '') + Math.round(Math.abs(car.speed) * 3.6);
+
+  // ── Rückspiegel: Rückkamera auf RenderTarget rendern ──────────────────────
+  rearCam.position.set(car.x, 1.28, car.z);
+  rearCam.rotation.y = car.heading;
+  cockpit.visible    = false;
+  mirrorPlane.visible = false; mirrorFrame.visible = false;
+  renderer.setRenderTarget(mirrorRT);
+  renderer.clear();
+  renderer.render(scene, rearCam);
+  renderer.setRenderTarget(null);
+  cockpit.visible    = true;
+  mirrorPlane.visible = true; mirrorFrame.visible = true;
+
+  // ── Hauptszene rendern ────────────────────────────────────────────────────
   if (composer) composer.render();
   else renderer.render(scene, cam);
+
+  // ── 2D-Cockpit-Canvas overlay ─────────────────────────────────────────────
+  drawCockpit();
 }
 
 // ── Bloom / Post-Processing ───────────────────────────────────────────────────
