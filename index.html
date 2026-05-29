@@ -378,15 +378,8 @@
 <div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div></div>
 <div id="mm"><canvas id="mm-cv" width="160" height="160" style="display:block;"></canvas></div>
 <div id="osm-lbl">🗺 Lade OSM…</div>
-<!-- Aktuelle Straße (Daueranzeige wie Navigation) -->
-<div id="street-lbl" style="
-  position:fixed;bottom:130px;left:50%;transform:translateX(-50%);
-  background:#003399;color:#fff;padding:5px 22px 5px 14px;
-  border-radius:4px;font-size:15px;font-weight:bold;z-index:40;
-  white-space:nowrap;pointer-events:none;
-  box-shadow:0 2px 8px rgba(0,0,40,.5);
-  border:2px solid #fff;
-">Altbaumburgweg</div>
+<!-- Aktuelle Straße (nur als Datenspeicher für das MFD, nicht sichtbar) -->
+<div id="street-lbl" style="display:none">Altbaumburgweg</div>
 <!-- Navigation Turn-by-Turn Panel -->
 <div id="nav-panel">
   <div id="nav-dist">– m</div>
@@ -3216,6 +3209,10 @@ function startFootballMatch() {
   FB.ball.vy3 = 0;
   _initFootball3D();
 
+  // Fahrszene-UI ausblenden damit die 3D-Fußballszene klar sichtbar ist
+  ['cockpit-cv','info','speedo','mm','nav-panel','limit-sign','hint','mctrl','prog','osm-lbl']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.style.display = 'none'; });
+
   const fbs = document.getElementById('football-screen');
   fbs.style.display = 'flex';
   document.getElementById('fb-score').textContent  = '0 : 0';
@@ -3598,6 +3595,9 @@ function returnFromFootball() {
   FB.penalty = null;
   _stopCrowd();
   document.getElementById('football-screen').style.display = 'none';
+  // Fahrszene-UI wiederherstellen
+  ['cockpit-cv','info','speedo','mm','nav-panel','limit-sign','hint','mctrl','prog']
+    .forEach(id => { const e = document.getElementById(id); if (e) e.style.display = ''; });
   car.x = WP[WP.length-1].x;
   car.z = WP[WP.length-1].z;
   const prev = WP[WP.length-2];
