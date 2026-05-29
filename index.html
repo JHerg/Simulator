@@ -1087,38 +1087,133 @@ function updateTrafficLights(t) {
   const sx = end.x - 80,  sz = end.z + 30;   // Stadion-Zentrum
   const pCX = end.x + 58, pCZ = end.z - 18;  // Parkplatz-Mitte
 
-  // ── "POKALENDSPIEL"-Banner auf der Ost-Fassade ──
+  // ── "POKALFINALE"-Billboard (immer zur Kamera gedreht) ──
   {
+    const W = 1024, H = 512;
     const bc = document.createElement('canvas');
-    bc.width = 512; bc.height = 128;
+    bc.width = W; bc.height = H;
     const bctx = bc.getContext('2d');
-    bctx.fillStyle = '#cc0000';
-    bctx.fillRect(0, 0, 512, 128);
-    bctx.strokeStyle = '#ffdd00';
-    bctx.lineWidth = 7;
-    bctx.strokeRect(5, 5, 502, 118);
-    bctx.fillStyle = '#ffdd00';
-    bctx.font = 'bold 52px Arial, sans-serif';
+
+    // Background: deep red → black gradient
+    const grad = bctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#8b0000');
+    grad.addColorStop(0.5, '#cc0000');
+    grad.addColorStop(1, '#6a0000');
+    bctx.fillStyle = grad;
+    bctx.fillRect(0, 0, W, H);
+
+    // Gold outer border
+    bctx.strokeStyle = '#ffd700';
+    bctx.lineWidth = 14;
+    bctx.strokeRect(8, 8, W-16, H-16);
+    // Inner border
+    bctx.lineWidth = 4;
+    bctx.strokeStyle = '#ffaa00';
+    bctx.strokeRect(22, 22, W-44, H-44);
+
+    // Stars decoration row top
+    bctx.fillStyle = '#ffd700';
+    bctx.font = '32px serif';
     bctx.textAlign = 'center';
-    bctx.textBaseline = 'middle';
-    bctx.fillText('POKALENDSPIEL', 256, 64);
+    for (let i = 0; i < 9; i++) {
+      bctx.fillText('★', 68 + i * 112, 58);
+    }
+    // Stars row bottom
+    for (let i = 0; i < 9; i++) {
+      bctx.fillText('★', 68 + i * 112, H - 32);
+    }
+
+    // FC Köln crest (simplified geometric): white circle with red cross
+    const crestX = 150, crestY = H / 2, crestR = 68;
+    // White circle
+    bctx.beginPath();
+    bctx.arc(crestX, crestY, crestR, 0, Math.PI*2);
+    bctx.fillStyle = '#ffffff';
+    bctx.fill();
+    bctx.strokeStyle = '#ffd700';
+    bctx.lineWidth = 5;
+    bctx.stroke();
+    // Red cross in circle
+    bctx.fillStyle = '#cc0000';
+    bctx.fillRect(crestX - 10, crestY - crestR + 12, 20, crestR*2 - 24);
+    bctx.fillRect(crestX - crestR + 12, crestY - 10, crestR*2 - 24, 20);
+    // Small goat silhouette on cross (circle + horns)
+    bctx.fillStyle = '#ffffff';
+    bctx.beginPath();
+    bctx.arc(crestX, crestY - 10, 14, 0, Math.PI*2);
+    bctx.fill();
+    // Horn left
+    bctx.beginPath();
+    bctx.moveTo(crestX - 8, crestY - 22);
+    bctx.lineTo(crestX - 18, crestY - 40);
+    bctx.lineTo(crestX - 6, crestY - 28);
+    bctx.closePath();
+    bctx.fill();
+    // Horn right
+    bctx.beginPath();
+    bctx.moveTo(crestX + 8, crestY - 22);
+    bctx.lineTo(crestX + 18, crestY - 40);
+    bctx.lineTo(crestX + 6, crestY - 28);
+    bctx.closePath();
+    bctx.fill();
+    // Body
+    bctx.beginPath();
+    bctx.ellipse(crestX, crestY + 12, 12, 16, 0, 0, Math.PI*2);
+    bctx.fill();
+
+    // "FC KÖLN" text
+    bctx.fillStyle = '#cc0000';
+    bctx.font = 'bold 22px Arial Black, Arial, sans-serif';
+    bctx.textAlign = 'center';
+    bctx.fillText('FC KÖLN', crestX, crestY + 52);
+
+    // Main title: POKALFINALE
+    bctx.shadowColor = '#ff6600';
+    bctx.shadowBlur = 22;
+    bctx.fillStyle = '#ffd700';
+    bctx.font = 'bold 118px Arial Black, Arial, sans-serif';
+    bctx.textAlign = 'center';
+    bctx.fillText('POKALFINALE', 580, 220);
+    bctx.shadowBlur = 0;
+
+    // Subtitle
+    bctx.fillStyle = '#ffffff';
+    bctx.font = 'bold 46px Arial, sans-serif';
+    bctx.fillText('DFB-POKAL ENDSPIEL', 580, 295);
+
+    // Year / venue line
+    bctx.fillStyle = '#ffaa44';
+    bctx.font = 'bold 34px Arial, sans-serif';
+    bctx.fillText('KÖLN 2025  •  RheinEnergie Stadion', 580, 360);
+
+    // Trophy icon (simplified)
+    bctx.fillStyle = '#ffd700';
+    bctx.font = '52px serif';
+    bctx.textAlign = 'right';
+    bctx.fillText('🏆', W - 50, H/2 + 20);
+    bctx.textAlign = 'center';
+
     const tex = new THREE.CanvasTexture(bc);
-    // BoxGeometry: Index 4 = +z-Fläche = "Vorderseite"
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(36, 9, 0.6),
-      [
-        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
-        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
-        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
-        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
-        new THREE.MeshBasicMaterial({ map: tex }),
-        new THREE.MeshLambertMaterial({ color: 0xaa0000 }),
-      ]
+    // PlaneGeometry so both sides visible via DoubleSide
+    const bannerMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(62, 31),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
     );
-    // Östliche Außenwand des Stadions (r≈74), rotation.y=-PI/2 dreht +z → +x (Ost)
-    board.position.set(sx + 64, 24, sz);
-    board.rotation.y = -Math.PI / 2;
-    scene.add(board);
+    // Position: above stadium, billboard updated every frame in game loop
+    bannerMesh.position.set(sx, 52, sz);
+    scene.add(bannerMesh);
+    pokalBanner = bannerMesh;
+
+    // Glow PointLight near banner (always on)
+    const bannerGlow = new THREE.PointLight(0xff4400, 3.5, 90);
+    bannerGlow.position.set(sx, 52, sz);
+    scene.add(bannerGlow);
+
+    // Support pole
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 28, 8), poleMat);
+    pole.position.set(sx, 38, sz);
+    scene.add(pole);
   }
 
   // ── Fans ──
@@ -2222,8 +2317,10 @@ function updateLimitHUD() {
 // ── Nacht / Regen / Scheinwerfer / Kollision ─────────────────────────────────
 let rainData = null;
 const nightLightPool = [];
-let headlightL = null, headlightR = null, headlightTgtL = null, headlightTgtR = null;
+let headlightL = null, headlightR = null, headlightC = null;
+let headlightTgtL = null, headlightTgtR = null, headlightTgtC = null;
 let _shakeAmt = 0;
+let pokalBanner = null; // billboard, updated each frame
 
 function applyNightMode() {
   scene.background = new THREE.Color(0x040810);
@@ -2231,13 +2328,13 @@ function applyNightMode() {
     isMobile ? (cfg.weather==='rain' ? 130 : 175) : (cfg.weather==='rain' ? 220 : 340));
   sun.intensity = 0.04;
   scene.children.forEach(c => {
-    if (c.isAmbientLight)    c.intensity = 0.07;
-    if (c.isHemisphereLight) c.intensity = 0.06;
+    if (c.isAmbientLight)    c.intensity = 0.12;
+    if (c.isHemisphereLight) c.intensity = 0.09;
   });
   // PointLight-Pool (bewegt sich mit dem Auto → simuliert Straßenbeleuchtung)
   const n = isMobile ? 3 : 5;
   for (let i = 0; i < n; i++) {
-    const l = new THREE.PointLight(0xff9944, 1.8, 44);
+    const l = new THREE.PointLight(0xff9944, 3.5, 70);
     scene.add(l);
     nightLightPool.push(l);
   }
@@ -2277,23 +2374,94 @@ function updateNightLights() {
 }
 
 function initHeadlights() {
-  headlightL = new THREE.SpotLight(0xfff5cc, 3.5, 150, Math.PI/9, 0.35);
-  headlightR = new THREE.SpotLight(0xfff5cc, 3.5, 150, Math.PI/9, 0.35);
+  // Left + right beam: wide, very bright
+  headlightL = new THREE.SpotLight(0xfff8e0, 9.0, 240, Math.PI/7, 0.28);
+  headlightR = new THREE.SpotLight(0xfff8e0, 9.0, 240, Math.PI/7, 0.28);
+  // Center long-range beam: narrow, reaches far
+  headlightC = new THREE.SpotLight(0xffffff, 7.0, 320, Math.PI/14, 0.18);
   headlightTgtL = new THREE.Object3D();
   headlightTgtR = new THREE.Object3D();
-  scene.add(headlightL, headlightR, headlightTgtL, headlightTgtR);
+  headlightTgtC = new THREE.Object3D();
+  scene.add(headlightL, headlightR, headlightC);
+  scene.add(headlightTgtL, headlightTgtR, headlightTgtC);
   headlightL.target = headlightTgtL;
   headlightR.target = headlightTgtR;
+  headlightC.target = headlightTgtC;
+  headlightL.castShadow = false;
+  headlightR.castShadow = false;
+  headlightC.castShadow = false;
 }
 
 function updateHeadlights() {
   if (!headlightL) return;
   const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
   const rx = Math.cos(car.heading), rz = -Math.sin(car.heading);
-  headlightL.position.set(car.x - rx*0.5, 1.1, car.z - rz*0.5);
-  headlightR.position.set(car.x + rx*0.5, 1.1, car.z + rz*0.5);
-  headlightTgtL.position.set(car.x + fx*55 - rx*0.5, 0, car.z + fz*55 - rz*0.5);
-  headlightTgtR.position.set(car.x + fx*55 + rx*0.5, 0, car.z + fz*55 + rz*0.5);
+  headlightL.position.set(car.x - rx*0.7, 1.1, car.z - rz*0.7);
+  headlightR.position.set(car.x + rx*0.7, 1.1, car.z + rz*0.7);
+  headlightC.position.set(car.x, 1.2, car.z);
+  headlightTgtL.position.set(car.x + fx*80 - rx*0.7, 0, car.z + fz*80 - rz*0.7);
+  headlightTgtR.position.set(car.x + fx*80 + rx*0.7, 0, car.z + fz*80 + rz*0.7);
+  headlightTgtC.position.set(car.x + fx*120, 0, car.z + fz*120);
+}
+
+function buildStadiumNightLighting() {
+  const end = WP[WP.length - 1];
+  const sx = end.x - 80, sz = end.z + 30;
+
+  // Perimeter glow PointLights — ring around the stadium
+  const ringAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+  ringAngles.forEach(deg => {
+    const rad = deg * Math.PI / 180;
+    const lx = sx + Math.cos(rad) * 68;
+    const lz = sz + Math.sin(rad) * 68;
+    const pl = new THREE.PointLight(0xffffaa, 4.5, 120);
+    pl.position.set(lx, 22, lz);
+    scene.add(pl);
+  });
+
+  // Inner field flood: warm white PointLights high up
+  [[0,0],[30,0],[-30,0],[0,35],[0,-35]].forEach(([ox,oz]) => {
+    const fl = new THREE.PointLight(0xfff5dd, 5.0, 100);
+    fl.position.set(sx+ox, 42, sz+oz);
+    scene.add(fl);
+  });
+
+  // Floodlight SpotLights pointing down from mast tips
+  [[60,60],[-60,60],[60,-60],[-60,-60]].forEach(([ox,oz]) => {
+    const sl = new THREE.SpotLight(0xffffff, 12, 130, Math.PI/5, 0.4);
+    sl.position.set(sx+ox, 32, sz+oz);
+    const tgt = new THREE.Object3D();
+    tgt.position.set(sx, 0, sz);
+    scene.add(tgt);
+    sl.target = tgt;
+    scene.add(sl);
+  });
+
+  // Stadium outer wall glow: emissive orange-yellow band
+  const glowBand = new THREE.Mesh(
+    new THREE.TorusGeometry(60, 1.2, 6, 48),
+    new THREE.MeshBasicMaterial({ color: 0xff9900 })
+  );
+  glowBand.rotation.x = Math.PI / 2;
+  glowBand.position.set(sx, 10, sz);
+  scene.add(glowBand);
+
+  const glowBand2 = new THREE.Mesh(
+    new THREE.TorusGeometry(60, 1.2, 6, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffcc00 })
+  );
+  glowBand2.rotation.x = Math.PI / 2;
+  glowBand2.position.set(sx, 22, sz);
+  scene.add(glowBand2);
+
+  // Roof rim glow
+  const roofGlow = new THREE.Mesh(
+    new THREE.TorusGeometry(60, 0.9, 5, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  roofGlow.rotation.x = Math.PI / 2;
+  roofGlow.position.set(sx, 31.5, sz);
+  scene.add(roofGlow);
 }
 
 function buildRain() {
@@ -4072,6 +4240,7 @@ function loop(now) {
   updateCamera();
   updateHeadlights();
   if (nightLightPool.length) updateNightLights();
+  if (pokalBanner) pokalBanner.lookAt(cam.position);
   if (rainData) updateRain(rainData, dt);
   if (cfg.weather === 'rain') wiperPivot.rotation.y = Math.sin(elapsed * 2.3) * 0.52;
   updateTrafficLights(elapsed);
@@ -4111,9 +4280,9 @@ function setupBloom() {
   const isNight = cfg.time    === 'night';
   const isRain  = cfg.weather === 'rain';
   // Nur bei Nacht oder Regen aktivieren (tagsüber klarer Himmel braucht kein Bloom)
-  const strength = isNight && isRain ? 1.4 : isNight ? 1.15 : isRain ? 0.3 : 0;
+  const strength = isNight && isRain ? 1.7 : isNight ? 1.8 : isRain ? 0.3 : 0;
   if (strength === 0) return;
-  const threshold = isNight ? 0.80 : 0.90;
+  const threshold = isNight ? 0.55 : 0.90;
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, cam));
   composer.addPass(new UnrealBloomPass(
@@ -4140,7 +4309,7 @@ function setupBloom() {
   scene.background = new THREE.Color(skyCol);
   scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
 
-  if (isNight) { applyNightMode(); buildStreetLamps(); }
+  if (isNight) { applyNightMode(); buildStreetLamps(); buildStadiumNightLighting(); }
   if (isNight || isRain) initHeadlights();
   if (isRain)  { rainData = buildRain(); wiperPivot.visible = true; }
   setupBloom();
