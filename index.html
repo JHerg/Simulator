@@ -1218,11 +1218,11 @@ function updateTrafficLights(t) {
     pokalBanner = bannerMesh;
 
     // Glow PointLights an der Wandposition
-    const bg1 = new THREE.PointLight(0xff6600, 6, 100);
+    const bg1 = new THREE.PointLight(0xff6600, 2.5, 80);
     bg1.decay = 0;
     bg1.position.set(sx + 76, 18, sz);
     scene.add(bg1);
-    const bg2 = new THREE.PointLight(0xffaa00, 4, 70);
+    const bg2 = new THREE.PointLight(0xffaa00, 1.5, 55);
     bg2.decay = 0;
     bg2.position.set(sx + 80, 28, sz);
     scene.add(bg2);
@@ -2386,10 +2386,10 @@ function updateNightLights() {
 
 function initHeadlights() {
   // Left + right: wide cone – natürliche Helligkeit
-  headlightL = new THREE.SpotLight(0xfff8e0, 7, 260, Math.PI / 6.5, 0.25);
-  headlightR = new THREE.SpotLight(0xfff8e0, 7, 260, Math.PI / 6.5, 0.25);
+  headlightL = new THREE.SpotLight(0xfff8e0, 5, 240, Math.PI / 6.5, 0.28);
+  headlightR = new THREE.SpotLight(0xfff8e0, 5, 240, Math.PI / 6.5, 0.28);
   // Center: tight long-range beam
-  headlightC = new THREE.SpotLight(0xffffff, 5, 340, Math.PI / 15, 0.12);
+  headlightC = new THREE.SpotLight(0xffffff, 2.5, 300, Math.PI / 15, 0.14);
   headlightL.decay = 0; headlightR.decay = 0; headlightC.decay = 0;
   headlightTgtL = new THREE.Object3D();
   headlightTgtR = new THREE.Object3D();
@@ -2421,8 +2421,8 @@ function buildStadiumNightLighting() {
   const sx = end.x - 80, sz = end.z + 30;
 
   // ── Materialwechsel: Wand + Dach leuchten selbst (kein Licht nötig) ──
-  if (stadiumWall) stadiumWall.material = new THREE.MeshBasicMaterial({ color: 0xddaa22 });
-  if (stadiumRoof) stadiumRoof.material = new THREE.MeshBasicMaterial({ color: 0xbbbbcc });
+  if (stadiumWall) stadiumWall.material = new THREE.MeshBasicMaterial({ color: 0x7a5c10 });
+  if (stadiumRoof) stadiumRoof.material = new THREE.MeshBasicMaterial({ color: 0x555566 });
 
   // ── Leuchtbänder AUSSEN an der Wand (TorusRadius 60, Tube 14 → Außenkante bei 74) ──
   // Bänder bei Radius 78 = deutlich außerhalb der Wand, gut sichtbar
@@ -2453,7 +2453,7 @@ function buildStadiumNightLighting() {
     const rad = deg * Math.PI / 180;
     const lx = sx + Math.cos(rad) * 80;
     const lz = sz + Math.sin(rad) * 80;
-    const pl = new THREE.PointLight(0xffbb44, 6, 130);
+    const pl = new THREE.PointLight(0xffbb44, 2.5, 110);
     pl.decay = 0;
     pl.position.set(lx, 18, lz);
     scene.add(pl);
@@ -2461,7 +2461,7 @@ function buildStadiumNightLighting() {
 
   // ── Innenfeld-Fluter ──
   [[0,0],[32,0],[-32,0],[0,38],[0,-38]].forEach(([ox,oz]) => {
-    const fl = new THREE.PointLight(0xfff5dd, 8, 120);
+    const fl = new THREE.PointLight(0xfff5dd, 3, 100);
     fl.decay = 0;
     fl.position.set(sx+ox, 45, sz+oz);
     scene.add(fl);
@@ -2469,7 +2469,7 @@ function buildStadiumNightLighting() {
 
   // ── Echte Flutlicht-SpotLights von den Masten nach unten ──
   [[60,60],[-60,60],[60,-60],[-60,-60]].forEach(([ox,oz]) => {
-    const sl = new THREE.SpotLight(0xffffff, 20, 160, Math.PI / 5, 0.4);
+    const sl = new THREE.SpotLight(0xffffff, 7, 140, Math.PI / 5, 0.4);
     sl.decay = 0;
     sl.position.set(sx+ox, 33, sz+oz);
     const tgt = new THREE.Object3D();
@@ -2487,7 +2487,7 @@ function buildStadiumNightLighting() {
   });
 
   // ── Weithin sichtbares Leucht-Halo über dem Stadion ──
-  const haloPL = new THREE.PointLight(0xff8800, 12, 350);
+  const haloPL = new THREE.PointLight(0xff8800, 4, 280);
   haloPL.decay = 0;
   haloPL.position.set(sx, 50, sz);
   scene.add(haloPL);
@@ -4309,9 +4309,9 @@ function setupBloom() {
   const isNight = cfg.time    === 'night';
   const isRain  = cfg.weather === 'rain';
   // Nur bei Nacht oder Regen aktivieren (tagsüber klarer Himmel braucht kein Bloom)
-  const strength = isNight && isRain ? 1.9 : isNight ? 2.2 : isRain ? 0.3 : 0;
+  const strength = isNight && isRain ? 1.1 : isNight ? 1.2 : isRain ? 0.3 : 0;
   if (strength === 0) return;
-  const threshold = isNight ? 0.45 : 0.90;
+  const threshold = isNight ? 0.72 : 0.90;
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, cam));
   composer.addPass(new UnrealBloomPass(
