@@ -569,10 +569,8 @@ async function boot() {
   document.getElementById('cfg-football').addEventListener('click', () => {
     cfgEl.style.display = 'none';
     try {
+      _startDirectFootball = true;
       startSimulator(getCfg());
-      // Auto direkt auf den Stadion-Parkplatz teleportieren
-      car.x = PARK_CX; car.z = PARK_CZ; car.speed = 0;
-      startFootballMatch();
     } catch(e) {
       bootError('Render-Fehler: ' + e.message);
       document.getElementById('boot-screen').style.display = 'flex';
@@ -582,6 +580,8 @@ async function boot() {
 }
 
 boot();
+
+let _startDirectFootball = false;
 
 function startSimulator(cfg) {
 cfg = cfg || { time:'day', weather:'clear' };
@@ -3772,6 +3772,13 @@ setupHomePark();
 document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
+
+if (_startDirectFootball) {
+  _startDirectFootball = false;
+  car.x = PARK_CX; car.z = PARK_CZ; car.speed = 0;
+  startFootballMatch();
+}
+
 requestAnimationFrame(loop);
 
 } // Ende startSimulator()
