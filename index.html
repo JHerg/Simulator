@@ -3154,7 +3154,7 @@ function _initFootball3D() {
   const ns = new THREE.Mesh(new THREE.BoxGeometry(FW + 28, 22, 14), sMat0);
   ns.position.set(0, 11, FH / 2 + 10); fbScene.add(ns);
   const ss = new THREE.Mesh(new THREE.BoxGeometry(FW + 28, 26, 16), sMat1);
-  ss.position.set(0, 13, -FH / 2 - 11); fbScene.add(ss);
+  ss.position.set(0, 13, -FH / 2 - 13); fbScene.add(ss); // front face at Z=-36.5, hinter Kamera
   const es = new THREE.Mesh(new THREE.BoxGeometry(14, 20, FH + 30), sMat2);
   es.position.set(FW / 2 + 10, 10, 0); fbScene.add(es);
   const ws = es.clone(); ws.position.x = -FW / 2 - 10; fbScene.add(ws);
@@ -3170,8 +3170,8 @@ function _initFootball3D() {
 
   // Camera — Tribünenkamera: erhöht hinter der Seitenlinie, steil auf den Platz schauend
   fbCamera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.2, 400);
-  fbCamera.position.set(0, 20, -28);
-  fbCamera.lookAt(0, 0, 5);
+  fbCamera.position.set(0, 22, -33); // Z=-33 hält Südtouchline (Z=-29.4) immer vor der Kamera
+  fbCamera.lookAt(0, 0, 2);
 
   // Player meshes
   _fbPlayerMeshes = [];
@@ -3217,12 +3217,13 @@ function _syncFootball3D() {
     if (Math.hypot(dx, dz) > 0.5) m.rotation.y = Math.atan2(dx, dz);
   });
 
-  // Kamera folgt Ball auf X-Achse (Tor-zu-Tor) und leicht auf Z-Achse
+  // Kamera folgt Ball (X = Tor-zu-Tor, Z = Tiefe — nie hinter Südtouchline bei Z=-29.4)
   const targetCamX = bx * 0.60;
   fbCamera.position.x += (targetCamX - fbCamera.position.x) * 0.07;
-  const targetCamZ = -28 + bz * 0.12;
-  fbCamera.position.z += (targetCamZ - fbCamera.position.z) * 0.04;
-  fbCamera.lookAt(bx * 0.72, 1, bz * 0.28 + 4);
+  // Wenn Ball südwärts: Kamera weiter zurück (negativer Z), max -34.5
+  const targetCamZ = Math.max(-34.5, -33 + bz * 0.14);
+  fbCamera.position.z += (targetCamZ - fbCamera.position.z) * 0.05;
+  fbCamera.lookAt(bx * 0.72, 1, bz * 0.28 + 2);
 }
 
 function startFootballMatch() {
@@ -3418,7 +3419,7 @@ function updateFootball(dt) {
   const t = FB.gameTime;
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
-    const hasBall    = (i === nearIdx  && nearDist < 30);
+    const hasBall    = (i === nearIdx  && nearDist < 24 && FB.ball.y3 < 2.0);
     const isPressing = (i === pressIdx);
     const isPress2   = (i === press2Idx && near2[defTeam].dist < 220);
     const isSupp1    = (i === supp1Idx  && near2[ballTeam].dist < 260);
@@ -3464,7 +3465,7 @@ function updateFootball(dt) {
       const pwr = 195 + Math.random()*115 + (p.role==='fwd' ? 40 : 0);
       FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.20) * pwr;
       FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.20) * pwr;
-      FB.ball.vy3 = pwr * 0.016 + 1.5 + Math.random() * 6;
+      FB.ball.vy3 = 2 + Math.random() * 5 + (p.role === 'fwd' ? 1.5 : 0);
       tx = p.hx + jx*0.4; ty = p.hy + jy*0.4;
       spd = 4.5;
 
