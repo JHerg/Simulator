@@ -2729,12 +2729,14 @@ let _homeJourneyDone = false, _homeParkShown = false, _homeParkTimer = null;
 // Virtuelle Spielfeld-Koordinaten (immer 700×420, wird auf Canvas skaliert)
 const FB_VW = 700, FB_VH = 420;
 const FB = {
-  score: [0, 0], gameTime: 0, goalEvents: [],
+  score: [0, 0], gameTime: 0,
   players: [], ball: { x: FB_VW/2, y: FB_VH/2, vx: 0, vy: 0 },
   halfShown: false,
   speedFactor: 1.5,
   redCards: [0, 0],
   penalty: null,
+  lastTouchTeam: -1,
+  goalCooldown: 0,
 };
 
 function setupParkingAndFootball() {
@@ -3044,18 +3046,8 @@ function startFootballMatch() {
   FB.halfShown = false;
   FB.ball = { x: FB_VW/2, y: FB_VH/2, vx: 50*(Math.random()-.5), vy: 50*(Math.random()-.5) };
 
-  // Zufälligen Spielausgang generieren (0–3 Tore pro Team)
-  FB.goalEvents = [];
-  const g = [Math.floor(Math.random()*4), Math.floor(Math.random()*4)];
-  for (let team = 0; team < 2; team++) {
-    for (let k = 0; k < g[team]; k++) {
-      let t, tries = 0;
-      do { t = 3 + Math.random()*83; tries++; }
-      while (tries < 60 && FB.goalEvents.some(e => Math.abs(e.time-t) < 5));
-      FB.goalEvents.push({ time: t, team, shown: false });
-    }
-  }
-  FB.goalEvents.sort((a,b) => a.time - b.time);
+  FB.lastTouchTeam = -1;
+  FB.goalCooldown = 0;
   initFBPlayers();
   FB.redCards = [0, 0];
   FB.penalty = null;
@@ -3146,58 +3138,81 @@ function updateFootball(dt) {
 
   // ── Normale Spielzeit ──
   FB.gameTime += dt * FB.speedFactor;
+  if (FB.goalCooldown > 0) FB.goalCooldown -= dt * FB.speedFactor;
 
   if (FB.gameTime >= 45 && !FB.halfShown) {
     FB.halfShown = true;
     showFBBanner('⏸ Halbzeit', '#ffee88');
   }
 
-  FB.goalEvents.forEach(ge => {
-    if (!ge.shown && !ge.cancelled && FB.gameTime >= ge.time) {
-      ge.shown = true;
-      FB.score[ge.team]++;
-      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
-      const scorer = ge.team === 0 ? 'CF Köln' : 'Bavaria München';
-      showFBBanner('⚽ TOR! ' + scorer, ge.team===0 ? '#ff6666' : '#88aaff');
-      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
-      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
-    }
-  });
-
   document.getElementById('fb-time').textContent = Math.floor(Math.min(FB.gameTime, 90)) + "'";
   if (FB.gameTime >= 90) { showFootballResult(); return; }
 
   FB.ball.vx *= 0.986; FB.ball.vy *= 0.986;
   FB.ball.x += FB.ball.vx * dt; FB.ball.y += FB.ball.vy * dt;
-  if (FB.ball.x < bM) {
-    if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+
+  // ── Tor-Erkennung: linkes Tor → Team 1 erzielt, rechtes Tor → Team 0 erzielt ──
+  if (FB.ball.x < bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+    if (FB.goalCooldown <= 0) {
+      FB.goalCooldown = 4;
+      FB.score[1]++;
+      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
+      const isOwnGoal = FB.lastTouchTeam === 0;
+      showFBBanner(isOwnGoal ? '⚽ EIGENTOR! CF Köln' : '⚽ TOR! Bavaria München', isOwnGoal ? '#ffdd44' : '#88aaff');
+      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
+      FB.lastTouchTeam = -1;
+    } else {
       FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.max(FB.ball.x, 2);
-    } else { FB.ball.x = bM; FB.ball.vx = Math.abs(FB.ball.vx) * 0.65; }
-  }
-  if (FB.ball.x > FB_VW-bM) {
-    if (FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+    }
+  } else if (FB.ball.x > FB_VW-bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+    if (FB.goalCooldown <= 0) {
+      FB.goalCooldown = 4;
+      FB.score[0]++;
+      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
+      const isOwnGoal = FB.lastTouchTeam === 1;
+      showFBBanner(isOwnGoal ? '⚽ EIGENTOR! Bavaria München' : '⚽ TOR! CF Köln', isOwnGoal ? '#ffdd44' : '#ff6666');
+      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
+      FB.lastTouchTeam = -1;
+    } else {
       FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.min(FB.ball.x, FB_VW-2);
-    } else { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx) * 0.65; }
+    }
+  } else {
+    if (FB.ball.x < bM) { FB.ball.x = bM; FB.ball.vx = Math.abs(FB.ball.vx) * 0.65; }
+    if (FB.ball.x > FB_VW-bM) { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx) * 0.65; }
   }
   if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
   if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
 
+  // ── Spieler-KI ──
   const near = [{idx:-1, dist:9999}, {idx:-1, dist:9999}];
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
     const d = Math.hypot(p.x - FB.ball.x, p.y - FB.ball.y);
     if (d < near[p.team].dist) near[p.team] = {idx: i, dist: d};
   });
-  const nearIdx  = near[0].dist <= near[1].dist ? near[0].idx : near[1].idx;
-  const nearDist = Math.min(near[0].dist, near[1].dist);
   const ballTeam = near[0].dist <= near[1].dist ? 0 : 1;
-  const pressIdx = near[1 - ballTeam].idx;
+  const nearIdx  = near[ballTeam].idx;
+  const nearDist = near[ballTeam].dist;
+  const defTeam  = 1 - ballTeam;
+  const pressIdx = near[defTeam].idx;
+
+  // Zweiter Presser des verteidigenden Teams (kein TW)
+  let press2Idx = -1, press2Dist = 9999;
+  FB.players.forEach((p, i) => {
+    if (p.redCard || p.team !== defTeam || p.role === 'gk' || i === pressIdx) return;
+    const d = Math.hypot(p.x - FB.ball.x, p.y - FB.ball.y);
+    if (d < press2Dist) { press2Dist = d; press2Idx = i; }
+  });
+  const ballInDefHalf = defTeam === 0 ? FB.ball.x < FB_VW/2 : FB.ball.x > FB_VW/2;
 
   const t = FB.gameTime;
   FB.players.forEach((p, i) => {
     if (p.redCard) return;
     const hasBall    = (i === nearIdx && nearDist < 20);
     const isPressing = (i === pressIdx);
+    const isPress2   = (i === press2Idx && ballInDefHalf && press2Dist < 160);
     const ownAtk     = (ballTeam === p.team);
     const oppGoalX   = p.team === 0 ? FB_VW - bM : bM;
     const ownGoalX   = p.team === 0 ? bM : FB_VW - bM;
@@ -3205,24 +3220,38 @@ function updateFootball(dt) {
     let tx, ty, spd;
 
     if (p.role === 'gk') {
-      tx = p.hx + (ownAtk ? 6 : 0);
-      ty = p.hy + (FB.ball.y - p.hy) * 0.4;
-      ty = Math.max(p.hy - 45, Math.min(p.hy + 45, ty));
-      spd = 3.2;
+      // Vorhersage: wo trifft der Ball die TW-Linie?
+      let predictY = FB.ball.y;
+      if (Math.abs(FB.ball.vx) > 5) {
+        const timeToGK = (p.hx - FB.ball.x) / FB.ball.vx;
+        if (timeToGK > 0 && timeToGK < 2.2) {
+          predictY = FB.ball.y + FB.ball.vy * timeToGK;
+          predictY = Math.max(bM, Math.min(FB_VH - bM, predictY));
+        }
+      }
+      tx = p.hx + (ownAtk ? 8 : 0);
+      ty = p.hy + (predictY - p.hy) * 0.55;
+      ty = Math.max(p.hy - 55, Math.min(p.hy + 55, ty));
+      spd = 3.8;
 
     } else if (hasBall) {
+      FB.lastTouchTeam = p.team;
       const gx = oppGoalX + (p.team===0 ? -8 : 8);
-      const gy = FB_VH/2 + (Math.random()-.5) * FB_VH * 0.28;
+      const gy = FB_VH/2 + (Math.random()-.5) * goalHalf * 2.2;
       const ang = Math.atan2(gy - FB.ball.y, gx - FB.ball.x);
       const pwr = 280 + Math.random()*140 + (p.role==='fwd' ? 50 : 0);
-      FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.45) * pwr;
-      FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.45) * pwr;
+      FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.28) * pwr;
+      FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.28) * pwr;
       tx = p.hx + jx*0.4; ty = p.hy + jy*0.4;
       spd = 4.5;
 
     } else if (isPressing) {
       tx = FB.ball.x + jx*0.1; ty = FB.ball.y + jy*0.1;
       spd = 5.8;
+
+    } else if (isPress2) {
+      tx = FB.ball.x - jx*0.12; ty = FB.ball.y + jy*0.12;
+      spd = 4.8;
 
     } else if (p.role === 'fwd') {
       if (ownAtk) {
@@ -3370,9 +3399,6 @@ function giveRedCard(team) {
   const tName = team === 0 ? 'CF Köln' : 'Bavaria München';
   const rMap = { def: 'Abwehr', mid: 'Mittelfeld', fwd: 'Sturm' };
   showFBBanner('🟥 ROTE KARTE! ' + tName + ' (' + (rMap[p.role]||p.role) + ')', '#ff4444');
-  // Nächstes Tor dieser Mannschaft mit 65% Chance stornieren
-  const future = FB.goalEvents.filter(e => !e.shown && !e.cancelled && e.team===team && e.time>FB.gameTime);
-  if (future.length > 0 && Math.random() < 0.65) future[0].cancelled = true;
 }
 
 function showFootballResult() {
