@@ -732,6 +732,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 let composer = null;  // EffectComposer für Bloom (initialisiert in setupBloom())
 let pokalBanner = null; // Billboard – immer zur Kamera gedreht (gesetzt in buildStadiumAtmosphere)
+let stadiumWall = null, stadiumRoof = null; // Referenzen für Nacht-Materialwechsel
 
 // ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
@@ -1047,6 +1048,7 @@ function updateTrafficLights(t) {
   wall.rotation.x = Math.PI/2;
   wall.position.set(sx, 14, sz);
   scene.add(wall);
+  stadiumWall = wall;
 
   // Überdachung
   const roof = new THREE.Mesh(
@@ -1056,6 +1058,7 @@ function updateTrafficLights(t) {
   roof.rotation.x = Math.PI/2;
   roof.position.set(sx, 27, sz);
   scene.add(roof);
+  stadiumRoof = roof;
 
   // Rasen
   const grass = new THREE.Mesh(
@@ -1195,26 +1198,33 @@ function updateTrafficLights(t) {
     bctx.textAlign = 'center';
 
     const tex = new THREE.CanvasTexture(bc);
-    // PlaneGeometry so both sides visible via DoubleSide
+    // PlaneGeometry – DoubleSide so always visible, billboard-facing via lookAt
     const bannerMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(62, 31),
+      new THREE.PlaneGeometry(68, 34),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
     );
-    // Position: above stadium, billboard updated every frame in game loop
-    bannerMesh.position.set(sx, 52, sz);
+    // Height 36: visible at street level when looking toward stadium
+    bannerMesh.position.set(sx, 36, sz);
     scene.add(bannerMesh);
     pokalBanner = bannerMesh;
 
-    // Glow PointLight near banner (always on)
-    const bannerGlow = new THREE.PointLight(0xff4400, 3.5, 90);
-    bannerGlow.position.set(sx, 52, sz);
-    scene.add(bannerGlow);
+    // Strong glow PointLights – front and back so it's lit from both sides
+    const bg1 = new THREE.PointLight(0xff6600, 8, 120);
+    bg1.decay = 0;
+    bg1.position.set(sx, 36, sz);
+    scene.add(bg1);
+    const bg2 = new THREE.PointLight(0xffaa00, 5, 80);
+    bg2.decay = 0;
+    bg2.position.set(sx, 50, sz);
+    scene.add(bg2);
 
-    // Support pole
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 28, 8), poleMat);
-    pole.position.set(sx, 38, sz);
-    scene.add(pole);
+    // Two support masts left/right
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
+    [-26, 26].forEach(offset => {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 38, 8), poleMat);
+      pole.position.set(sx + offset, 19, sz);
+      scene.add(pole);
+    });
   }
 
   // ── Fans ──
@@ -2374,11 +2384,12 @@ function updateNightLights() {
 }
 
 function initHeadlights() {
-  // Left + right beam: wide, very bright
-  headlightL = new THREE.SpotLight(0xfff8e0, 9.0, 240, Math.PI/7, 0.28);
-  headlightR = new THREE.SpotLight(0xfff8e0, 9.0, 240, Math.PI/7, 0.28);
-  // Center long-range beam: narrow, reaches far
-  headlightC = new THREE.SpotLight(0xffffff, 7.0, 320, Math.PI/14, 0.18);
+  // Left + right: wide cone, full game-brightness (decay=0 = no physical falloff)
+  headlightL = new THREE.SpotLight(0xfff8e0, 18, 280, Math.PI / 6.5, 0.22);
+  headlightR = new THREE.SpotLight(0xfff8e0, 18, 280, Math.PI / 6.5, 0.22);
+  // Center: tight long-range beam
+  headlightC = new THREE.SpotLight(0xffffff, 14, 380, Math.PI / 15, 0.10);
+  headlightL.decay = 0; headlightR.decay = 0; headlightC.decay = 0;
   headlightTgtL = new THREE.Object3D();
   headlightTgtR = new THREE.Object3D();
   headlightTgtC = new THREE.Object3D();
@@ -2408,60 +2419,77 @@ function buildStadiumNightLighting() {
   const end = WP[WP.length - 1];
   const sx = end.x - 80, sz = end.z + 30;
 
-  // Perimeter glow PointLights — ring around the stadium
+  // ── Materialwechsel: Wand + Dach leuchten selbst (kein Licht nötig) ──
+  if (stadiumWall) stadiumWall.material = new THREE.MeshBasicMaterial({ color: 0xddaa22 });
+  if (stadiumRoof) stadiumRoof.material = new THREE.MeshBasicMaterial({ color: 0xbbbbcc });
+
+  // ── Leuchtbänder AUSSEN an der Wand (TorusRadius 60, Tube 14 → Außenkante bei 74) ──
+  // Bänder bei Radius 78 = deutlich außerhalb der Wand, gut sichtbar
+  const bandColors = [0xff7700, 0xffcc00, 0xff4400];
+  const bandHeights = [4, 14, 24];
+  bandColors.forEach((col, i) => {
+    const band = new THREE.Mesh(
+      new THREE.TorusGeometry(78, 2.5, 8, 60),
+      new THREE.MeshBasicMaterial({ color: col })
+    );
+    band.rotation.x = Math.PI / 2;
+    band.position.set(sx, bandHeights[i], sz);
+    scene.add(band);
+  });
+
+  // Dach-Rand leuchtet weiß
+  const roofRim = new THREE.Mesh(
+    new THREE.TorusGeometry(69, 1.8, 6, 60),
+    new THREE.MeshBasicMaterial({ color: 0xeeeeff })
+  );
+  roofRim.rotation.x = Math.PI / 2;
+  roofRim.position.set(sx, 30, sz);
+  scene.add(roofRim);
+
+  // ── PointLights außen am Stadion: decay=0 für garantierte Helligkeit ──
   const ringAngles = [0, 45, 90, 135, 180, 225, 270, 315];
   ringAngles.forEach(deg => {
     const rad = deg * Math.PI / 180;
-    const lx = sx + Math.cos(rad) * 68;
-    const lz = sz + Math.sin(rad) * 68;
-    const pl = new THREE.PointLight(0xffffaa, 4.5, 120);
-    pl.position.set(lx, 22, lz);
+    const lx = sx + Math.cos(rad) * 80;
+    const lz = sz + Math.sin(rad) * 80;
+    const pl = new THREE.PointLight(0xffbb44, 6, 130);
+    pl.decay = 0;
+    pl.position.set(lx, 18, lz);
     scene.add(pl);
   });
 
-  // Inner field flood: warm white PointLights high up
-  [[0,0],[30,0],[-30,0],[0,35],[0,-35]].forEach(([ox,oz]) => {
-    const fl = new THREE.PointLight(0xfff5dd, 5.0, 100);
-    fl.position.set(sx+ox, 42, sz+oz);
+  // ── Innenfeld-Fluter ──
+  [[0,0],[32,0],[-32,0],[0,38],[0,-38]].forEach(([ox,oz]) => {
+    const fl = new THREE.PointLight(0xfff5dd, 8, 120);
+    fl.decay = 0;
+    fl.position.set(sx+ox, 45, sz+oz);
     scene.add(fl);
   });
 
-  // Floodlight SpotLights pointing down from mast tips
+  // ── Echte Flutlicht-SpotLights von den Masten nach unten ──
   [[60,60],[-60,60],[60,-60],[-60,-60]].forEach(([ox,oz]) => {
-    const sl = new THREE.SpotLight(0xffffff, 12, 130, Math.PI/5, 0.4);
-    sl.position.set(sx+ox, 32, sz+oz);
+    const sl = new THREE.SpotLight(0xffffff, 20, 160, Math.PI / 5, 0.4);
+    sl.decay = 0;
+    sl.position.set(sx+ox, 33, sz+oz);
     const tgt = new THREE.Object3D();
     tgt.position.set(sx, 0, sz);
     scene.add(tgt);
     sl.target = tgt;
     scene.add(sl);
+    // Masten-Kopf leuchtet zusätzlich
+    const mastGlow = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 1.5, 2.5),
+      new THREE.MeshBasicMaterial({ color: 0xffffcc })
+    );
+    mastGlow.position.set(sx+ox, 32, sz+oz);
+    scene.add(mastGlow);
   });
 
-  // Stadium outer wall glow: emissive orange-yellow band
-  const glowBand = new THREE.Mesh(
-    new THREE.TorusGeometry(60, 1.2, 6, 48),
-    new THREE.MeshBasicMaterial({ color: 0xff9900 })
-  );
-  glowBand.rotation.x = Math.PI / 2;
-  glowBand.position.set(sx, 10, sz);
-  scene.add(glowBand);
-
-  const glowBand2 = new THREE.Mesh(
-    new THREE.TorusGeometry(60, 1.2, 6, 48),
-    new THREE.MeshBasicMaterial({ color: 0xffcc00 })
-  );
-  glowBand2.rotation.x = Math.PI / 2;
-  glowBand2.position.set(sx, 22, sz);
-  scene.add(glowBand2);
-
-  // Roof rim glow
-  const roofGlow = new THREE.Mesh(
-    new THREE.TorusGeometry(60, 0.9, 5, 48),
-    new THREE.MeshBasicMaterial({ color: 0xffffff })
-  );
-  roofGlow.rotation.x = Math.PI / 2;
-  roofGlow.position.set(sx, 31.5, sz);
-  scene.add(roofGlow);
+  // ── Weithin sichtbares Leucht-Halo über dem Stadion ──
+  const haloPL = new THREE.PointLight(0xff8800, 12, 350);
+  haloPL.decay = 0;
+  haloPL.position.set(sx, 50, sz);
+  scene.add(haloPL);
 }
 
 function buildRain() {
@@ -4280,9 +4308,9 @@ function setupBloom() {
   const isNight = cfg.time    === 'night';
   const isRain  = cfg.weather === 'rain';
   // Nur bei Nacht oder Regen aktivieren (tagsüber klarer Himmel braucht kein Bloom)
-  const strength = isNight && isRain ? 1.7 : isNight ? 1.8 : isRain ? 0.3 : 0;
+  const strength = isNight && isRain ? 1.9 : isNight ? 2.2 : isRain ? 0.3 : 0;
   if (strength === 0) return;
-  const threshold = isNight ? 0.55 : 0.90;
+  const threshold = isNight ? 0.45 : 0.90;
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, cam));
   composer.addPass(new UnrealBloomPass(
