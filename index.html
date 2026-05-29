@@ -712,6 +712,15 @@ const LIMITS = {
 };
 function streetLimit(s){ return LIMITS[s] || 50; }
 
+// ── Hofeinfahrt-Koordinaten (früh berechnet für car-Startposition) ──────────
+let HOME_CX = 0, HOME_CZ = 0;
+{
+  const _hd0x = WP[1].x - WP[0].x, _hd0z = WP[1].z - WP[0].z;
+  const _hdLen = Math.hypot(_hd0x, _hd0z) || 1;
+  HOME_CX = WP[0].x + (-_hd0z / _hdLen) * 10;
+  HOME_CZ = WP[0].z + ( _hd0x / _hdLen) * 10;
+}
+
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
@@ -1764,12 +1773,12 @@ function drawCockpit() {
 }
 
 // ── Fahrzeugzustand ───────────────────────────────────────────────────────────
-// Startrichtung: Richtung zum 1. Wegpunkt
+// Startet auf Hofeinfahrt, Blickrichtung zur Straße
 const _dx0 = WP[1].x - WP[0].x, _dz0 = WP[1].z - WP[0].z;
 const car = {
-  x:       WP[0].x,
-  z:       WP[0].z,
-  heading: Math.atan2(_dx0, _dz0),
+  x:       HOME_CX,
+  z:       HOME_CZ,
+  heading: Math.atan2(WP[0].x - HOME_CX, WP[0].z - HOME_CZ),
   speed:    0,
   steer:    0,
   wpIdx:    1,
@@ -2443,12 +2452,13 @@ function toast(msg) {
 }
 
 function resetCar() {
-  car.x = WP[0].x; car.z = WP[0].z;
-  car.heading = Math.atan2(WP[1].x-WP[0].x, WP[1].z-WP[0].z);
-  car.speed = 0; car.steer = 0; car.wpIdx = 1;
+  car.x = HOME_CX; car.z = HOME_CZ;
+  car.heading = Math.atan2(WP[0].x - HOME_CX, WP[0].z - HOME_CZ);
+  car.speed = 0; car.steer = 0; car.wpIdx = 1; car.homeMode = false;
+  _homeJourneyDone = false; _homeParkShown = false;
   document.getElementById('prog-fill').style.width = '0%';
   document.getElementById('street-lbl').textContent = WP[0].street;
-  toast('🔄 Neustart – Altbaumburgweg');
+  toast('🔄 Neustart – Hofeinfahrt Altbaumburgweg');
 }
 
 // ── Minimap ───────────────────────────────────────────────────────────────────
@@ -2748,7 +2758,6 @@ async function loadOSM() {
 let footballActive = false;
 let _parkTimer = null, _parkShown = false;
 let PARK_CX = 0, PARK_CZ = 0;
-let HOME_CX = 0, HOME_CZ = 0;
 let _homeJourneyDone = false, _homeParkShown = false, _homeParkTimer = null;
 
 // Virtuelle Spielfeld-Koordinaten (immer 700×420, wird auf Canvas skaliert)
@@ -2852,32 +2861,67 @@ function buildHomePark() {
   const d0x = WP[1].x - WP[0].x, d0z = WP[1].z - WP[0].z;
   const d0len = Math.hypot(d0x, d0z) || 1;
   const nx = -d0z / d0len, nz = d0x / d0len;  // Perpendicular (links der Fahrtrichtung)
-  HOME_CX = WP[0].x + nx * 13;
-  HOME_CZ = WP[0].z + nz * 13;
+  const ax = d0x / d0len, az = d0z / d0len;    // Along-street direction
+  HOME_CX = WP[0].x + nx * 10;
+  HOME_CZ = WP[0].z + nz * 10;
 
-  // Asphalt-Fläche
-  const lot = new THREE.Mesh(
-    new THREE.PlaneGeometry(18, 10),
-    new THREE.MeshLambertMaterial({ color: 0x383838 })
+  // Hilfsfunktion: Position bei Tiefe d und Seite s
+  const pos = (d, s) => [WP[0].x + nx * d + ax * s, WP[0].z + nz * d + az * s];
+
+  // ── Pflasterstein-Einfahrt (Canvas-Textur: warmes Grau mit Fugen) ──
+  const cvP = document.createElement('canvas');
+  cvP.width = 128; cvP.height = 128;
+  const cpx = cvP.getContext('2d');
+  cpx.fillStyle = '#8f8c89'; cpx.fillRect(0, 0, 128, 128);
+  cpx.strokeStyle = '#6e6b68'; cpx.lineWidth = 2;
+  for (let row = 0; row < 8; row++) {
+    const ox = (row % 2) * 16;
+    for (let col = -1; col < 9; col++) {
+      cpx.strokeRect(col * 32 + ox, row * 16, 32, 16);
+    }
+  }
+  const paveT = new THREE.CanvasTexture(cvP);
+  paveT.wrapS = paveT.wrapT = THREE.RepeatWrapping;
+  paveT.repeat.set(7, 2.5);
+
+  // Einfahrtsfläche 14m tief × 5m breit, Mittelpunkt bei 7m Tiefe
+  const [cx, cz] = pos(7, 0);
+  const drive = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 5),
+    new THREE.MeshLambertMaterial({ map: paveT })
   );
-  lot.rotation.x = -Math.PI / 2;
-  lot.position.set(HOME_CX, 0.02, HOME_CZ);
-  scene.add(lot);
+  drive.rotation.x = -Math.PI / 2;
+  drive.rotation.y = Math.atan2(nx, nz);  // align with driveway direction
+  drive.position.set(cx, 0.02, cz);
+  scene.add(drive);
 
-  // Parkmarkierung
-  const lnMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 9), lnMat);
-  ln.rotation.x = -Math.PI / 2;
-  ln.position.set(HOME_CX, 0.03, HOME_CZ);
-  scene.add(ln);
+  // ── Hecken links und rechts (entlang der Einfahrt) ──
+  const hedgeMat = new THREE.MeshLambertMaterial({ color: 0x2a5c1e });
+  for (const side of [-1, 1]) {
+    const [hx, hz] = pos(5.5, side * 3.2);
+    const hedge = new THREE.Mesh(new THREE.BoxGeometry(11, 1.6, 0.8), hedgeMat);
+    hedge.rotation.y = Math.atan2(nx, nz);
+    hedge.position.set(hx, 0.8, hz);
+    scene.add(hedge);
+  }
 
-  // Pfosten + Hausnummern-Schild
-  const post = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.08, 3.2, 8),
+  // ── Torpedo-Pfosten an der Einfahrt (Straßenrand) ──
+  const postMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+  for (const side of [-1, 1]) {
+    const [px, pz] = pos(1.2, side * 2.8);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.4, 8), postMat);
+    pillar.position.set(px, 0.7, pz);
+    scene.add(pillar);
+  }
+
+  // ── Hausnummern-Schild am Eingang ──
+  const [spx, spz] = pos(1.2, -3.2);
+  const sPost = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.06, 2.8, 8),
     new THREE.MeshLambertMaterial({ color: 0x886633 })
   );
-  post.position.set(HOME_CX + nx * 7, 1.6, HOME_CZ + nz * 7);
-  scene.add(post);
+  sPost.position.set(spx, 1.4, spz);
+  scene.add(sPost);
 
   const sc = document.createElement('canvas');
   sc.width = 256; sc.height = 96;
@@ -2893,8 +2937,20 @@ function buildHomePark() {
     new THREE.BoxGeometry(3.8, 1.5, 0.1),
     new THREE.MeshBasicMaterial({ map: stex, side: THREE.DoubleSide })
   );
-  sign.position.set(HOME_CX + nx * 7, 3.8, HOME_CZ + nz * 7);
+  sign.position.set(spx, 2.8, spz);
   scene.add(sign);
+
+  // ── Einfaches Haus-Gebäude im Hintergrund ──
+  const houseMat = new THREE.MeshLambertMaterial({ color: 0xd4c9a8 });
+  const [bx, bz] = pos(15, 0);
+  const building = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 6), houseMat);
+  building.position.set(bx, 3.5, bz);
+  scene.add(building);
+  const roofMat = new THREE.MeshLambertMaterial({ color: 0x7a5a3a });
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(4.5, 3, 4), roofMat);
+  roof.rotation.y = Math.PI / 4;
+  roof.position.set(bx, 8.5, bz);
+  scene.add(roof);
 }
 
 function checkHomePark() {
