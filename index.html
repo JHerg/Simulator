@@ -3269,6 +3269,7 @@ function updateFootball(dt) {
           document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
           showFBBanner('⚽ TOR! Elfmeter verwandelt!', team===0 ? '#ff6666' : '#88aaff');
           FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+          FB.ball.y3 = 0; FB.ball.vy3 = 0;
           FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
         } else {
           showFBBanner('❌ Elfmeter verschossen!', '#ffdd88');
@@ -3322,6 +3323,7 @@ function updateFootball(dt) {
       const isOwnGoal = FB.lastTouchTeam === 0;
       showFBBanner(isOwnGoal ? '⚽ EIGENTOR! CF Köln' : '⚽ TOR! Bavaria München', isOwnGoal ? '#ffdd44' : '#88aaff');
       FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+      FB.ball.y3 = 0; FB.ball.vy3 = 0;
       FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
       FB.lastTouchTeam = -1;
     } else {
@@ -3335,6 +3337,7 @@ function updateFootball(dt) {
       const isOwnGoal = FB.lastTouchTeam === 1;
       showFBBanner(isOwnGoal ? '⚽ EIGENTOR! Bavaria München' : '⚽ TOR! CF Köln', isOwnGoal ? '#ffdd44' : '#ff6666');
       FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+      FB.ball.y3 = 0; FB.ball.vy3 = 0;
       FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
       FB.lastTouchTeam = -1;
     } else {
@@ -3407,6 +3410,7 @@ function updateFootball(dt) {
       const pwr = 280 + Math.random()*140 + (p.role==='fwd' ? 50 : 0);
       FB.ball.vx = Math.cos(ang + (Math.random()-.5)*0.28) * pwr;
       FB.ball.vy = Math.sin(ang + (Math.random()-.5)*0.28) * pwr;
+      FB.ball.vy3 = pwr * 0.018 + 2 + Math.random() * 7;
       tx = p.hx + jx*0.4; ty = p.hy + jy*0.4;
       spd = 4.5;
 
