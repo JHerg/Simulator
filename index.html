@@ -1198,33 +1198,34 @@ function updateTrafficLights(t) {
     bctx.textAlign = 'center';
 
     const tex = new THREE.CanvasTexture(bc);
+    // Dunkler Rahmen hinter dem Banner (statisch an der Wand)
+    const frameMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(72, 38),
+      new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide })
+    );
+    // Auf der Außenseite der Stadionwand: Radius 76 vom Mittelpunkt, Wandhöhe y=18
+    frameMesh.position.set(sx + 76, 18, sz);
+    scene.add(frameMesh);
+
     // PlaneGeometry – DoubleSide so always visible, billboard-facing via lookAt
     const bannerMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(68, 34),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
     );
-    // Height 36: visible at street level when looking toward stadium
-    bannerMesh.position.set(sx, 36, sz);
+    // Direkt vor dem Rahmen an der Stadionwand
+    bannerMesh.position.set(sx + 77, 18, sz);
     scene.add(bannerMesh);
     pokalBanner = bannerMesh;
 
-    // Strong glow PointLights – front and back so it's lit from both sides
-    const bg1 = new THREE.PointLight(0xff6600, 8, 120);
+    // Glow PointLights an der Wandposition
+    const bg1 = new THREE.PointLight(0xff6600, 6, 100);
     bg1.decay = 0;
-    bg1.position.set(sx, 36, sz);
+    bg1.position.set(sx + 76, 18, sz);
     scene.add(bg1);
-    const bg2 = new THREE.PointLight(0xffaa00, 5, 80);
+    const bg2 = new THREE.PointLight(0xffaa00, 4, 70);
     bg2.decay = 0;
-    bg2.position.set(sx, 50, sz);
+    bg2.position.set(sx + 80, 28, sz);
     scene.add(bg2);
-
-    // Two support masts left/right
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-    [-26, 26].forEach(offset => {
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 38, 8), poleMat);
-      pole.position.set(sx + offset, 19, sz);
-      scene.add(pole);
-    });
   }
 
   // ── Fans ──
@@ -2384,11 +2385,11 @@ function updateNightLights() {
 }
 
 function initHeadlights() {
-  // Left + right: wide cone, full game-brightness (decay=0 = no physical falloff)
-  headlightL = new THREE.SpotLight(0xfff8e0, 18, 280, Math.PI / 6.5, 0.22);
-  headlightR = new THREE.SpotLight(0xfff8e0, 18, 280, Math.PI / 6.5, 0.22);
+  // Left + right: wide cone – natürliche Helligkeit
+  headlightL = new THREE.SpotLight(0xfff8e0, 7, 260, Math.PI / 6.5, 0.25);
+  headlightR = new THREE.SpotLight(0xfff8e0, 7, 260, Math.PI / 6.5, 0.25);
   // Center: tight long-range beam
-  headlightC = new THREE.SpotLight(0xffffff, 14, 380, Math.PI / 15, 0.10);
+  headlightC = new THREE.SpotLight(0xffffff, 5, 340, Math.PI / 15, 0.12);
   headlightL.decay = 0; headlightR.decay = 0; headlightC.decay = 0;
   headlightTgtL = new THREE.Object3D();
   headlightTgtR = new THREE.Object3D();
