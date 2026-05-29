@@ -2766,6 +2766,7 @@ const FB = {
   kickCd: 0,
   passTarget: -1,
   dribCount: 0,
+  setpiece: null,
 };
 
 const FB3S = 0.15;
@@ -3139,14 +3140,21 @@ function _initFootball3D() {
     lp.position.set(gx, postH / 2, -gZ); fbScene.add(lp);
     const rp = lp.clone(); rp.position.set(gx, postH / 2, gZ); fbScene.add(rp);
     const cb = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, gZ * 2, 8), gMat);
-    cb.rotation.z = Math.PI / 2; cb.position.set(gx, postH, 0); fbScene.add(cb);
-    const nMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.30, side: THREE.DoubleSide });
-    const net = new THREE.Mesh(new THREE.PlaneGeometry(gZ * 2, postH), nMat);
-    net.rotation.y = Math.PI / 2;
-    net.position.set(gx + (flipped ? netD / 2 : -netD / 2), postH / 2, 0); fbScene.add(net);
-    // Back post
-    const bp = lp.clone();
-    bp.position.set(gx + (flipped ? netD : -netD), postH / 2, 0); fbScene.add(bp);
+    cb.rotation.x = Math.PI / 2; cb.position.set(gx, postH, 0); fbScene.add(cb);
+    const nMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.28, side: THREE.DoubleSide });
+    // Back net panel (perpendicular to goal line, facing field)
+    const netBack = new THREE.Mesh(new THREE.PlaneGeometry(gZ * 2, postH), nMat);
+    netBack.rotation.y = Math.PI / 2;
+    netBack.position.set(gx + (flipped ? netD : -netD), postH / 2, 0); fbScene.add(netBack);
+    // Side net panels (parallel to goal line depth)
+    const netL = new THREE.Mesh(new THREE.PlaneGeometry(netD, postH), nMat);
+    netL.position.set(gx + (flipped ? netD / 2 : -netD / 2), postH / 2, -gZ); fbScene.add(netL);
+    const netR = netL.clone();
+    netR.position.set(gx + (flipped ? netD / 2 : -netD / 2), postH / 2, gZ); fbScene.add(netR);
+    // Top net panel (horizontal ceiling)
+    const netTop = new THREE.Mesh(new THREE.PlaneGeometry(netD, gZ * 2), nMat);
+    netTop.rotation.x = Math.PI / 2;
+    netTop.position.set(gx + (flipped ? netD / 2 : -netD / 2), postH, 0); fbScene.add(netTop);
   }
   buildGoal(pX1, false);
   buildGoal(pX2, true);
@@ -3363,44 +3371,122 @@ function updateFootball(dt) {
   document.getElementById('fb-time').textContent = Math.floor(Math.min(FB.gameTime, 90)) + "'";
   if (FB.gameTime >= 90) { showFootballResult(); return; }
 
-  FB.ball.vx *= 0.983; FB.ball.vy *= 0.983;
-  FB.ball.x += FB.ball.vx * dt; FB.ball.y += FB.ball.vy * dt;
-
-  // ── Tor-Erkennung: linkes Tor → Team 1 erzielt, rechtes Tor → Team 0 erzielt ──
-  if (FB.ball.x < bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
-    if (FB.goalCooldown <= 0) {
-      FB.goalCooldown = 4;
-      FB.score[1]++;
-      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
-      const isOwnGoal = FB.lastTouchTeam === 0;
-      showFBBanner(isOwnGoal ? '⚽ EIGENTOR! CF Köln' : '⚽ TOR! Bavaria München', isOwnGoal ? '#ffdd44' : '#88aaff');
-      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
-      FB.ball.y3 = 0; FB.ball.vy3 = 0;
-      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
-      FB.lastTouchTeam = -1; FB.possTeam = -1; FB.kickCd = 0.8;
-    } else {
-      FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.max(FB.ball.x, 2);
-    }
-  } else if (FB.ball.x > FB_VW-bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
-    if (FB.goalCooldown <= 0) {
-      FB.goalCooldown = 4;
-      FB.score[0]++;
-      document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
-      const isOwnGoal = FB.lastTouchTeam === 1;
-      showFBBanner(isOwnGoal ? '⚽ EIGENTOR! Bavaria München' : '⚽ TOR! CF Köln', isOwnGoal ? '#ffdd44' : '#ff6666');
-      FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
-      FB.ball.y3 = 0; FB.ball.vy3 = 0;
-      FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
-      FB.lastTouchTeam = -1; FB.possTeam = -1; FB.kickCd = 0.8;
-    } else {
-      FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.min(FB.ball.x, FB_VW-2);
+  // ── Standardsituations-Handler: Ball einfrieren → Warten → Ausführen ──
+  if (FB.setpiece) {
+    const sp = FB.setpiece;
+    FB.ball.x = sp.bx; FB.ball.y = sp.by;
+    FB.ball.vx = 0; FB.ball.vy = 0; FB.ball.y3 = 0; FB.ball.vy3 = 0;
+    sp.timer -= dt * FB.speedFactor;
+    if (sp.timer <= 0) {
+      FB.setpiece = null;
+      FB.kickCd = 0.3; FB.passTarget = -1; FB.dribCount = 0;
+      let kicker = null, kDist = 1e9;
+      FB.players.forEach(p => {
+        if (p.redCard || p.team !== sp.team) return;
+        const d = Math.hypot(p.x - sp.bx, p.y - sp.by);
+        if (d < kDist) { kDist = d; kicker = p; }
+      });
+      if (sp.type === 'corner') {
+        const tX = sp.team === 1 ? bM + 70 : FB_VW - bM - 70;
+        const tY = FB_VH/2 + (Math.random() < .5 ? -1 : 1) * goalHalf * (0.8 + Math.random() * 0.5);
+        const ang = Math.atan2(tY - sp.by, tX - sp.bx);
+        const pwr = 260 + Math.random() * 50;
+        FB.ball.vx = Math.cos(ang) * pwr; FB.ball.vy = Math.sin(ang) * pwr;
+        FB.ball.vy3 = 5.5 + Math.random() * 2.5;
+      } else if (sp.type === 'goalkick') {
+        const tX = sp.team === 0 ? FB_VW * 0.60 : FB_VW * 0.40;
+        const tY = FB_VH/2 + (Math.random() - .5) * FB_VH * 0.5;
+        const ang = Math.atan2(tY - sp.by, tX - sp.bx);
+        FB.ball.vx = Math.cos(ang) * 310; FB.ball.vy = Math.sin(ang) * 310;
+        FB.ball.vy3 = 8 + Math.random() * 3;
+      } else { // throwin
+        let best = null, bsDist = 1e9;
+        FB.players.forEach(p => {
+          if (p.redCard || p.team !== sp.team || p === kicker) return;
+          const d = Math.hypot(p.x - sp.bx, p.y - sp.by);
+          if (d > 35 && d < bsDist) { bsDist = d; best = p; }
+        });
+        const dir0 = sp.team === 0 ? 1 : -1;
+        const tX = best ? best.x : sp.bx + dir0 * 80;
+        const tY = best ? best.y : sp.by;
+        const dd = Math.hypot(tX - sp.bx, tY - sp.by);
+        const ang = Math.atan2(tY - sp.by, tX - sp.bx);
+        FB.ball.vx = Math.cos(ang) * Math.min(250, 90 + dd * 0.85);
+        FB.ball.vy = Math.sin(ang) * Math.min(250, 90 + dd * 0.85);
+        FB.ball.vy3 = 0.8 + Math.random() * 1.5;
+      }
+      FB.lastTouchTeam = sp.team;
     }
   } else {
-    if (FB.ball.x < bM) { FB.ball.x = bM; FB.ball.vx = Math.abs(FB.ball.vx) * 0.65; }
-    if (FB.ball.x > FB_VW-bM) { FB.ball.x = FB_VW-bM; FB.ball.vx = -Math.abs(FB.ball.vx) * 0.65; }
+    // ── Normale Ballphysik ──
+    FB.ball.vx *= 0.983; FB.ball.vy *= 0.983;
+    FB.ball.x += FB.ball.vx * dt; FB.ball.y += FB.ball.vy * dt;
+
+    // ── Tor-Erkennung: linkes Tor → Team 1 erzielt, rechtes Tor → Team 0 erzielt ──
+    if (FB.ball.x < bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+      if (FB.goalCooldown <= 0) {
+        FB.goalCooldown = 4;
+        FB.score[1]++;
+        document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
+        const isOwnGoal = FB.lastTouchTeam === 0;
+        showFBBanner(isOwnGoal ? '⚽ EIGENTOR! CF Köln' : '⚽ TOR! Bavaria München', isOwnGoal ? '#ffdd44' : '#88aaff');
+        FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+        FB.ball.y3 = 0; FB.ball.vy3 = 0;
+        FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
+        FB.lastTouchTeam = -1; FB.possTeam = -1; FB.kickCd = 0.8;
+      } else {
+        FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.max(FB.ball.x, 2);
+      }
+    } else if (FB.ball.x > FB_VW-bM && FB.ball.y >= goalTop && FB.ball.y <= goalBot) {
+      if (FB.goalCooldown <= 0) {
+        FB.goalCooldown = 4;
+        FB.score[0]++;
+        document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
+        const isOwnGoal = FB.lastTouchTeam === 1;
+        showFBBanner(isOwnGoal ? '⚽ EIGENTOR! Bavaria München' : '⚽ TOR! CF Köln', isOwnGoal ? '#ffdd44' : '#ff6666');
+        FB.ball.x = FB_VW/2; FB.ball.y = FB_VH/2;
+        FB.ball.y3 = 0; FB.ball.vy3 = 0;
+        FB.ball.vx = 60*(Math.random()-.5); FB.ball.vy = 60*(Math.random()-.5);
+        FB.lastTouchTeam = -1; FB.possTeam = -1; FB.kickCd = 0.8;
+      } else {
+        FB.ball.vx *= 0.12; FB.ball.vy *= 0.12; FB.ball.x = Math.min(FB.ball.x, FB_VW-2);
+      }
+    } else if (FB.ball.x < bM) {
+      // Aus über linke Torlinie — team 0 verteidigt, team 1 greift an
+      if (FB.lastTouchTeam === 0) {
+        const cy = FB.ball.y < FB_VH/2 ? bM : FB_VH-bM;
+        FB.setpiece = { type: 'corner', team: 1, bx: bM, by: cy, timer: 2.0 };
+        showFBBanner('⛳ Ecke — Bavaria München', '#88aaff');
+      } else {
+        FB.setpiece = { type: 'goalkick', team: 0, bx: bM + 40, by: FB_VH/2, timer: 2.0 };
+        showFBBanner('🥅 Abschlag — CF Köln', '#aaddff');
+      }
+      FB.ball.vx = 0; FB.ball.vy = 0; FB.ball.vy3 = 0;
+    } else if (FB.ball.x > FB_VW-bM) {
+      // Aus über rechte Torlinie — team 1 verteidigt, team 0 greift an
+      if (FB.lastTouchTeam === 1) {
+        const cy = FB.ball.y < FB_VH/2 ? bM : FB_VH-bM;
+        FB.setpiece = { type: 'corner', team: 0, bx: FB_VW-bM, by: cy, timer: 2.0 };
+        showFBBanner('⛳ Ecke — CF Köln', '#ff6666');
+      } else {
+        FB.setpiece = { type: 'goalkick', team: 1, bx: FB_VW-bM-40, by: FB_VH/2, timer: 2.0 };
+        showFBBanner('🥅 Abschlag — Bavaria München', '#aaddff');
+      }
+      FB.ball.vx = 0; FB.ball.vy = 0; FB.ball.vy3 = 0;
+    }
+    if (!FB.setpiece && FB.ball.y < bM) {
+      const kTeam = FB.lastTouchTeam === -1 ? Math.floor(Math.random()*2) : (FB.lastTouchTeam === 0 ? 1 : 0);
+      FB.setpiece = { type: 'throwin', team: kTeam, bx: Math.max(bM+5, Math.min(FB_VW-bM-5, FB.ball.x)), by: bM, timer: 1.5 };
+      FB.ball.vx = 0; FB.ball.vy = 0; FB.ball.vy3 = 0;
+      showFBBanner('🤾 Einwurf', '#ddffdd');
+    }
+    if (!FB.setpiece && FB.ball.y > FB_VH-bM) {
+      const kTeam = FB.lastTouchTeam === -1 ? Math.floor(Math.random()*2) : (FB.lastTouchTeam === 0 ? 1 : 0);
+      FB.setpiece = { type: 'throwin', team: kTeam, bx: Math.max(bM+5, Math.min(FB_VW-bM-5, FB.ball.x)), by: FB_VH-bM, timer: 1.5 };
+      FB.ball.vx = 0; FB.ball.vy = 0; FB.ball.vy3 = 0;
+      showFBBanner('🤾 Einwurf', '#ddffdd');
+    }
   }
-  if (FB.ball.y < bM) { FB.ball.y = bM; FB.ball.vy = Math.abs(FB.ball.vy); }
-  if (FB.ball.y > FB_VH-bM) { FB.ball.y = FB_VH-bM; FB.ball.vy = -Math.abs(FB.ball.vy); }
   FB.ball.vy3 -= 30 * dt;
   FB.ball.y3  += FB.ball.vy3 * dt;
   if (FB.ball.y3 < 0) { FB.ball.y3 = 0; FB.ball.vy3 = (Math.abs(FB.ball.vy3) > 1.2) ? -FB.ball.vy3 * 0.5 : 0; }
@@ -3469,7 +3555,7 @@ function updateFootball(dt) {
 
     // Ballberührung: nur wenn nächster Spieler, nah genug, Ball langsam & Cooldown vorbei
     const canKick = (i === kickerIdx && kickerDist < 22
-                     && FB.ball.y3 < 1.8 && FB.kickCd <= 0 && bSpd < 155);
+                     && FB.ball.y3 < 1.8 && FB.kickCd <= 0 && bSpd < 155 && !FB.setpiece);
 
     // ── Torwart ──
     if (p.role === 'gk') {
@@ -3516,16 +3602,21 @@ function updateFootball(dt) {
       });
 
       const goodPass   = best !== null && bestScore > 30;
-      // Schuss nur im Strafraum, oder weiter draußen falls kein guter Pass verfügbar
-      const doShoot = inBox || (!goodPass && distGoal < FB_VW * 0.24 && Math.random() < 0.65);
+      const longShot   = (p.role === 'fwd' || p.role === 'mid')
+                         && distGoal < FB_VW * 0.40 && Math.abs(bY - FB_VH/2) < FB_VH * 0.38
+                         && !goodPass && Math.random() < 0.22;
+      // Schuss: im Strafraum, Weitschuss, oder draußen falls kein guter Pass verfügbar
+      const doShoot = inBox || longShot || (!goodPass && distGoal < FB_VW * 0.24 && Math.random() < 0.65);
 
       if (doShoot) {
+        const isLong = !inBox && distGoal > FB_VW * 0.20;
         const gy  = FB_VH / 2 + (Math.random() < .5 ? -1 : 1) * goalHalf * (0.3 + Math.random() * 0.6);
         const ang = Math.atan2(gy - bY, (oppGoalX + dir * 4) - bX);
-        const pwr = 245 + Math.random() * 90 + (p.role === 'fwd' ? 25 : 0);
-        FB.ball.vx  = Math.cos(ang + (Math.random() - .5) * 0.10) * pwr;
-        FB.ball.vy  = Math.sin(ang + (Math.random() - .5) * 0.10) * pwr;
-        FB.ball.vy3 = 2.5 + Math.random() * 4;
+        const pwr = isLong ? (290 + Math.random() * 70) : (245 + Math.random() * 90 + (p.role === 'fwd' ? 25 : 0));
+        const scatter = isLong ? 0.13 : 0.10;
+        FB.ball.vx  = Math.cos(ang + (Math.random() - .5) * scatter) * pwr;
+        FB.ball.vy  = Math.sin(ang + (Math.random() - .5) * scatter) * pwr;
+        FB.ball.vy3 = isLong ? (1.0 + Math.random() * 2.2) : (2.5 + Math.random() * 4);
         FB.kickCd = 0.55; FB.passTarget = -1; FB.dribCount = 0;
         go(p, ax, ay, 88);   // Schütze läuft nach hinten → kein Autodribble
 
