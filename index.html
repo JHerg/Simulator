@@ -731,6 +731,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 let composer = null;  // EffectComposer für Bloom (initialisiert in setupBloom())
+let pokalBanner = null; // Billboard – immer zur Kamera gedreht (gesetzt in buildStadiumAtmosphere)
 
 // ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
@@ -2320,7 +2321,6 @@ const nightLightPool = [];
 let headlightL = null, headlightR = null, headlightC = null;
 let headlightTgtL = null, headlightTgtR = null, headlightTgtC = null;
 let _shakeAmt = 0;
-let pokalBanner = null; // billboard, updated each frame
 
 function applyNightMode() {
   scene.background = new THREE.Color(0x040810);
