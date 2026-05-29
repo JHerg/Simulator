@@ -2860,97 +2860,209 @@ function setupParkingAndFootball() {
 function buildHomePark() {
   const d0x = WP[1].x - WP[0].x, d0z = WP[1].z - WP[0].z;
   const d0len = Math.hypot(d0x, d0z) || 1;
-  const nx = -d0z / d0len, nz = d0x / d0len;  // Perpendicular (links der Fahrtrichtung)
-  const ax = d0x / d0len, az = d0z / d0len;    // Along-street direction
+  const nx = -d0z / d0len, nz = d0x / d0len;
+  const ax = d0x / d0len,  az = d0z / d0len;
   HOME_CX = WP[0].x + nx * 10;
   HOME_CZ = WP[0].z + nz * 10;
+  // pos(depth, side): depth = metres into property along nx, side = metres along street
+  const p = (d, s) => ({ x: WP[0].x + nx*d + ax*s, z: WP[0].z + nz*d + az*s });
 
-  // Hilfsfunktion: Position bei Tiefe d und Seite s
-  const pos = (d, s) => [WP[0].x + nx * d + ax * s, WP[0].z + nz * d + az * s];
-
-  // ── Pflasterstein-Einfahrt (Canvas-Textur: warmes Grau mit Fugen) ──
-  const cvP = document.createElement('canvas');
-  cvP.width = 128; cvP.height = 128;
-  const cpx = cvP.getContext('2d');
-  cpx.fillStyle = '#8f8c89'; cpx.fillRect(0, 0, 128, 128);
-  cpx.strokeStyle = '#6e6b68'; cpx.lineWidth = 2;
+  // ── 1. Pflasterstein-Fläche (13m tief × 5m breit, warmes Beige) ──────────
+  const cvPv = document.createElement('canvas');
+  cvPv.width = 256; cvPv.height = 256;
+  const pCtx = cvPv.getContext('2d');
+  pCtx.fillStyle = '#c2b59f'; pCtx.fillRect(0, 0, 256, 256);
+  pCtx.strokeStyle = '#a0927e'; pCtx.lineWidth = 2.5;
   for (let row = 0; row < 8; row++) {
-    const ox = (row % 2) * 16;
+    const ox = (row % 2) * 32;
     for (let col = -1; col < 9; col++) {
-      cpx.strokeRect(col * 32 + ox, row * 16, 32, 16);
+      pCtx.strokeRect(col * 64 + ox + 1, row * 32 + 1, 61, 29);
     }
   }
-  const paveT = new THREE.CanvasTexture(cvP);
-  paveT.wrapS = paveT.wrapT = THREE.RepeatWrapping;
-  paveT.repeat.set(7, 2.5);
-
-  // Einfahrtsfläche 14m tief × 5m breit, Mittelpunkt bei 7m Tiefe
-  const [cx, cz] = pos(7, 0);
-  const drive = new THREE.Mesh(
-    new THREE.PlaneGeometry(14, 5),
-    new THREE.MeshLambertMaterial({ map: paveT })
+  // leichte Farbvariation einzelner Steine
+  pCtx.fillStyle = 'rgba(60,40,20,0.06)';
+  for (let i = 0; i < 20; i++) {
+    pCtx.fillRect(Math.random()*256, Math.random()*256, 52+Math.random()*20, 24+Math.random()*10);
+  }
+  const pvTex = new THREE.CanvasTexture(cvPv);
+  pvTex.wrapS = pvTex.wrapT = THREE.RepeatWrapping;
+  pvTex.repeat.set(4.5, 1.8);
+  const { x: pcx, z: pcz } = p(6.5, 0);
+  const driveMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(13, 5),
+    new THREE.MeshLambertMaterial({ map: pvTex })
   );
-  drive.rotation.x = -Math.PI / 2;
-  drive.rotation.y = Math.atan2(nx, nz);  // align with driveway direction
-  drive.position.set(cx, 0.02, cz);
-  scene.add(drive);
+  driveMesh.rotation.x = -Math.PI / 2;
+  driveMesh.position.set(pcx, 0.02, pcz);
+  scene.add(driveMesh);
 
-  // ── Hecken links und rechts (entlang der Einfahrt) ──
-  const hedgeMat = new THREE.MeshLambertMaterial({ color: 0x2a5c1e });
-  for (const side of [-1, 1]) {
-    const [hx, hz] = pos(5.5, side * 3.2);
-    const hedge = new THREE.Mesh(new THREE.BoxGeometry(11, 1.6, 0.8), hedgeMat);
-    hedge.rotation.y = Math.atan2(nx, nz);
-    hedge.position.set(hx, 0.8, hz);
-    scene.add(hedge);
+  // ── 2. Hohe Hecke rechts (Südseite, z ≈ +3.5) ────────────────────────────
+  const hMat = new THREE.MeshLambertMaterial({ color: 0x244d17 });
+  const { x: hx, z: hz } = p(7, 3.7);
+  const hedgeBody = new THREE.Mesh(new THREE.BoxGeometry(16, 2.6, 1.5), hMat);
+  hedgeBody.position.set(hx, 1.3, hz); scene.add(hedgeBody);
+  // unregelmäßige Kuppen
+  for (let i = 0; i < 7; i++) {
+    const { x: bx2, z: bz2 } = p(1.5 + i * 2, 3.5);
+    const bump = new THREE.Mesh(new THREE.SphereGeometry(0.72 + Math.random()*0.28, 7, 6), hMat);
+    bump.position.set(bx2, 2.4 + Math.random()*0.3, bz2); scene.add(bump);
   }
 
-  // ── Torpedo-Pfosten an der Einfahrt (Straßenrand) ──
-  const postMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+  // ── 3. Haus links (Nordseite) ─────────────────────────────────────────────
+  // Fassaden-Textur (Canvas): Klinker + Fenster
+  const cvH = document.createElement('canvas');
+  cvH.width = 512; cvH.height = 384;
+  const hCtx = cvH.getContext('2d');
+  hCtx.fillStyle = '#d6c9b0'; hCtx.fillRect(0, 0, 512, 384);
+  // Klinkersockel
+  hCtx.fillStyle = '#b89870';
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 9; c++) {
+    const ox = (r%2)*30;
+    hCtx.fillRect(c*58+ox+2, 320+r*16+2, 54, 13);
+  }
+  // Fenster 2 Etagen
+  for (let floor = 0; floor < 2; floor++) {
+    for (let col = 0; col < 3; col++) {
+      const wx = 45+col*155, wy = 80+floor*130;
+      hCtx.fillStyle = '#8ab5d0'; hCtx.fillRect(wx, wy, 105, 90);
+      hCtx.strokeStyle = '#ede8dc'; hCtx.lineWidth = 7;
+      hCtx.strokeRect(wx, wy, 105, 90);
+      hCtx.strokeRect(wx+50, wy, 4, 90);
+      hCtx.strokeRect(wx, wy+42, 105, 4);
+    }
+  }
+  const hTex = new THREE.CanvasTexture(cvH);
+  // Hauskörper
+  const hbMat = new THREE.MeshLambertMaterial({ color: 0xd4c8b0 });
+  const { x: hhx, z: hhz } = p(6, -7.5);
+  const houseBox = new THREE.Mesh(new THREE.BoxGeometry(12, 8, 9), hbMat);
+  houseBox.position.set(hhx, 4, hhz); scene.add(houseBox);
+  // Südfassade mit Fenstern (zeigt zur Einfahrt)
+  const { x: hfx, z: hfz } = p(6, -3.55);
+  const facadeM = new THREE.MeshBasicMaterial({ map: hTex, transparent: false });
+  const facade = new THREE.Mesh(new THREE.PlaneGeometry(12, 8), facadeM);
+  facade.position.set(hfx, 4, hfz); scene.add(facade);
+  // Haus-Satteldach
+  const hdRoofMat = new THREE.MeshLambertMaterial({ color: 0x7a7268, side: THREE.DoubleSide });
+  const hdAngle = Math.atan2(1.8, 4.5);
+  const hdSlant = Math.hypot(4.5, 1.8);
+  const hdTiltA = Math.PI/2 - hdAngle;
+  const hdNR = new THREE.Mesh(new THREE.PlaneGeometry(12.4, hdSlant+0.1), hdRoofMat);
+  hdNR.rotation.x = hdTiltA;
+  hdNR.position.set(hhx, 8 + 0.9, hhz - 2.25); scene.add(hdNR);
+  const hdSR = new THREE.Mesh(new THREE.PlaneGeometry(12.4, hdSlant+0.1), hdRoofMat);
+  hdSR.rotation.x = -hdTiltA;
+  hdSR.position.set(hhx, 8 + 0.9, hhz + 2.25); scene.add(hdSR);
+
+  // ── 4. Holzschuppen hinten (Gartenhaus) ───────────────────────────────────
+  const shedX = p(13, 0.5).x, shedZ = p(13, 0.5).z;  // leicht südlich von Mitte
+  const shedW = 3.2, shedD = 2.8, shedH = 2.5, ridgeH = 1.1;
+  // Holz-Textur (Canvas)
+  const cvShed = document.createElement('canvas');
+  cvShed.width = 256; cvShed.height = 256;
+  const sCtx = cvShed.getContext('2d');
+  sCtx.fillStyle = '#6b4220'; sCtx.fillRect(0, 0, 256, 256);
+  sCtx.strokeStyle = '#8c5a2a'; sCtx.lineWidth = 3;
+  for (let i = 0; i < 16; i++) sCtx.strokeRect(0, i*16, 256, 16);
+  sCtx.strokeStyle = 'rgba(0,0,0,0.18)'; sCtx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) { sCtx.beginPath(); sCtx.moveTo(i*32, 0); sCtx.lineTo(i*32+16, 256); sCtx.stroke(); }
+  const shedTex = new THREE.CanvasTexture(cvShed);
+  const shedMat = new THREE.MeshLambertMaterial({ map: shedTex });
+  // Schuppenkörper (mehrflächen-Material für Holztextur)
+  const shedBody = new THREE.Mesh(new THREE.BoxGeometry(shedW, shedH, shedD), shedMat);
+  shedBody.position.set(shedX, shedH/2, shedZ); scene.add(shedBody);
+  // Vordere Fassade mit Tür und Fenster
+  const cvSF = document.createElement('canvas');
+  cvSF.width = 256; cvSF.height = 256;
+  const sfCtx = cvSF.getContext('2d');
+  sfCtx.fillStyle = '#7a4f2a'; sfCtx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 16; i++) { sfCtx.strokeStyle='#9a6535'; sfCtx.lineWidth=3; sfCtx.strokeRect(0, i*16, 256, 16); }
+  // Tür
+  sfCtx.fillStyle = '#5a3515'; sfCtx.fillRect(90, 130, 76, 126);
+  sfCtx.strokeStyle = '#c8a060'; sfCtx.lineWidth = 5; sfCtx.strokeRect(90, 130, 76, 126);
+  sfCtx.fillStyle = '#c8a060'; sfCtx.beginPath(); sfCtx.arc(155, 195, 5, 0, Math.PI*2); sfCtx.fill();
+  // Fenster
+  sfCtx.fillStyle = '#8ab5d0'; sfCtx.fillRect(20, 80, 60, 55);
+  sfCtx.strokeStyle = '#ede8dc'; sfCtx.lineWidth = 5; sfCtx.strokeRect(20, 80, 60, 55);
+  sfCtx.strokeRect(48, 80, 3, 55); sfCtx.strokeRect(20, 106, 60, 3);
+  const sfTex = new THREE.CanvasTexture(cvSF);
+  // Ostfassade (zeigt zur Straße)
+  const sfMesh = new THREE.Mesh(new THREE.PlaneGeometry(shedW, shedH),
+    new THREE.MeshBasicMaterial({ map: sfTex, side: THREE.DoubleSide }));
+  sfMesh.position.set(shedX + shedW*0.5 + 0.02, shedH/2, shedZ);
+  sfMesh.rotation.y = Math.PI / 2; scene.add(sfMesh);
+  // Satteldach Schuppen
+  const sdRoofMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1e, side: THREE.DoubleSide });
+  const sdAngle  = Math.atan2(ridgeH, shedD/2);
+  const sdSlant  = Math.hypot(shedD/2, ridgeH);
+  const sdTiltA  = Math.PI/2 - sdAngle;
+  // Nord-Panel
+  const sdNR = new THREE.Mesh(new THREE.PlaneGeometry(shedW+0.3, sdSlant+0.1), sdRoofMat);
+  sdNR.rotation.x = sdTiltA;
+  sdNR.position.set(shedX, shedH + ridgeH/2, shedZ - shedD/4); scene.add(sdNR);
+  // Süd-Panel
+  const sdSR = new THREE.Mesh(new THREE.PlaneGeometry(shedW+0.3, sdSlant+0.1), sdRoofMat);
+  sdSR.rotation.x = -sdTiltA;
+  sdSR.position.set(shedX, shedH + ridgeH/2, shedZ + shedD/4); scene.add(sdSR);
+  // Satellitenschüssel
+  const dishMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+  const dishPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), dishMat);
+  dishPost.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.3, shedZ - shedD*0.3);
+  scene.add(dishPost);
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.38, 0.12, 16), dishMat);
+  dish.rotation.x = -Math.PI*0.35; dish.rotation.y = 0.4;
+  dish.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.65, shedZ - shedD*0.3);
+  scene.add(dish);
+
+  // ── 5. Grüner Zaun am Eingang (Straßenseite) ──────────────────────────────
+  const fenceMat = new THREE.MeshLambertMaterial({ color: 0x2d6a28 });
+  // Zwei Pfosten
   for (const side of [-1, 1]) {
-    const [px, pz] = pos(1.2, side * 2.8);
-    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.4, 8), postMat);
-    pillar.position.set(px, 0.7, pz);
-    scene.add(pillar);
+    const { x: fpx, z: fpz } = p(0.6, side * 2.6);
+    const fPost = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.5, 8), fenceMat);
+    fPost.position.set(fpx, 0.75, fpz); scene.add(fPost);
+  }
+  // Zaunstäbe (6 Stück)
+  for (let i = 0; i < 6; i++) {
+    const sz = -2.3 + i * 0.85;
+    const { x: sfx, z: sfzb } = p(0.6, sz);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.35, 6), fenceMat);
+    bar.position.set(sfx, 0.68, sfzb); scene.add(bar);
+  }
+  // Querstrebe
+  const { x: qx, z: qz } = p(0.6, 0);
+  const qBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 5.2), fenceMat);
+  qBar.position.set(qx, 1.2, qz); scene.add(qBar);
+
+  // ── 6. Rosenbüsche links (entlang Haus) ──────────────────────────────────
+  const roseMat = new THREE.MeshLambertMaterial({ color: 0x2d5e18 });
+  const pinkMat = new THREE.MeshLambertMaterial({ color: 0xd44a7a });
+  for (let i = 0; i < 5; i++) {
+    const { x: rx, z: rz } = p(1.5 + i * 2, -2.8);
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.55, 7, 6), roseMat);
+    bush.position.set(rx, 0.55, rz); scene.add(bush);
+    if (i % 2 === 0) {
+      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 5), pinkMat);
+      rose.position.set(rx + 0.2, 1.0, rz + 0.1); scene.add(rose);
+    }
   }
 
-  // ── Hausnummern-Schild am Eingang ──
-  const [spx, spz] = pos(1.2, -3.2);
-  const sPost = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.06, 2.8, 8),
-    new THREE.MeshLambertMaterial({ color: 0x886633 })
-  );
-  sPost.position.set(spx, 1.4, spz);
-  scene.add(sPost);
-
-  const sc = document.createElement('canvas');
-  sc.width = 256; sc.height = 96;
-  const sctx = sc.getContext('2d');
-  sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, 256, 96);
-  sctx.strokeStyle = '#222'; sctx.lineWidth = 3; sctx.strokeRect(2, 2, 252, 92);
-  sctx.fillStyle = '#1a1a1a';
-  sctx.font = 'bold 18px Arial, sans-serif';
+  // ── 7. Hausnummern-Schild ──────────────────────────────────────────────────
+  const { x: spx, z: spz } = p(0.8, -3.3);
+  const sPost2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.6, 8),
+    new THREE.MeshLambertMaterial({ color: 0x886633 }));
+  sPost2.position.set(spx, 1.3, spz); scene.add(sPost2);
+  const scv = document.createElement('canvas');
+  scv.width = 256; scv.height = 96;
+  const sctx = scv.getContext('2d');
+  sctx.fillStyle = '#fff'; sctx.fillRect(0, 0, 256, 96);
+  sctx.strokeStyle = '#333'; sctx.lineWidth = 3; sctx.strokeRect(2, 2, 252, 92);
+  sctx.fillStyle = '#1a1a1a'; sctx.font = 'bold 18px Arial';
   sctx.textAlign = 'center'; sctx.textBaseline = 'middle';
   sctx.fillText('Altbaumburgweg 2', 128, 48);
-  const stex = new THREE.CanvasTexture(sc);
-  const sign = new THREE.Mesh(
-    new THREE.BoxGeometry(3.8, 1.5, 0.1),
-    new THREE.MeshBasicMaterial({ map: stex, side: THREE.DoubleSide })
-  );
-  sign.position.set(spx, 2.8, spz);
-  scene.add(sign);
-
-  // ── Einfaches Haus-Gebäude im Hintergrund ──
-  const houseMat = new THREE.MeshLambertMaterial({ color: 0xd4c9a8 });
-  const [bx, bz] = pos(15, 0);
-  const building = new THREE.Mesh(new THREE.BoxGeometry(4, 7, 6), houseMat);
-  building.position.set(bx, 3.5, bz);
-  scene.add(building);
-  const roofMat = new THREE.MeshLambertMaterial({ color: 0x7a5a3a });
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(4.5, 3, 4), roofMat);
-  roof.rotation.y = Math.PI / 4;
-  roof.position.set(bx, 8.5, bz);
-  scene.add(roof);
+  const signMesh = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.4, 0.1),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(scv), side: THREE.DoubleSide }));
+  signMesh.position.set(spx, 2.6, spz); scene.add(signMesh);
 }
 
 function checkHomePark() {
