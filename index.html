@@ -279,6 +279,45 @@
     }
     #legend-close:hover{background:#0055ee;}
 
+    /* ── Oma-Stopp Schiefersburger Weg ──────────────────── */
+    #oma-popup{
+      position:fixed;inset:0;z-index:8600;display:none;
+      align-items:center;justify-content:center;
+      background:rgba(0,0,0,.78);
+    }
+    #oma-game{
+      position:fixed;inset:0;z-index:8700;display:none;
+      align-items:center;justify-content:center;
+      background:rgba(14,2,14,.92);
+    }
+    #oma-inner{
+      background:linear-gradient(160deg,#2a1530,#3a2030);
+      border:2px solid #cc88aa;border-radius:20px;
+      padding:28px 36px;text-align:center;color:#fff;
+      box-shadow:0 8px 54px rgba(120,0,80,.7);max-width:460px;
+    }
+    #oma-gtitle{font-size:20px;font-weight:bold;color:#ffbbdd;margin-bottom:12px;}
+    #oma-score{font-size:23px;font-weight:bold;margin-bottom:14px;letter-spacing:1px;}
+    #oma-score b{color:#ffdd66;}
+    #oma-variant{margin-bottom:16px;}
+    .oma-vbtn{
+      padding:8px 18px;border-radius:10px;font-size:14px;font-weight:bold;
+      border:2px solid #aa6688;background:#3a2535;color:#ffccdd;cursor:pointer;
+    }
+    .oma-vbtn.on{background:#cc5588;color:#fff;border-color:#ffaacc;}
+    #oma-choices{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:16px;}
+    .oma-choice{
+      width:86px;height:94px;border-radius:14px;border:2px solid #aa6688;
+      background:#2a1825;color:#fff;cursor:pointer;font-size:13px;font-weight:bold;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+      transition:transform .12s;
+    }
+    .oma-choice .emoji{font-size:34px;}
+    .oma-choice:hover{transform:scale(1.08);background:#3a2030;}
+    #oma-result{font-size:15px;line-height:1.7;min-height:64px;margin-bottom:6px;color:#ffe;}
+    #oma-result .big{font-size:19px;font-weight:bold;}
+    #oma-again{display:flex;gap:14px;justify-content:center;}
+
     /* ── Fußball-Bildschirm ───────────────────────────────── */
     #football-screen{
       position:fixed;inset:0;z-index:8100;display:none;
@@ -432,6 +471,35 @@
     <div class="pp-row">
       <button id="pp-yes" class="pp-btn">⚽ Ja, zum Spiel!</button>
       <button id="pp-no"  class="pp-btn">🚗 Nein</button>
+    </div>
+  </div>
+</div>
+
+<!-- Oma-Stopp: Aussteigen-Popup -->
+<div id="oma-popup">
+  <div class="pp-box" style="border-color:#cc88aa">
+    <div class="pp-title">👵 Schiefersburger Weg 54</div>
+    <div class="pp-sub">Du stehst vor Omas Haus.<br>Möchtest du aussteigen und<br>kurz bei Oma vorbeischauen?</div>
+    <div class="pp-row">
+      <button id="oma-yes" class="pp-btn" style="background:#cc5588">👵 Ja, zu Oma!</button>
+      <button id="oma-no"  class="pp-btn">🚗 Weiterfahren</button>
+    </div>
+  </div>
+</div>
+
+<!-- Oma: Schere-Stein-Papier(-Brunnen) -->
+<div id="oma-game">
+  <div id="oma-inner">
+    <div id="oma-gtitle">👵 Schere · Stein · Papier mit Oma</div>
+    <div id="oma-score">Du <b>0</b> : <b>0</b> Oma</div>
+    <div id="oma-variant">
+      <button id="oma-var-btn" class="oma-vbtn">⛲ Mit Brunnen: AUS</button>
+    </div>
+    <div id="oma-choices"></div>
+    <div id="oma-result">Wähle deinen Zug – Oma wartet schon... 👵</div>
+    <div id="oma-again" style="display:none">
+      <button id="oma-again-btn" class="pp-btn" style="background:#cc5588">🔄 Noch eine Runde</button>
+      <button id="oma-leave-btn" class="pp-btn">🚗 Weiterfahren</button>
     </div>
   </div>
 </div>
@@ -2957,6 +3025,11 @@ let _parkTimer = null, _parkShown = false;
 let PARK_CX = 0, PARK_CZ = 0;
 let _homeJourneyDone = false, _homeParkShown = false, _homeParkTimer = null;
 
+// ── Oma-Stopp (Schiefersburger Weg 54) ──
+let OMA_CX = 0, OMA_CZ = 0;
+let _omaShown = false, _omaTimer = null;
+let omaScoreYou = 0, omaScoreOma = 0, omaBrunnen = false;
+
 // Virtuelle Spielfeld-Koordinaten (immer 700×420, wird auf Canvas skaliert)
 const FB_VW = 700, FB_VH = 420;
 const FB = {
@@ -3331,6 +3404,309 @@ function checkParking() {
   } else if (d >= 22 || Math.abs(car.speed) >= 0.9) {
     if (_parkTimer) { clearTimeout(_parkTimer); _parkTimer = null; }
   }
+}
+
+// ── Oma-Stopp Schiefersburger Weg 54: Gebäude, Parkfläche, Einfahrt ───────────
+function buildOmaStop() {
+  // Segment Schiefersburger Weg: WP[6] → WP[7] (westwärts, z konstant)
+  const A = WP[6], B = WP[7];
+  const dx = B.x - A.x, dz = B.z - A.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const fx = dx / len, fz = dz / len;          // Fahrtrichtung (westwärts)
+  const rx = -fz, rz = fx;                       // rechts = Nordseite
+  // Basispunkt auf der Straße: kurz vor der Abbiegung (18 m vor WP[7])
+  const baseX = B.x - fx * 18, baseZ = B.z - fz * 18;
+  const halfW = (A.width || 7) / 2;
+
+  // Punkthelfer: d = Tiefe (rechts/nord), s = seitlich entlang Straße
+  const p = (depth, side) => ({
+    x: baseX + rx * depth + fx * side,
+    z: baseZ + rz * depth + fz * side,
+  });
+
+  // Hinweis: Dieses Segment verläuft entlang der Welt-X-Achse (z konstant),
+  // fx=-1, fz=0, rx=0, rz=-1 (Nord = -Z). Bodenflächen brauchen daher nur
+  // rotation.x = -PI/2; die Geometrie ist bereits achsenparallel ausgerichtet.
+
+  // Auto hält auf der Parkfläche (Tiefe ~15 m von der Straßenmitte)
+  const park = p(15, 0);
+  OMA_CX = park.x; OMA_CZ = park.z;
+
+  // ── Parkfläche (parallel zur Straße: lange Achse = Fahrtrichtung X) ──
+  const lotMat = new THREE.MeshLambertMaterial({ color: 0x6a6a66 });
+  const lot = new THREE.Mesh(new THREE.PlaneGeometry(34, 14), lotMat);
+  lot.rotation.x = -Math.PI / 2;        // 34 → X (Straße), 14 → Z (Tiefe)
+  lot.position.set(OMA_CX, 0.02, OMA_CZ);
+  scene.add(lot);                        // KEIN collidable → Fläche befahrbar
+
+  // ── Parklinien (Buchten-Trenner, laufen in die Tiefe = Z) ──
+  const lnMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  for (let i = -3; i <= 3; i++) {
+    const c = p(15, i * 5);
+    const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 11), lnMat);
+    ln.rotation.x = -Math.PI / 2;        // 11 → Z (Tiefe), Trenner quer zur Reihe
+    ln.position.set(c.x, 0.03, c.z);
+    scene.add(ln);
+  }
+
+  // ── Geparkte Autos (3 belegt, 2 frei: side 0 und +5) ──
+  const carCols = [0x9aa0a6, 0x223344, 0xaa3322, 0xcccccc, 0x2a5a8a];
+  const carHeading = Math.atan2(rx, rz); // Front Richtung Gebäude (nordwärts, -Z) → PI
+  const occupied = [
+    { side: -10, col: carCols[0] },
+    { side:  -5, col: carCols[1] },
+    { side:  10, col: carCols[2] },
+  ];
+  occupied.forEach(({ side, col }) => {
+    const c = p(15, side);
+    const g = makeParkedCar(col);
+    g.position.set(c.x, 0, c.z);
+    g.rotation.y = carHeading;
+    scene.add(g);
+    collidables.push({ x: c.x, z: c.z, hw: 1.2, hd: 2.2 });
+  });
+
+  // ── Einfahrt (90° zur Straße: vom Straßenrand zur Parkfläche, in die Tiefe Z) ──
+  const driveMat = new THREE.MeshLambertMaterial({ color: 0x8a8580 });
+  const drive = new THREE.Mesh(new THREE.PlaneGeometry(7, 12), driveMat);
+  drive.rotation.x = -Math.PI / 2;       // 7 → X (Breite), 12 → Z (Tiefe)
+  const driveC = p(halfW + 5, 0);
+  drive.position.set(driveC.x, 0.015, driveC.z);
+  scene.add(drive);
+
+  // ── Mehrparteienhaus (90° zur Straße: lange Achse perpendikular = Z) ──
+  const houseW     = 12;   // entlang Straße (X) – schmale Giebelseite
+  const houseLen   = 34;   // in die Tiefe (Z) – lange Fassade
+  const houseH     = 18;   // ~6 Geschosse
+  const wallMat  = new THREE.MeshLambertMaterial({ map: makeOmaFacadeTex() });
+  const gableMat = new THREE.MeshLambertMaterial({ map: makeOmaFacadeTex() });
+  const roofMat  = new THREE.MeshLambertMaterial({ color: 0x55504a });
+  // BoxGeometry-Materialreihenfolge: [+X, -X, +Y, -Y, +Z, -Z]
+  // Lange Fassaden = ±X-Seiten (34×18) → Fenstertextur; Giebel = ±Z (12×18)
+  const house = new THREE.Mesh(
+    new THREE.BoxGeometry(houseW, houseH, houseLen),
+    [wallMat, wallMat, roofMat, roofMat, gableMat, gableMat]
+  );
+  const houseC = p(15 + 7 + houseLen / 2, 0);  // hinter der Parkfläche
+  house.position.set(houseC.x, houseH / 2, houseC.z);
+  scene.add(house);
+  collidables.push({ x: houseC.x, z: houseC.z, hw: houseW / 2, hd: houseLen / 2 });
+
+  // Flachdach-Gesims
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(houseW + 1, 0.6, houseLen + 1), roofMat
+  );
+  roof.position.set(houseC.x, houseH + 0.3, houseC.z);
+  scene.add(roof);
+
+  // Eingangsvordach (rot, wie im Foto) – an der Giebelseite zur Parkfläche (+Z)
+  const gableZ = houseC.z + houseLen / 2; // straßenseitige Giebelkante
+  const canopy = new THREE.Mesh(
+    new THREE.BoxGeometry(6, 0.4, 3),
+    new THREE.MeshLambertMaterial({ color: 0xaa3322 })
+  );
+  canopy.position.set(houseC.x, 3.2, gableZ + 1.4);
+  scene.add(canopy);
+  // Tür unter dem Vordach
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 3, 0.2),
+    new THREE.MeshLambertMaterial({ color: 0x3a2418 })
+  );
+  door.position.set(houseC.x, 1.5, gableZ + 0.12);
+  scene.add(door);
+
+  // ── Hausnummern-Schild "54" an der Giebelseite ──
+  const sc = document.createElement('canvas');
+  sc.width = 128; sc.height = 128;
+  const sctx = sc.getContext('2d');
+  sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, 128, 128);
+  sctx.fillStyle = '#1a3a6a'; sctx.fillRect(6, 6, 116, 116);
+  sctx.fillStyle = '#ffffff';
+  sctx.font = 'bold 76px Arial'; sctx.textAlign = 'center'; sctx.textBaseline = 'middle';
+  sctx.fillText('54', 64, 70);
+  const numSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.4, 1.4),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc) })
+  );
+  // PlaneGeometry zeigt standardmäßig nach +Z (zur Straße) → keine Rotation nötig
+  numSign.position.set(houseC.x + 2.5, 4.6, gableZ + 0.1);
+  scene.add(numSign);
+
+  // ── P-Schild an der Einfahrt ──
+  const pPost = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.08, 4, 8),
+    new THREE.MeshLambertMaterial({ color: 0x888888 })
+  );
+  const pc = p(halfW + 1.5, -13);
+  pPost.position.set(pc.x, 2, pc.z); scene.add(pPost);
+  const pBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 1.6, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x003399 })
+  );
+  pBoard.position.set(pc.x, 4.4, pc.z); scene.add(pBoard);
+}
+
+// Geparktes Auto (vereinfachtes Modell, wie NPC-Karosserie)
+function makeParkedCar(color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const blk = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const gls = new THREE.MeshBasicMaterial({ color: 0x223344 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 4.0), mat);
+  body.position.y = 0.75; g.add(body);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.7, 2.1), mat);
+  roof.position.set(0, 1.6, -0.25); g.add(roof);
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.6), gls);
+  ws.position.set(0, 1.55, 0.8); ws.rotation.x = -0.28; g.add(ws);
+  [[-0.88,0.3,1.2],[0.88,0.3,1.2],[-0.88,0.3,-1.2],[0.88,0.3,-1.2]].forEach(([wx,wy,wz])=>{
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.22,12), blk);
+    w.rotation.z = Math.PI/2; w.position.set(wx,wy,wz); g.add(w);
+  });
+  return g;
+}
+
+// Fassade für Omas Mehrparteienhaus (braun mit gelb/orange Balkonbändern)
+function makeOmaFacadeTex() {
+  const W = 512, H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  // Grundfarbe braun-beige
+  ctx.fillStyle = '#8a7a5c'; ctx.fillRect(0, 0, W, H);
+  const FLOORS = 6, UNITS = 8;
+  const fh = H / FLOORS, uw = W / UNITS;
+  const balkColors = ['#e8c84a', '#e09030', '#d8b840', '#e8a838'];
+  for (let f = 0; f < FLOORS; f++) {
+    const y = f * fh;
+    for (let u = 0; u < UNITS; u++) {
+      const x = u * uw;
+      // Fenster
+      ctx.fillStyle = 'rgba(150,180,210,0.75)';
+      ctx.fillRect(x + uw*0.20, y + fh*0.22, uw*0.6, fh*0.42);
+      ctx.strokeStyle = 'rgba(40,30,20,0.6)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + uw*0.20, y + fh*0.22, uw*0.6, fh*0.42);
+      // Balkonband (gelb/orange) unter dem Fenster
+      ctx.fillStyle = balkColors[(f + u) % balkColors.length];
+      ctx.fillRect(x + uw*0.08, y + fh*0.68, uw*0.84, fh*0.22);
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.strokeRect(x + uw*0.08, y + fh*0.68, uw*0.84, fh*0.22);
+    }
+    // Geschosstrennung
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  // Eingangstür im Erdgeschoss (Mitte)
+  ctx.fillStyle = '#3a2418';
+  ctx.fillRect(W/2 - 18, H - fh*0.85, 36, fh*0.85);
+  const tex = new THREE.CanvasTexture(cv);
+  return tex;
+}
+
+function checkOmaPark() {
+  if (footballActive) return;
+  // Nicht anzeigen, solange ein anderes Popup offen ist
+  if (document.getElementById('oma-game').style.display === 'flex') return;
+  const d = Math.hypot(car.x - OMA_CX, car.z - OMA_CZ);
+  if (d > 34) { _omaShown = false; return; }  // Reset wenn weit weg → beide Richtungen
+  if (d < 16 && Math.abs(car.speed) < 0.9 && !_omaShown) {
+    if (!_omaTimer) _omaTimer = setTimeout(() => {
+      _omaTimer = null;
+      if (Math.hypot(car.x - OMA_CX, car.z - OMA_CZ) < 16)
+        document.getElementById('oma-popup').style.display = 'flex';
+    }, 1500);
+  } else if (d >= 16 || Math.abs(car.speed) >= 0.9) {
+    if (_omaTimer) { clearTimeout(_omaTimer); _omaTimer = null; }
+  }
+}
+
+// ── Schere-Stein-Papier(-Brunnen) mit Oma ─────────────────────────────────────
+const OMA_MOVES = {
+  schere:  { name: 'Schere',  emoji: '✂️', beats: ['papier'] },
+  stein:   { name: 'Stein',   emoji: '🪨', beats: ['schere'] },
+  papier:  { name: 'Papier',  emoji: '📄', beats: ['stein', 'brunnen'] },
+  brunnen: { name: 'Brunnen', emoji: '⛲', beats: ['schere', 'stein'] },
+};
+
+function omaUpdateScore() {
+  document.getElementById('oma-score').innerHTML =
+    `Du <b>${omaScoreYou}</b> : <b>${omaScoreOma}</b> Oma`;
+}
+
+function omaBuildChoices() {
+  const wrap = document.getElementById('oma-choices');
+  wrap.innerHTML = '';
+  const moves = omaBrunnen ? ['schere','stein','papier','brunnen'] : ['schere','stein','papier'];
+  moves.forEach(m => {
+    const btn = document.createElement('button');
+    btn.className = 'oma-choice';
+    btn.innerHTML = `<span class="emoji">${OMA_MOVES[m].emoji}</span>${OMA_MOVES[m].name}`;
+    btn.addEventListener('click', () => omaPlay(m));
+    wrap.appendChild(btn);
+  });
+}
+
+function omaPlay(playerMove) {
+  const moves = omaBrunnen ? ['schere','stein','papier','brunnen'] : ['schere','stein','papier'];
+  const omaMove = moves[Math.floor(Math.random() * moves.length)];
+  let outcome, msg;
+  if (playerMove === omaMove) {
+    outcome = 'tie';
+    msg = '🤝 Unentschieden!';
+  } else if (OMA_MOVES[playerMove].beats.includes(omaMove)) {
+    outcome = 'win'; omaScoreYou++;
+    msg = '🎉 Du gewinnst die Runde!';
+  } else {
+    outcome = 'lose'; omaScoreOma++;
+    msg = '😄 Oma gewinnt die Runde!';
+  }
+  omaUpdateScore();
+  document.getElementById('oma-result').innerHTML =
+    `Du: ${OMA_MOVES[playerMove].emoji} ${OMA_MOVES[playerMove].name} ` +
+    `&nbsp;–&nbsp; Oma: ${OMA_MOVES[omaMove].emoji} ${OMA_MOVES[omaMove].name}<br>` +
+    `<span class="big">${msg}</span>`;
+  // Auswahl ausblenden, "Noch eine Runde / Weiterfahren" zeigen
+  document.getElementById('oma-choices').style.display = 'none';
+  document.getElementById('oma-again').style.display = 'flex';
+}
+
+function omaNewRound() {
+  document.getElementById('oma-result').innerHTML = 'Wähle deinen Zug – Oma wartet schon... 👵';
+  document.getElementById('oma-again').style.display = 'none';
+  document.getElementById('oma-choices').style.display = 'flex';
+  omaBuildChoices();
+}
+
+function openOmaGame() {
+  omaScoreYou = 0; omaScoreOma = 0;
+  omaUpdateScore();
+  omaNewRound();
+  document.getElementById('oma-game').style.display = 'flex';
+}
+
+function setupOmaStop() {
+  buildOmaStop();
+  document.getElementById('oma-yes').addEventListener('click', () => {
+    document.getElementById('oma-popup').style.display = 'none';
+    _omaShown = true;
+    openOmaGame();
+  });
+  document.getElementById('oma-no').addEventListener('click', () => {
+    document.getElementById('oma-popup').style.display = 'none';
+    _omaShown = true;
+  });
+  document.getElementById('oma-var-btn').addEventListener('click', () => {
+    omaBrunnen = !omaBrunnen;
+    const b = document.getElementById('oma-var-btn');
+    b.textContent = `⛲ Mit Brunnen: ${omaBrunnen ? 'AN' : 'AUS'}`;
+    b.classList.toggle('on', omaBrunnen);
+    // Falls noch keine Runde gespielt (Auswahl sichtbar), Buttons neu aufbauen
+    if (document.getElementById('oma-choices').style.display !== 'none') omaBuildChoices();
+  });
+  document.getElementById('oma-again-btn').addEventListener('click', omaNewRound);
+  document.getElementById('oma-leave-btn').addEventListener('click', () => {
+    document.getElementById('oma-game').style.display = 'none';
+    toast('👋 Tschüss Oma — gute Weiterfahrt!');
+  });
 }
 
 function initFBPlayers() {
@@ -4264,6 +4640,7 @@ function loop(now) {
   updateCar(dt);
   checkParking();
   checkHomePark();
+  checkOmaPark();
   updateNPCs(dt);
   updatePedestrians(dt);
   updateCamera();
@@ -4350,6 +4727,7 @@ buildZebraAndStopLines();
 buildPedestrians();
 setupParkingAndFootball();
 setupHomePark();
+setupOmaStop();
 document.getElementById('limit-val').textContent = streetLimit(WP[0].street);
 toast('🚦 Start: Altbaumburgweg, Bilderstöckchen');
 loadOSM();
