@@ -3424,98 +3424,119 @@ function buildOmaStop() {
     z: baseZ + rz * depth + fz * side,
   });
 
-  // Hinweis: Dieses Segment verläuft entlang der Welt-X-Achse (z konstant),
-  // fx=-1, fz=0, rx=0, rz=-1 (Nord = -Z). Bodenflächen brauchen daher nur
-  // rotation.x = -PI/2; die Geometrie ist bereits achsenparallel ausgerichtet.
+  // ── Koordinatensystem-Hinweis ────────────────────────────────────────────
+  // p(depth, side) → { x: baseX - side, z: baseZ - depth }
+  // depth ↑ = nordwärts (-Z), side < 0 = ostwärts (+X)
+  //
+  // Layout (von der Straße nach Norden):
+  //
+  //   GEBÄUDE (W-Seite, side=0)  |  ZUFAHRT (6m)  |  PARKFLÄCHE (Ost, side<0)
+  //   12m breit, 34m tief (N-S)  |  side -7..-13  |  5 Buchten N-S, side -13..-18
+  //
+  // "Rechts vom Haus" bei Blick von der Straße = Osten = side < 0
 
-  // Auto hält auf der Parkfläche (Tiefe ~15 m von der Straßenmitte)
-  const park = p(15, 0);
-  OMA_CX = park.x; OMA_CZ = park.z;
+  // ── Detektionspunkt für Popup ──
+  const arrivalPt = p(10, -10);  // Einfahrtsbereich der Zufahrt
+  OMA_CX = arrivalPt.x; OMA_CZ = arrivalPt.z;
 
-  // ── Parkfläche (parallel zur Straße: lange Achse = Fahrtrichtung X) ──
+  // ── Zufahrtsweg (N-S, zwischen Gebäude-Ostseite und Parkfläche) ──
+  // x = baseX+7 .. baseX+13, Mitte bei side=-10
+  const driveMat = new THREE.MeshLambertMaterial({ color: 0x8a8580 });
+  const driveRoad = new THREE.Mesh(new THREE.PlaneGeometry(6, 52), driveMat);
+  driveRoad.rotation.x = -Math.PI / 2;   // 6→X (Breite), 52→Z (Länge N-S)
+  const drC = p(26, -10);
+  driveRoad.position.set(drC.x, 0.015, drC.z);
+  scene.add(driveRoad);
+
+  // ── Parkfläche (östlich der Zufahrt, Buchten laufen N-S) ──
+  // x = baseX+13 .. baseX+18 (5m tief), 25m lang (5 × 5m Buchten)
   const lotMat = new THREE.MeshLambertMaterial({ color: 0x6a6a66 });
-  const lot = new THREE.Mesh(new THREE.PlaneGeometry(34, 14), lotMat);
-  lot.rotation.x = -Math.PI / 2;        // 34 → X (Straße), 14 → Z (Tiefe)
-  lot.position.set(OMA_CX, 0.02, OMA_CZ);
-  scene.add(lot);                        // KEIN collidable → Fläche befahrbar
+  const lot = new THREE.Mesh(new THREE.PlaneGeometry(5, 25), lotMat);
+  lot.rotation.x = -Math.PI / 2;   // 5→X (Buchten-Tiefe Ost), 25→Z (5 Buchten N-S)
+  const lotC = p(32.5, -15.5);
+  lot.position.set(lotC.x, 0.02, lotC.z);
+  scene.add(lot);
 
-  // ── Parklinien (Buchten-Trenner, laufen in die Tiefe = Z) ──
+  // ── Buchten-Trennlinien (laufen E-W, d.h. entlang X) ──
   const lnMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  for (let i = -3; i <= 3; i++) {
-    const c = p(15, i * 5);
-    const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 11), lnMat);
-    ln.rotation.x = -Math.PI / 2;        // 11 → Z (Tiefe), Trenner quer zur Reihe
-    ln.position.set(c.x, 0.03, c.z);
+  for (let k = 0; k <= 5; k++) {
+    const lc = p(20 + k * 5, -15.5);
+    const ln = new THREE.Mesh(new THREE.PlaneGeometry(5, 0.18), lnMat);
+    ln.rotation.x = -Math.PI / 2;   // 5→X, 0.18→Z (dünne Linie)
+    ln.position.set(lc.x, 0.03, lc.z);
     scene.add(ln);
   }
+  // Heckmauer / Abgrenzung am östlichen Ende der Parkfläche
+  const wallEnd = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.7, 25),
+    new THREE.MeshLambertMaterial({ color: 0x888888 }));
+  const weC = p(32.5, -18.2);
+  wallEnd.position.set(weC.x, 0.35, weC.z);
+  scene.add(wallEnd);
 
-  // ── Geparkte Autos (3 belegt, 2 frei: side 0 und +5) ──
-  const carCols = [0x9aa0a6, 0x223344, 0xaa3322, 0xcccccc, 0x2a5a8a];
-  const carHeading = Math.atan2(rx, rz); // Front Richtung Gebäude (nordwärts, -Z) → PI
-  const occupied = [
-    { side: -10, col: carCols[0] },
-    { side:  -5, col: carCols[1] },
-    { side:  10, col: carCols[2] },
-  ];
-  occupied.forEach(({ side, col }) => {
-    const c = p(15, side);
-    const g = makeParkedCar(col);
-    g.position.set(c.x, 0, c.z);
-    g.rotation.y = carHeading;
+  // ── Geparkte Autos (Buchten 0, 2, 4 belegt; 1, 3 frei) ──
+  // Autos fahren von der Zufahrt (Westen) ostwärts in die Bucht → Front zeigt Ost
+  // Three.js: rotation.y = -PI/2 dreht die +Z-Front auf +X (Ost)
+  const carCols = [0x9aa0a6, 0x223344, 0xaa3322];
+  [0, 2, 4].forEach((bay, i) => {
+    const cc = p(22.5 + bay * 5, -15.5);
+    const g = makeParkedCar(carCols[i]);
+    g.position.set(cc.x, 0, cc.z);
+    g.rotation.y = -Math.PI / 2;   // Front Ost (eingefahren von der Zufahrt)
     scene.add(g);
-    collidables.push({ x: c.x, z: c.z, hw: 1.2, hd: 2.2 });
+    collidables.push({ x: cc.x, z: cc.z, hw: 2.2, hd: 1.2 });  // auto liegt quer: hw=länge/2
   });
 
-  // ── Einfahrt (90° zur Straße: vom Straßenrand zur Parkfläche, in die Tiefe Z) ──
-  const driveMat = new THREE.MeshLambertMaterial({ color: 0x8a8580 });
-  const drive = new THREE.Mesh(new THREE.PlaneGeometry(7, 12), driveMat);
-  drive.rotation.x = -Math.PI / 2;       // 7 → X (Breite), 12 → Z (Tiefe)
-  const driveC = p(halfW + 5, 0);
-  drive.position.set(driveC.x, 0.015, driveC.z);
-  scene.add(drive);
+  // ── P-Schild an der Einfahrt ──
+  const pPost = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.08, 4, 8),
+    new THREE.MeshLambertMaterial({ color: 0x888888 })
+  );
+  const pc = p(halfW + 1.5, -10);
+  pPost.position.set(pc.x, 2, pc.z); scene.add(pPost);
+  const pBoard = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 1.6, 0.1),
+    new THREE.MeshBasicMaterial({ color: 0x003399 })
+  );
+  pBoard.position.set(pc.x, 4.4, pc.z); scene.add(pBoard);
 
-  // ── Mehrparteienhaus (90° zur Straße: lange Achse perpendikular = Z) ──
-  const houseW     = 12;   // entlang Straße (X) – schmale Giebelseite
-  const houseLen   = 34;   // in die Tiefe (Z) – lange Fassade
-  const houseH     = 18;   // ~6 Geschosse
+  // ── Mehrparteienhaus (linke/Westseite beim Blick von der Straße, Längsachse N-S) ──
+  const houseW   = 12;   // E-W (entlang Straße X): schmale Seite
+  const houseLen = 34;   // N-S (in die Tiefe Z): lange Fassade
+  const houseH   = 18;   // ~6 Geschosse
+  // BoxGeometry(W=12, H=18, D=34): ±X-Flächen = 18×34 (lange Fassaden, E/W-seitig)
+  //                                 ±Z-Flächen = 12×18 (Giebel, S/N-seitig)
   const wallMat  = new THREE.MeshLambertMaterial({ map: makeOmaFacadeTex() });
   const gableMat = new THREE.MeshLambertMaterial({ map: makeOmaFacadeTex() });
   const roofMat  = new THREE.MeshLambertMaterial({ color: 0x55504a });
-  // BoxGeometry-Materialreihenfolge: [+X, -X, +Y, -Y, +Z, -Z]
-  // Lange Fassaden = ±X-Seiten (34×18) → Fenstertextur; Giebel = ±Z (12×18)
   const house = new THREE.Mesh(
     new THREE.BoxGeometry(houseW, houseH, houseLen),
     [wallMat, wallMat, roofMat, roofMat, gableMat, gableMat]
   );
-  const houseC = p(15 + 7 + houseLen / 2, 0);  // hinter der Parkfläche
+  // Gebäude steht west vom Zufahrtsweg: side=0 → Ostfläche bei x=baseX+6 ≈ Zufahrt bei baseX+7
+  const houseC = p(22 + houseLen / 2, 0);  // südliche Giebelkante bei depth=22
   house.position.set(houseC.x, houseH / 2, houseC.z);
   scene.add(house);
   collidables.push({ x: houseC.x, z: houseC.z, hw: houseW / 2, hd: houseLen / 2 });
 
   // Flachdach-Gesims
-  const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(houseW + 1, 0.6, houseLen + 1), roofMat
-  );
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(houseW + 1, 0.6, houseLen + 1), roofMat);
   roof.position.set(houseC.x, houseH + 0.3, houseC.z);
   scene.add(roof);
 
-  // Eingangsvordach (rot, wie im Foto) – an der Giebelseite zur Parkfläche (+Z)
-  const gableZ = houseC.z + houseLen / 2; // straßenseitige Giebelkante
+  // Eingangsvordach (rot) und Tür an der südlichen Giebelseite
+  const gableZ = houseC.z + houseLen / 2;  // z-Koordinate der Südfront
   const canopy = new THREE.Mesh(
     new THREE.BoxGeometry(6, 0.4, 3),
     new THREE.MeshLambertMaterial({ color: 0xaa3322 })
   );
-  canopy.position.set(houseC.x, 3.2, gableZ + 1.4);
-  scene.add(canopy);
-  // Tür unter dem Vordach
+  canopy.position.set(houseC.x, 3.2, gableZ + 1.4); scene.add(canopy);
   const door = new THREE.Mesh(
     new THREE.BoxGeometry(2.4, 3, 0.2),
     new THREE.MeshLambertMaterial({ color: 0x3a2418 })
   );
-  door.position.set(houseC.x, 1.5, gableZ + 0.12);
-  scene.add(door);
+  door.position.set(houseC.x, 1.5, gableZ + 0.12); scene.add(door);
 
-  // ── Hausnummern-Schild "54" an der Giebelseite ──
+  // Hausnummer "54" an der südlichen Giebelseite
   const sc = document.createElement('canvas');
   sc.width = 128; sc.height = 128;
   const sctx = sc.getContext('2d');
@@ -3528,22 +3549,7 @@ function buildOmaStop() {
     new THREE.PlaneGeometry(1.4, 1.4),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc) })
   );
-  // PlaneGeometry zeigt standardmäßig nach +Z (zur Straße) → keine Rotation nötig
-  numSign.position.set(houseC.x + 2.5, 4.6, gableZ + 0.1);
-  scene.add(numSign);
-
-  // ── P-Schild an der Einfahrt ──
-  const pPost = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.08, 4, 8),
-    new THREE.MeshLambertMaterial({ color: 0x888888 })
-  );
-  const pc = p(halfW + 1.5, -13);
-  pPost.position.set(pc.x, 2, pc.z); scene.add(pPost);
-  const pBoard = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 1.6, 0.1),
-    new THREE.MeshBasicMaterial({ color: 0x003399 })
-  );
-  pBoard.position.set(pc.x, 4.4, pc.z); scene.add(pBoard);
+  numSign.position.set(houseC.x + 2.5, 4.6, gableZ + 0.12); scene.add(numSign);
 }
 
 // Geparktes Auto (vereinfachtes Modell, wie NPC-Karosserie)
