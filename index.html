@@ -1950,12 +1950,12 @@ function drawCockpit() {
 }
 
 // ── Fahrzeugzustand ───────────────────────────────────────────────────────────
-// Startet auf Hofeinfahrt, Blickrichtung zur Straße
+// Startet auf Stellplatz, Nase zur Hecke (=Norden), Rückwärts aus der Einfahrt
 const _dx0 = WP[1].x - WP[0].x, _dz0 = WP[1].z - WP[0].z;
 const car = {
   x:       HOME_CX,
   z:       HOME_CZ,
-  heading: Math.atan2(WP[0].x - HOME_CX, WP[0].z - HOME_CZ),
+  heading: Math.PI,   // Nase nach Norden (zur Hecke) – Spieler fährt rückwärts raus
   speed:    0,
   steer:    0,
   wpIdx:    1,
@@ -2720,7 +2720,7 @@ function toast(msg) {
 
 function resetCar() {
   car.x = HOME_CX; car.z = HOME_CZ;
-  car.heading = Math.atan2(WP[0].x - HOME_CX, WP[0].z - HOME_CZ);
+  car.heading = Math.PI;   // Nase zur Hecke
   car.speed = 0; car.steer = 0; car.wpIdx = 1; car.homeMode = false;
   _homeJourneyDone = false; _homeParkShown = false;
   document.getElementById('prog-fill').style.width = '0%';
