@@ -3137,22 +3137,27 @@ function buildHomePark() {
   // pos(depth, side): depth = metres into property along nx, side = metres along street
   const p = (d, s) => ({ x: WP[0].x + nx*d + ax*s, z: WP[0].z + nz*d + az*s });
 
-  // ── 1. Pflasterstein-Fläche (13m tief × 5m breit, warmes Beige) ──────────
+  // ── 1. Pflasterstein-Fläche (13m tief × 5m breit, Grau/Anthrazit) ──────────
   const cvPv = document.createElement('canvas');
   cvPv.width = 256; cvPv.height = 256;
   const pCtx = cvPv.getContext('2d');
-  pCtx.fillStyle = '#c2b59f'; pCtx.fillRect(0, 0, 256, 256);
-  pCtx.strokeStyle = '#a0927e'; pCtx.lineWidth = 2.5;
+  // Zweiton: mittelgrau Basis
+  pCtx.fillStyle = '#868680'; pCtx.fillRect(0, 0, 256, 256);
+  // dunklere Steine in versetztem Muster
+  pCtx.fillStyle = '#6c6c66';
+  for (let row = 0; row < 8; row++) {
+    const ox = (row % 2) * 32;
+    for (let col = -1; col < 9; col += 2) {
+      pCtx.fillRect(col * 64 + ox + 1, row * 32 + 1, 61, 29);
+    }
+  }
+  // Fugen
+  pCtx.strokeStyle = '#4e4e48'; pCtx.lineWidth = 2;
   for (let row = 0; row < 8; row++) {
     const ox = (row % 2) * 32;
     for (let col = -1; col < 9; col++) {
       pCtx.strokeRect(col * 64 + ox + 1, row * 32 + 1, 61, 29);
     }
-  }
-  // leichte Farbvariation einzelner Steine
-  pCtx.fillStyle = 'rgba(60,40,20,0.06)';
-  for (let i = 0; i < 20; i++) {
-    pCtx.fillRect(Math.random()*256, Math.random()*256, 52+Math.random()*20, 24+Math.random()*10);
   }
   const pvTex = new THREE.CanvasTexture(cvPv);
   pvTex.wrapS = pvTex.wrapT = THREE.RepeatWrapping;
@@ -3179,141 +3184,190 @@ function buildHomePark() {
   }
 
   // ── 3. Haus links (Nordseite) ─────────────────────────────────────────────
-  // Fassaden-Textur (Canvas): Klinker + Fenster
+  // Fassaden-Textur: untere 2/3 Klinker (cremegelb), obere 1/3 Weißputz
   const cvH = document.createElement('canvas');
-  cvH.width = 512; cvH.height = 384;
+  cvH.width = 512; cvH.height = 512;
   const hCtx = cvH.getContext('2d');
-  hCtx.fillStyle = '#d6c9b0'; hCtx.fillRect(0, 0, 512, 384);
-  // Klinkersockel
-  hCtx.fillStyle = '#b89870';
-  for (let r = 0; r < 4; r++) for (let c = 0; c < 9; c++) {
-    const ox = (r%2)*30;
-    hCtx.fillRect(c*58+ox+2, 320+r*16+2, 54, 13);
-  }
-  // Fenster 2 Etagen
-  for (let floor = 0; floor < 2; floor++) {
-    for (let col = 0; col < 3; col++) {
-      const wx = 45+col*155, wy = 80+floor*130;
-      hCtx.fillStyle = '#8ab5d0'; hCtx.fillRect(wx, wy, 105, 90);
-      hCtx.strokeStyle = '#ede8dc'; hCtx.lineWidth = 7;
-      hCtx.strokeRect(wx, wy, 105, 90);
-      hCtx.strokeRect(wx+50, wy, 4, 90);
-      hCtx.strokeRect(wx, wy+42, 105, 4);
+  // Weißputz-Hintergrund (oben)
+  hCtx.fillStyle = '#f0eee9'; hCtx.fillRect(0, 0, 512, 512);
+  // Klinker-Zone: untere 340px (~2/3)
+  hCtx.fillStyle = '#d4b870'; hCtx.fillRect(0, 172, 512, 340);
+  // Klinkerkurse (Mörtel-Hintergrund + helle Ziegel)
+  hCtx.fillStyle = '#c8a040';
+  for (let r = 0; r < 21; r++) {
+    const ox = (r % 2) * 30;
+    for (let c = -1; c < 10; c++) {
+      hCtx.fillRect(c * 56 + ox + 2, 175 + r * 16 + 2, 52, 12);
     }
   }
+  hCtx.strokeStyle = '#9a8650'; hCtx.lineWidth = 1;
+  for (let r = 0; r <= 22; r++) { hCtx.beginPath(); hCtx.moveTo(0, 174 + r*16); hCtx.lineTo(512, 174 + r*16); hCtx.stroke(); }
+  // Trennleiste Klinker/Putz
+  hCtx.fillStyle = '#b0a478'; hCtx.fillRect(0, 168, 512, 6);
+  // Fenster: 3 Spalten × 3 Stockwerke
+  const winCols = [44, 186, 330];
+  const winRows = [28, 110, 195]; // y-Positionen auf der Canvas (oben EG fehlt, dafür 3 Reihen in 512px)
+  // EG (Klinker): row=2 (y≈370), 1.OG (Klinker): row=1 (y≈280), 2.OG (Putz): row=0 (y≈28)
+  const winY = [28, 120, 285];
+  for (let floor = 0; floor < 3; floor++) {
+    for (let col = 0; col < 3; col++) {
+      const wx = winCols[col], wy = winY[floor];
+      // Rollladenkastens (anthrazit)
+      hCtx.fillStyle = '#252530'; hCtx.fillRect(wx - 2, wy - 13, 108, 11);
+      // Glas
+      hCtx.fillStyle = '#4a7fa0'; hCtx.fillRect(wx, wy, 104, 78);
+      // Anthrazit-Rahmen
+      hCtx.strokeStyle = '#1e1e28'; hCtx.lineWidth = 9;
+      hCtx.strokeRect(wx, wy, 104, 78);
+      // Kreuzsprossen
+      hCtx.lineWidth = 4;
+      hCtx.beginPath(); hCtx.moveTo(wx+50, wy); hCtx.lineTo(wx+50, wy+78); hCtx.stroke();
+      hCtx.beginPath(); hCtx.moveTo(wx, wy+37); hCtx.lineTo(wx+104, wy+37); hCtx.stroke();
+    }
+  }
+  // Balkon-Andeutung im 2.OG (oberster Stockwerk)
+  hCtx.strokeStyle = '#252530'; hCtx.lineWidth = 5;
+  hCtx.strokeRect(28, 8, 456, 12); // Balkonbrüstung
+  for (let b = 0; b < 12; b++) {
+    hCtx.beginPath(); hCtx.moveTo(42 + b*37, 8); hCtx.lineTo(42 + b*37, 20); hCtx.stroke();
+  }
   const hTex = new THREE.CanvasTexture(cvH);
-  // Hauskörper
-  const hbMat = new THREE.MeshLambertMaterial({ color: 0xd4c8b0 });
+  // Hauskörper – 3 Stockwerke, Klinkerfarbe aussen
+  const hbMat = new THREE.MeshLambertMaterial({ color: 0xd4b870 });
   const { x: hhx, z: hhz } = p(6, -7.5);
-  const houseBox = new THREE.Mesh(new THREE.BoxGeometry(12, 8, 9), hbMat);
-  houseBox.position.set(hhx, 4, hhz); scene.add(houseBox);
-  // Südfassade mit Fenstern (zeigt zur Einfahrt)
+  const houseBox = new THREE.Mesh(new THREE.BoxGeometry(12, 9, 9), hbMat);
+  houseBox.position.set(hhx, 4.5, hhz); scene.add(houseBox);
+  // Südfassade mit Fenstern
   const { x: hfx, z: hfz } = p(6, -3.55);
   const facadeM = new THREE.MeshBasicMaterial({ map: hTex, transparent: false });
-  const facade = new THREE.Mesh(new THREE.PlaneGeometry(12, 8), facadeM);
-  facade.position.set(hfx, 4, hfz); scene.add(facade);
-  // Haus-Satteldach
-  const hdRoofMat = new THREE.MeshLambertMaterial({ color: 0x7a7268, side: THREE.DoubleSide });
-  const hdAngle = Math.atan2(1.8, 4.5);
-  const hdSlant = Math.hypot(4.5, 1.8);
-  const hdTiltA = Math.PI/2 - hdAngle;
-  const hdNR = new THREE.Mesh(new THREE.PlaneGeometry(12.4, hdSlant+0.1), hdRoofMat);
-  hdNR.rotation.x = hdTiltA;
-  hdNR.position.set(hhx, 8 + 0.9, hhz - 2.25); scene.add(hdNR);
-  const hdSR = new THREE.Mesh(new THREE.PlaneGeometry(12.4, hdSlant+0.1), hdRoofMat);
-  hdSR.rotation.x = -hdTiltA;
-  hdSR.position.set(hhx, 8 + 0.9, hhz + 2.25); scene.add(hdSR);
+  const facade = new THREE.Mesh(new THREE.PlaneGeometry(12, 9), facadeM);
+  facade.position.set(hfx, 4.5, hfz); scene.add(facade);
+  // Kragdach (flach, weit überstehend) – charakteristisches Merkmal
+  const kragMat = new THREE.MeshLambertMaterial({ color: 0x222228 });
+  const kragSlab = new THREE.Mesh(new THREE.BoxGeometry(13.8, 0.3, 11.8), kragMat);
+  kragSlab.position.set(hhx, 9.15, hhz); scene.add(kragSlab);
+  // Sichtbare Holzsparren unter dem Kragdach (von der Strasse sichtbar)
+  const beamMat = new THREE.MeshLambertMaterial({ color: 0xa87848 });
+  for (let i = 0; i < 7; i++) {
+    const bx = hhx - 5.4 + i * 1.8;
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.25, 11.8), beamMat);
+    beam.position.set(bx, 9.0, hhz); scene.add(beam);
+  }
 
-  // ── 4. Holzschuppen hinten (Gartenhaus) ───────────────────────────────────
-  const shedX = p(13, 0.5).x, shedZ = p(13, 0.5).z;  // leicht südlich von Mitte
+  // ── 4. Gartenhaus (Klinker, passt zum Haupthaus) ──────────────────────────
+  const shedX = p(13, 0.5).x, shedZ = p(13, 0.5).z;
   const shedW = 3.2, shedD = 2.8, shedH = 2.5, ridgeH = 1.1;
-  // Holz-Textur (Canvas)
+  // Klinker-Textur für Schuppen (passend zum Haupthaus)
   const cvShed = document.createElement('canvas');
   cvShed.width = 256; cvShed.height = 256;
   const sCtx = cvShed.getContext('2d');
-  sCtx.fillStyle = '#6b4220'; sCtx.fillRect(0, 0, 256, 256);
-  sCtx.strokeStyle = '#8c5a2a'; sCtx.lineWidth = 3;
-  for (let i = 0; i < 16; i++) sCtx.strokeRect(0, i*16, 256, 16);
-  sCtx.strokeStyle = 'rgba(0,0,0,0.18)'; sCtx.lineWidth = 1;
-  for (let i = 0; i < 8; i++) { sCtx.beginPath(); sCtx.moveTo(i*32, 0); sCtx.lineTo(i*32+16, 256); sCtx.stroke(); }
+  sCtx.fillStyle = '#d4b870'; sCtx.fillRect(0, 0, 256, 256);
+  sCtx.fillStyle = '#c8a040';
+  for (let r = 0; r < 16; r++) {
+    const ox = (r % 2) * 28;
+    for (let c = -1; c < 10; c++) { sCtx.fillRect(c*56+ox+2, r*16+2, 52, 12); }
+  }
+  sCtx.strokeStyle = '#9a8650'; sCtx.lineWidth = 1;
+  for (let r = 0; r <= 16; r++) { sCtx.beginPath(); sCtx.moveTo(0, r*16); sCtx.lineTo(256, r*16); sCtx.stroke(); }
   const shedTex = new THREE.CanvasTexture(cvShed);
   const shedMat = new THREE.MeshLambertMaterial({ map: shedTex });
-  // Schuppenkörper (mehrflächen-Material für Holztextur)
   const shedBody = new THREE.Mesh(new THREE.BoxGeometry(shedW, shedH, shedD), shedMat);
   shedBody.position.set(shedX, shedH/2, shedZ); scene.add(shedBody);
-  // Vordere Fassade mit Tür und Fenster
+  // Vordere Fassade: Klinker + Holztür mit warmem Lichtschein + Fenster
   const cvSF = document.createElement('canvas');
   cvSF.width = 256; cvSF.height = 256;
   const sfCtx = cvSF.getContext('2d');
-  sfCtx.fillStyle = '#7a4f2a'; sfCtx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 16; i++) { sfCtx.strokeStyle='#9a6535'; sfCtx.lineWidth=3; sfCtx.strokeRect(0, i*16, 256, 16); }
-  // Tür
-  sfCtx.fillStyle = '#5a3515'; sfCtx.fillRect(90, 130, 76, 126);
-  sfCtx.strokeStyle = '#c8a060'; sfCtx.lineWidth = 5; sfCtx.strokeRect(90, 130, 76, 126);
-  sfCtx.fillStyle = '#c8a060'; sfCtx.beginPath(); sfCtx.arc(155, 195, 5, 0, Math.PI*2); sfCtx.fill();
-  // Fenster
-  sfCtx.fillStyle = '#8ab5d0'; sfCtx.fillRect(20, 80, 60, 55);
-  sfCtx.strokeStyle = '#ede8dc'; sfCtx.lineWidth = 5; sfCtx.strokeRect(20, 80, 60, 55);
-  sfCtx.strokeRect(48, 80, 3, 55); sfCtx.strokeRect(20, 106, 60, 3);
+  sfCtx.fillStyle = '#d4b870'; sfCtx.fillRect(0, 0, 256, 256);
+  sfCtx.fillStyle = '#c8a040';
+  for (let r = 0; r < 16; r++) {
+    const ox = (r % 2) * 28;
+    for (let c = -1; c < 10; c++) { sfCtx.fillRect(c*56+ox+2, r*16+2, 52, 12); }
+  }
+  sfCtx.strokeStyle = '#9a8650'; sfCtx.lineWidth = 1;
+  for (let r = 0; r <= 16; r++) { sfCtx.beginPath(); sfCtx.moveTo(0, r*16); sfCtx.lineTo(256, r*16); sfCtx.stroke(); }
+  // Holztür mit warmem Licht dahinter
+  sfCtx.fillStyle = '#4a2e10'; sfCtx.fillRect(92, 128, 72, 128);
+  sfCtx.fillStyle = 'rgba(255,200,80,0.35)'; sfCtx.fillRect(96, 132, 64, 120);
+  sfCtx.strokeStyle = '#7a5228'; sfCtx.lineWidth = 6; sfCtx.strokeRect(92, 128, 72, 128);
+  // Türgriff
+  sfCtx.fillStyle = '#c8a860'; sfCtx.beginPath(); sfCtx.arc(152, 196, 5, 0, Math.PI*2); sfCtx.fill();
+  // Fenster links
+  sfCtx.fillStyle = '#6a9fc0'; sfCtx.fillRect(18, 78, 58, 52);
+  sfCtx.strokeStyle = '#1e1e28'; sfCtx.lineWidth = 5; sfCtx.strokeRect(18, 78, 58, 52);
+  sfCtx.lineWidth = 3;
+  sfCtx.beginPath(); sfCtx.moveTo(46, 78); sfCtx.lineTo(46, 130); sfCtx.stroke();
+  sfCtx.beginPath(); sfCtx.moveTo(18, 104); sfCtx.lineTo(76, 104); sfCtx.stroke();
   const sfTex = new THREE.CanvasTexture(cvSF);
-  // Ostfassade (zeigt zur Straße)
   const sfMesh = new THREE.Mesh(new THREE.PlaneGeometry(shedW, shedH),
     new THREE.MeshBasicMaterial({ map: sfTex, side: THREE.DoubleSide }));
   sfMesh.position.set(shedX + shedW*0.5 + 0.02, shedH/2, shedZ);
   sfMesh.rotation.y = Math.PI / 2; scene.add(sfMesh);
-  // Satteldach Schuppen
-  const sdRoofMat = new THREE.MeshLambertMaterial({ color: 0x5a3a1e, side: THREE.DoubleSide });
+  // Satteldach – dunkelbraun/dunkelmaroon wie auf den Fotos
+  const sdRoofMat = new THREE.MeshLambertMaterial({ color: 0x3a1808, side: THREE.DoubleSide });
   const sdAngle  = Math.atan2(ridgeH, shedD/2);
   const sdSlant  = Math.hypot(shedD/2, ridgeH);
   const sdTiltA  = Math.PI/2 - sdAngle;
-  // Nord-Panel
   const sdNR = new THREE.Mesh(new THREE.PlaneGeometry(shedW+0.3, sdSlant+0.1), sdRoofMat);
   sdNR.rotation.x = sdTiltA;
   sdNR.position.set(shedX, shedH + ridgeH/2, shedZ - shedD/4); scene.add(sdNR);
-  // Süd-Panel
   const sdSR = new THREE.Mesh(new THREE.PlaneGeometry(shedW+0.3, sdSlant+0.1), sdRoofMat);
   sdSR.rotation.x = -sdTiltA;
   sdSR.position.set(shedX, shedH + ridgeH/2, shedZ + shedD/4); scene.add(sdSR);
-  // Satellitenschüssel
-  const dishMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-  const dishPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8), dishMat);
-  dishPost.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.3, shedZ - shedD*0.3);
+  // Satellitenschüssel auf Dach
+  const dishMat = new THREE.MeshLambertMaterial({ color: 0xc8c8c8 });
+  const dishPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7, 8), dishMat);
+  dishPost.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.35, shedZ - shedD*0.25);
   scene.add(dishPost);
-  const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.38, 0.12, 16), dishMat);
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.4, 0.12, 16), dishMat);
   dish.rotation.x = -Math.PI*0.35; dish.rotation.y = 0.4;
-  dish.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.65, shedZ - shedD*0.3);
+  dish.position.set(shedX + shedW*0.3, shedH + ridgeH + 0.72, shedZ - shedD*0.25);
   scene.add(dish);
 
-  // ── 5. Grüner Zaun am Eingang (Straßenseite) ──────────────────────────────
-  const fenceMat = new THREE.MeshLambertMaterial({ color: 0x2d6a28 });
-  // Zwei Pfosten
+  // ── 5. Anthrazit-Metallzaun am Eingang (Straßenseite) ────────────────────
+  const fenceMat = new THREE.MeshLambertMaterial({ color: 0x252530 });
+  // Zwei Pfosten (quadratisch = Metallprofil)
   for (const side of [-1, 1]) {
     const { x: fpx, z: fpz } = p(0.6, side * 2.6);
-    const fPost = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.5, 8), fenceMat);
+    const fPost = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.12), fenceMat);
     fPost.position.set(fpx, 0.75, fpz); scene.add(fPost);
   }
-  // Zaunstäbe (6 Stück)
-  for (let i = 0; i < 6; i++) {
-    const sz = -2.3 + i * 0.85;
+  // Zaunstäbe (7 Stück, quadratisch)
+  for (let i = 0; i < 7; i++) {
+    const sz = -2.3 + i * 0.77;
     const { x: sfx, z: sfzb } = p(0.6, sz);
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.35, 6), fenceMat);
-    bar.position.set(sfx, 0.68, sfzb); scene.add(bar);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), fenceMat);
+    bar.position.set(sfx, 0.65, sfzb); scene.add(bar);
   }
-  // Querstrebe
+  // Zwei Querstreben (oben + unten)
   const { x: qx, z: qz } = p(0.6, 0);
-  const qBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 5.2), fenceMat);
-  qBar.position.set(qx, 1.2, qz); scene.add(qBar);
+  const qTop = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 5.4), fenceMat);
+  qTop.position.set(qx, 1.22, qz); scene.add(qTop);
+  const qBot = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 5.4), fenceMat);
+  qBot.position.set(qx, 0.22, qz); scene.add(qBot);
 
-  // ── 6. Rosenbüsche links (entlang Haus) ──────────────────────────────────
-  const roseMat = new THREE.MeshLambertMaterial({ color: 0x2d5e18 });
-  const pinkMat = new THREE.MeshLambertMaterial({ color: 0xd44a7a });
+  // ── 6. Kletterpflanzen & Rosenbüsche ─────────────────────────────────────
+  const roseMat = new THREE.MeshLambertMaterial({ color: 0x2a5a14 });
+  const pinkMat = new THREE.MeshLambertMaterial({ color: 0xd44070 });
+  // Rosenbüsche entlang Hauswand (links)
   for (let i = 0; i < 5; i++) {
     const { x: rx, z: rz } = p(1.5 + i * 2, -2.8);
-    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.55, 7, 6), roseMat);
-    bush.position.set(rx, 0.55, rz); scene.add(bush);
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.55 + Math.random()*0.15, 7, 6), roseMat);
+    bush.position.set(rx, 0.5, rz); scene.add(bush);
     if (i % 2 === 0) {
-      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 5), pinkMat);
-      rose.position.set(rx + 0.2, 1.0, rz + 0.1); scene.add(rose);
+      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.17, 6, 5), pinkMat);
+      rose.position.set(rx + 0.15, 0.95, rz); scene.add(rose);
+    }
+  }
+  // Kletterpflanzen am Zaun (locker verteilt)
+  for (let i = 0; i < 4; i++) {
+    const sz = -2.0 + i * 1.2;
+    const { x: cx, z: cz } = p(0.55, sz);
+    const ivy = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random()*0.12, 6, 5), roseMat);
+    ivy.scale.y = 1.5;
+    ivy.position.set(cx, 0.55, cz); scene.add(ivy);
+    if (i === 1 || i === 3) {
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 5, 4), pinkMat);
+      fl.position.set(cx + 0.1, 0.9, cz); scene.add(fl);
     }
   }
 
