@@ -3435,9 +3435,9 @@ function buildOmaStop() {
   //
   // "Rechts vom Haus" bei Blick von der Straße = Osten = side < 0
 
-  // ── Detektionspunkt für Popup ──
-  const arrivalPt = p(10, -10);  // Einfahrtsbereich der Zufahrt
-  OMA_CX = arrivalPt.x; OMA_CZ = arrivalPt.z;
+  // ── Detektionspunkt für Popup = Mitte der Parkfläche ──
+  const detect = p(32.5, -15.5);  // Zentrum der 5 Buchten
+  OMA_CX = detect.x; OMA_CZ = detect.z;
 
   // ── Zufahrtsweg (N-S, zwischen Gebäude-Ostseite und Parkfläche) ──
   // x = baseX+7 .. baseX+13, Mitte bei side=-10
@@ -3613,14 +3613,14 @@ function checkOmaPark() {
   // Nicht anzeigen, solange ein anderes Popup offen ist
   if (document.getElementById('oma-game').style.display === 'flex') return;
   const d = Math.hypot(car.x - OMA_CX, car.z - OMA_CZ);
-  if (d > 34) { _omaShown = false; return; }  // Reset wenn weit weg → beide Richtungen
-  if (d < 16 && Math.abs(car.speed) < 0.9 && !_omaShown) {
+  if (d > 40) { _omaShown = false; return; }  // Reset wenn weit weg → beide Richtungen
+  if (d < 20 && Math.abs(car.speed) < 0.9 && !_omaShown) {
     if (!_omaTimer) _omaTimer = setTimeout(() => {
       _omaTimer = null;
-      if (Math.hypot(car.x - OMA_CX, car.z - OMA_CZ) < 16)
+      if (Math.hypot(car.x - OMA_CX, car.z - OMA_CZ) < 20)
         document.getElementById('oma-popup').style.display = 'flex';
     }, 1500);
-  } else if (d >= 16 || Math.abs(car.speed) >= 0.9) {
+  } else if (d >= 20 || Math.abs(car.speed) >= 0.9) {
     if (_omaTimer) { clearTimeout(_omaTimer); _omaTimer = null; }
   }
 }
