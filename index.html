@@ -3116,7 +3116,7 @@ function buildOSMBuildings(elements, nodes) {
     ];
   });
 
-  const maxBld = isMobile ? 160 : 600;
+  const maxBld = isMobile ? 220 : 1100;
   let count = 0;
 
   elements.filter(e => e.type === 'way' && e.tags && e.tags.building).forEach(way => {
@@ -3186,52 +3186,62 @@ function buildOSMBuildings(elements, nodes) {
   return count;
 }
 
-// ── OSM-Daten laden (Overpass API) ───────────────────────────────────────────
+// ── OSM-Daten laden (Overpass API – around-Filter entlang der Route) ──────────
 async function loadOSM() {
-  // Bbox erweitert: deckt komplette Route inkl. Stadion-Bereich ab
-  const bbox = '50.926,6.868,50.972,6.944';
-  // Kombinierte Abfrage: Straßen + Gebäude in einem Request
-  const q = `[out:json][timeout:50];(
-    way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${bbox});
-    way["building"](${bbox});
-  );(._;>;);out body;`;
-  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`;
+  const lbl = document.getElementById('osm-lbl');
+
+  // ── Route-Polyline für around-Filter aus WP-Array berechnen ──────────────────
+  // Inverse Formel: lat = LAT0 − z/mLat, lng = LNG0 + x/mLng
+  const routePoly = WP.map(wp =>
+    `${(LAT0 - wp.z / mLat).toFixed(6)},${(LNG0 + wp.x / mLng).toFixed(6)}`
+  ).join(',');
+
+  // ── Zwei parallele Requests: Gebäude (around) + Straßen (bbox) ───────────────
+  const BLD_Q  = `[out:json][timeout:65];(way["building"](around:82,${routePoly}););out body;>;out skel qt;`;
+  const BBOX   = '50.926,6.868,50.972,6.944';
+  const ROAD_Q = `[out:json][timeout:30];way["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|service)$"](${BBOX});out body;>;out skel qt;`;
+  const API    = 'https://overpass-api.de/api/interpreter';
 
   try {
-    const res  = await fetch(url);
-    const data = await res.json();
+    lbl.textContent = '🗺 Lade OSM …';
+    lbl.style.opacity = '1';
 
-    // Node-Lookup bauen
+    const [bRes, rRes] = await Promise.all([
+      fetch(API, { method:'POST', body:'data='+encodeURIComponent(BLD_Q)  }),
+      fetch(API, { method:'POST', body:'data='+encodeURIComponent(ROAD_Q) }),
+    ]);
+    if (!bRes.ok || !rRes.ok) throw new Error('HTTP ' + bRes.status);
+    const [bData, rData] = await Promise.all([bRes.json(), rRes.json()]);
+
+    // ── Node-Lookup (beide Responses zusammenführen) ──────────────────────────
     const nodes = {};
-    data.elements.filter(e=>e.type==='node').forEach(n=>{
-      const pos = ll(n.lat, n.lon);
-      nodes[n.id] = [pos.x, pos.z];
-    });
+    [...bData.elements, ...rData.elements]
+      .filter(e => e.type === 'node')
+      .forEach(n => { const p = ll(n.lat, n.lon); nodes[n.id] = [p.x, p.z]; });
 
-    // Straßen (nur Ways mit highway-Tag)
-    const osmMat = new THREE.MeshBasicMaterial({ color:0x1e2e1e });
+    // ── Straßen-Overlay (Neben- und Querstraßen, dezent dunkel) ──────────────
+    const osmMat = new THREE.MeshBasicMaterial({ color: 0x1a281a });
     let roadCount = 0;
-    data.elements.filter(e=>e.type==='way' && e.tags && e.tags.highway).forEach(way => {
-      const pts = way.nodes.map(id=>nodes[id]).filter(Boolean);
+    rData.elements.filter(e => e.type === 'way' && e.tags?.highway).forEach(way => {
+      const pts = way.nodes.map(id => nodes[id]).filter(Boolean);
       if (pts.length < 2) return;
       osmRoads.push(pts);
-      for (let i = 0; i < pts.length-1; i++) {
-        const [ax,az] = pts[i], [bx,bz] = pts[i+1];
-        scene.add(new THREE.Mesh(roadGeo(ax,az,bx,bz, 5.5, 0.005), osmMat));
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i], [bx, bz] = pts[i+1];
+        scene.add(new THREE.Mesh(roadGeo(ax, az, bx, bz, 5.5, 0.005), osmMat));
         roadCount++;
       }
     });
 
-    // Gebäude extrudieren (OSM-Footprints)
-    const bldCount = buildOSMBuildings(data.elements, nodes);
+    // ── Gebäude extrudieren ───────────────────────────────────────────────────
+    const bldCount = buildOSMBuildings(bData.elements, nodes);
 
-    document.getElementById('osm-lbl').textContent =
-      `🗺 OSM ✓ (${roadCount} Str. · ${bldCount} Geb.)`;
-    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 5000);
+    lbl.textContent = `🗺 OSM ✓  ${bldCount} Geb. · ${roadCount} Str.`;
+    setTimeout(() => { lbl.style.opacity = '0'; }, 6000);
   } catch(err) {
     console.warn('OSM nicht geladen:', err);
-    document.getElementById('osm-lbl').textContent = '🗺 OSM (offline)';
-    setTimeout(() => document.getElementById('osm-lbl').style.opacity='0', 3000);
+    lbl.textContent = '🗺 OSM (offline)';
+    setTimeout(() => { lbl.style.opacity = '0'; }, 3000);
   }
 }
 
