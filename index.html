@@ -115,7 +115,7 @@
     /* ── Cockpit-Canvas-Overlay ───────────────────────── */
     #cockpit-cv{
       position:fixed;bottom:0;left:0;width:100%;
-      height:44vh;z-index:36;pointer-events:none;
+      height:30vh;z-index:36;pointer-events:none;
     }
 
     /* ── Fehler-Box ────────────────────────────────── */
@@ -1667,7 +1667,7 @@ let   _cW = 0,   _cH = 0;
 
 function _resizeCockpit() {
   _cW = window.innerWidth;
-  _cH = Math.round(window.innerHeight * 0.44);
+  _cH = Math.round(window.innerHeight * 0.30);
   cockpitCv.width  = _cW;
   cockpitCv.height = _cH;
   _cCtx = cockpitCv.getContext('2d');
