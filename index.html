@@ -90,7 +90,7 @@
     }
     @media(pointer:fine){
       #speedo{bottom:125px;right:20px;}
-      #mm{bottom:125px;left:20px;}
+      #mm{top:14px;left:14px;}
     }
 
     .mbtn{
@@ -110,7 +110,7 @@
     /* ── Desktop: Speedo + Nav-Panel durch Cockpit-Canvas ersetzt ── */
     #speedo   { display:none; }
     #nav-panel{ display:none; }   /* Nav wird im Infotainment-Screen gezeigt */
-    #mm       { bottom:20px; left:20px; }
+    #mm       { top:14px; left:14px; }   /* immer oben-links */
 
     /* ── Cockpit-Canvas-Overlay ───────────────────────── */
     #cockpit-cv{
@@ -2105,9 +2105,9 @@ function drawCockpit() {
 
   // ── 7. LENKRAD (links unten, halb sichtbar) ─────────────────────────────────
   // Mittelachse ca. unter der Binnacle, Fahrerperspektive
-  const swR = Math.min(H * 0.56, binnW * 0.50);
+  const swR = Math.min(H * 0.82, binnW * 0.58);
   const swX = binnCX;
-  const swY = H + swR * 0.12;
+  const swY = H + swR * 0.04;
   _drawSteeringWheel(ctx, swX, swY, swR, -car.steer * 1.8);
 
   // ── 8. LENKSÄULEN-ABDECKUNG (Übergang Lenkrad → Dashboard) ─────────────────
