@@ -9,8 +9,10 @@ gleiche Strecke, gleiche Story, gleiche Minispiele — fotorealistisch in
 > Ordner enthält das **datengetriebene Fundament**, das von Anfang an stimmen
 > muss — Strecke, Geo-Konvertierung, Projektkonventionen.
 
-## Konzept
+## Konzept & Einstieg
 
+- **🟢 Erste Schritte am PC (Einsteiger, Windows):** [`SETUP_WINDOWS.md`](./SETUP_WINDOWS.md)
+  — von Null: UE5 installieren, Tools, erstes Auto fahren.
 - **Gesamtkonzept:** [`../docs/UNREAL_KONZEPT.md`](../docs/UNREAL_KONZEPT.md)
 - **Asset-Pipeline (Detail):** [`../docs/ASSET_PIPELINE.md`](../docs/ASSET_PIPELINE.md)
 
