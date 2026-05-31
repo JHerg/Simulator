@@ -361,6 +361,21 @@
       background:#0044cc;border:2px solid #4488ff;color:#fff;cursor:pointer;
     }
     #fb-home-btn:hover{background:#0055ee;}
+    /* ── Pressekonferenz-Overlay ──────────────────────────────────── */
+    #pressconf-screen{
+      position:fixed;inset:0;z-index:8600;display:none;
+      flex-direction:column;align-items:center;justify-content:flex-end;
+      padding-bottom:36px;
+    }
+    #pc-canvas{position:absolute;inset:0;width:100%;height:100%;}
+    #pc-home-btn{
+      position:relative;z-index:10;pointer-events:all;
+      padding:14px 44px;border-radius:12px;font-size:17px;font-weight:bold;
+      background:#0044cc;border:2px solid #4488ff;color:#fff;cursor:pointer;
+      opacity:0;transition:opacity 1.2s;
+    }
+    #pc-home-btn.vis{opacity:1;}
+    #pc-home-btn:hover{background:#0055ee;}
     #fb-speed-row{display:flex;gap:5px;justify-content:center;margin-top:5px;}
     .fb-spd{padding:3px 8px;border-radius:7px;font-size:11px;cursor:pointer;
       border:1px solid #445;background:#1a2a1a;color:#aaa;}
@@ -539,8 +554,14 @@
       <div id="fb-result-score">— : —</div>
       <div id="fb-result-winner"></div>
     </div>
-    <button id="fb-home-btn">🚗 Zurück zum Auto fahren</button>
+    <button id="fb-home-btn">🎙 Zur Pressekonferenz</button>
   </div>
+</div>
+
+<!-- Pressekonferenz-Screen -->
+<div id="pressconf-screen">
+  <canvas id="pc-canvas"></canvas>
+  <button id="pc-home-btn">🚗 Jetzt heimfahren</button>
 </div>
 
 <div id="hint">↑W Gas &nbsp; ↓S Bremse<br>←A Links &nbsp; →D Rechts<br>Space Handbremse<br>R Neustart</div>
@@ -3281,7 +3302,8 @@ function setupParkingAndFootball() {
     document.getElementById('park-popup').style.display = 'none';
     _parkShown = true;
   });
-  document.getElementById('fb-home-btn').addEventListener('click', returnFromFootball);
+  document.getElementById('fb-home-btn').addEventListener('click', showPressConference);
+  document.getElementById('pc-home-btn').addEventListener('click', closePressConference);
 
   // Geschwindigkeits-Buttons
   document.querySelectorAll('.fb-spd').forEach(btn => {
@@ -4844,6 +4866,225 @@ function returnFromFootball() {
   document.getElementById('prog-fill').style.width = '100%';
   setTimeout(() => { _parkShown = false; }, 4000);
   toast('🚗 Gute Heimfahrt!');
+}
+
+// ── Pressekonferenz ───────────────────────────────────────────────────────────
+let _pcActive = false, _pcStart = 0, _pcRafId = null, _pcFlashes = [];
+
+function showPressConference() {
+  document.getElementById('fb-result').style.display = 'none';
+  document.getElementById('football-screen').style.display = 'none';
+  const scr = document.getElementById('pressconf-screen');
+  scr.style.display = 'flex';
+  const cv = document.getElementById('pc-canvas');
+  cv.width = innerWidth; cv.height = innerHeight;
+  _pcActive = true;
+  _pcStart = performance.now();
+  // Kamera-Blitze zufällig verteilen
+  _pcFlashes = [];
+  for (let ft = 1.2; ft < 36; ft += 0.9 + Math.random() * 2.8)
+    _pcFlashes.push({ t: ft, dur: 0.10 + Math.random() * 0.12 });
+  setTimeout(() => { document.getElementById('pc-home-btn').classList.add('vis'); }, 26000);
+  _pcRafId = requestAnimationFrame(_pcTick);
+}
+
+function _pcTick(now) {
+  if (!_pcActive) return;
+  _drawPressConf((now - _pcStart) / 1000);
+  _pcRafId = requestAnimationFrame(_pcTick);
+}
+
+function closePressConference() {
+  _pcActive = false;
+  if (_pcRafId) { cancelAnimationFrame(_pcRafId); _pcRafId = null; }
+  document.getElementById('pressconf-screen').style.display = 'none';
+  document.getElementById('pc-home-btn').classList.remove('vis');
+  returnFromFootball();
+}
+
+function _pcHex(hex, f) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;
+}
+
+function _drawPressConf(t) {
+  const cv = document.getElementById('pc-canvas');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const koelnWon = FB.score[0] > FB.score[1];
+  const bayernWon = FB.score[1] > FB.score[0];
+
+  // ── Hintergrund: dunkler Presseraum ────────────────────────────────────────
+  ctx.fillStyle = '#06080d'; ctx.fillRect(0, 0, W, H);
+
+  // Hintere Stuhlreihen (Journalisten-Publikum, stilisiert)
+  for (let row = 0; row < 7; row++) {
+    const rowY = H * 0.08 + row * H * 0.025;
+    const cols  = Math.floor(W / 26);
+    for (let s = 0; s < cols; s++) {
+      ctx.fillStyle = `rgba(18,24,38,${0.6 + row * 0.04})`;
+      ctx.beginPath();
+      ctx.ellipse(s * 26 + (row % 2) * 13 + 8, rowY, 8, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Spotlight auf Podium
+  const sg = ctx.createRadialGradient(W*0.5, H*0.50, H*0.02, W*0.5, H*0.50, H*0.65);
+  sg.addColorStop(0,   'rgba(110,105,85,0.26)');
+  sg.addColorStop(0.45,'rgba(70,65,50,0.12)');
+  sg.addColorStop(1,   'rgba(0,0,0,0)');
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+
+  // ── Team-Banner (links & rechts) ────────────────────────────────────────────
+  const bw = Math.max(W * 0.09, 60), bh = H * 0.46;
+  // Köln — rot
+  const lg1 = ctx.createLinearGradient(W*0.03, 0, W*0.03+bw, 0);
+  lg1.addColorStop(0,'#5a0000'); lg1.addColorStop(1,'#bb0000');
+  ctx.fillStyle = lg1; ctx.fillRect(W*0.03, H*0.18, bw, bh);
+  ctx.save(); ctx.translate(W*0.03+bw/2, H*0.18+bh*0.5); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle='#fff'; ctx.font=`bold ${H*0.028}px 'Segoe UI',Arial`;
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('CF KÖLN',0,0); ctx.restore();
+  // Bavaria — blau
+  const lg2 = ctx.createLinearGradient(W*0.88, 0, W*0.88+bw, 0);
+  lg2.addColorStop(0,'#002288'); lg2.addColorStop(1,'#0033bb');
+  ctx.fillStyle = lg2; ctx.fillRect(W*0.88, H*0.18, bw, bh);
+  ctx.save(); ctx.translate(W*0.88+bw/2, H*0.18+bh*0.5); ctx.rotate(Math.PI/2);
+  ctx.fillStyle='#fff'; ctx.font=`bold ${H*0.028}px 'Segoe UI',Arial`;
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('BAVARIA',0,0); ctx.restore();
+
+  // ── Podium-Tisch ────────────────────────────────────────────────────────────
+  const tX = W*0.17, tY = H*0.53, tW = W*0.66, tH = H*0.075;
+  const tg = ctx.createLinearGradient(tX, tY, tX, tY+tH);
+  tg.addColorStop(0,'#52391a'); tg.addColorStop(1,'#2c1e0a');
+  ctx.fillStyle = tg; ctx.beginPath(); ctx.roundRect(tX, tY, tW, tH, 7); ctx.fill();
+  ctx.strokeStyle='#7a5530'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(tX, tY, tW, tH, 7); ctx.stroke();
+  // Namensschild
+  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font=`${H*0.016}px 'Segoe UI',Arial`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const labelTxt = koelnWon?'CF KÖLN — Pressekonferenz':bayernWon?'BAVARIA MÜNCHEN — Pressekonferenz':'Pressekonferenz — DFB-Pokalfinale 2025';
+  ctx.fillText(labelTxt, W*0.5, tY + tH*0.55);
+
+  // Mikrofone
+  [-0.14, -0.01, 0.12].forEach(ox => {
+    const mx = W*0.5 + W*ox, my = tY;
+    ctx.strokeStyle='#999'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx, my-H*0.085); ctx.stroke();
+    ctx.beginPath(); ctx.arc(mx, my-H*0.098, H*0.013, 0, Math.PI*2);
+    ctx.fillStyle='#bbb'; ctx.fill();
+  });
+
+  // ── Figuren (3 Personen) ─────────────────────────────────────────────────────
+  const winCol  = koelnWon ? '#cc2200' : '#0033bb';
+  const loseCol = koelnWon ? '#0033bb' : '#cc2200';
+  [
+    { x: W*0.34, shirt: loseCol },
+    { x: W*0.50, shirt: winCol  },
+    { x: W*0.66, shirt: winCol  },
+  ].forEach(fig => {
+    const fy = tY + H*0.005;
+    // Schulter / Körper
+    const cg = ctx.createRadialGradient(fig.x, fy-H*0.06, H*0.01, fig.x, fy-H*0.06, H*0.10);
+    cg.addColorStop(0, fig.shirt); cg.addColorStop(1, _pcHex(fig.shirt, 0.5));
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.ellipse(fig.x, fy-H*0.06, H*0.085, H*0.115, 0, 0, Math.PI*2); ctx.fill();
+    // Kopf
+    const hg = ctx.createRadialGradient(fig.x-H*0.01, fy-H*0.22, 1, fig.x, fy-H*0.20, H*0.055);
+    hg.addColorStop(0,'#d4aa88'); hg.addColorStop(1,'#9a6840');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(fig.x, fy-H*0.20, H*0.052, 0, Math.PI*2); ctx.fill();
+  });
+
+  // ── Ergebnisanzeige oben (fade in) ──────────────────────────────────────────
+  ctx.globalAlpha = Math.min(1, t / 1.4);
+  ctx.fillStyle='rgba(4,12,28,0.92)';
+  ctx.beginPath(); ctx.roundRect(W*0.22, H*0.03, W*0.56, H*0.115, 11); ctx.fill();
+  ctx.strokeStyle='#1a4499'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.roundRect(W*0.22, H*0.03, W*0.56, H*0.115, 11); ctx.stroke();
+  ctx.fillStyle='#7799cc'; ctx.font=`${H*0.021}px 'Segoe UI',Arial`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('⏱ Abpfiff — DFB-Pokalfinale 2025 · RheinEnergie Stadion', W*0.5, H*0.055);
+  const sCol = koelnWon?'#ff6655':bayernWon?'#88aaff':'#ffffff';
+  ctx.fillStyle=sCol; ctx.font=`bold ${H*0.044}px 'Segoe UI',Arial`;
+  ctx.fillText(`CF Köln  ${FB.score[0]} : ${FB.score[1]}  Bavaria München`, W*0.5, H*0.105);
+  ctx.globalAlpha = 1;
+
+  // Vordere Journalisten-Silhouetten
+  for (let j = 0; j < 15; j++) {
+    const jx = (j+0.5)*(W/15), jy = H*0.73;
+    ctx.fillStyle='rgba(12,18,30,0.92)';
+    ctx.beginPath(); ctx.arc(jx, jy-22, 10, 0, Math.PI*2); ctx.fill();
+    ctx.fillRect(jx-13, jy-12, 26, 34);
+    // Kamera
+    ctx.fillStyle='rgba(30,30,30,0.9)';
+    ctx.fillRect(jx+11, jy-26, 14, 10);
+    ctx.beginPath(); ctx.arc(jx+18, jy-21, 4, 0, Math.PI*2); ctx.fill();
+  }
+
+  // ── Animierte Gesprächs-Phasen ───────────────────────────────────────────────
+  const phases = [
+    { tIn: 3.2, tOut: 7.4,
+      speaker: 'REPORTER',
+      col: '#cccccc',
+      text: 'Herr Trainer, wie bewerten Sie das heutige Spiel?' },
+    { tIn: 7.4, tOut: 14.0,
+      speaker: koelnWon ? 'CHEFTRAINER CF KÖLN' : bayernWon ? 'CHEFTRAINER BAVARIA' : 'CHEFTRAINER',
+      col: koelnWon ? '#ff8866' : bayernWon ? '#88aaff' : '#aaaaaa',
+      text: koelnWon
+        ? 'Außergewöhnlich! Die Mannschaft hat heute alles gegeben — dieser Pokal gehört nach Köln!'
+        : bayernWon
+        ? 'Gratulation an CF Köln. Wir werden stärker zurückkommen — das verspreche ich.'
+        : 'Beide Teams haben alles gegeben. Das ist ein vollkommen gerechtes Ergebnis.' },
+    { tIn: 15.0, tOut: 19.5,
+      speaker: 'REPORTER',
+      col: '#cccccc',
+      text: 'Was war der Schlüsselmoment im heutigen Spiel?' },
+    { tIn: 19.5, tOut: 26.0,
+      speaker: koelnWon ? 'MANNSCHAFTSKAPITÄN CF KÖLN' : bayernWon ? 'MANNSCHAFTSKAPITÄN BAVARIA' : 'KAPITÄN',
+      col: koelnWon ? '#ff8866' : bayernWon ? '#88aaff' : '#aaaaaa',
+      text: koelnWon
+        ? 'Das Tor in der zweiten Halbzeit — und die Fans! Dieses Stadion hat uns nach vorn getrieben. Unglaublich!'
+        : bayernWon
+        ? 'Wir haben die Qualität immer gezeigt. Heute haben wir sie auch auf den Platz gebracht.'
+        : 'In einem Finale ist jeder Moment entscheidend. Heute war Kampf bis zur letzten Minute.' },
+  ];
+
+  phases.forEach(ph => {
+    if (t < ph.tIn - 0.1 || t > ph.tOut + 1.0) return;
+    const fi = Math.min(1, (t - ph.tIn) / 0.55);
+    const fo = t > ph.tOut ? Math.max(0, 1 - (t - ph.tOut) / 0.9) : 1;
+    ctx.globalAlpha = Math.max(0, fi * fo);
+    // Box
+    ctx.fillStyle='rgba(4,10,24,0.90)';
+    ctx.beginPath(); ctx.roundRect(W*0.13, H*0.765, W*0.74, H*0.135, 11); ctx.fill();
+    ctx.strokeStyle='rgba(40,70,140,0.55)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(W*0.13, H*0.765, W*0.74, H*0.135, 11); ctx.stroke();
+    // Sprecher
+    ctx.fillStyle = ph.col;
+    ctx.font=`bold ${H*0.019}px 'Segoe UI',Arial`;
+    ctx.textAlign='left'; ctx.textBaseline='middle';
+    ctx.fillText(ph.speaker + ':', W*0.16, H*0.783);
+    // Text mit Umbruch
+    ctx.fillStyle='#dde0ee'; ctx.font=`${H*0.025}px 'Segoe UI',Arial`;
+    const words = ph.text.split(' '); let line = '', lines = [];
+    words.forEach(w => {
+      const test = line ? line+' '+w : w;
+      if (ctx.measureText(test).width > W*0.68) { lines.push(line); line = w; }
+      else line = test;
+    });
+    lines.push(line);
+    lines.forEach((ln, i) => ctx.fillText(ln, W*0.16, H*0.808 + i * H*0.031));
+    ctx.globalAlpha = 1;
+  });
+
+  // ── Kamera-Blitze ────────────────────────────────────────────────────────────
+  _pcFlashes.forEach(fl => {
+    if (t < fl.t || t >= fl.t + fl.dur) return;
+    const alpha = (1 - (t - fl.t) / fl.dur) * 0.50;
+    ctx.fillStyle = `rgba(255,255,235,${alpha})`;
+    ctx.fillRect(0, 0, W, H);
+  });
 }
 
 // ── Resize ────────────────────────────────────────────────────────────────────
