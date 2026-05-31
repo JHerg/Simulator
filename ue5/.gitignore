@@ -1,0 +1,31 @@
+# ── Unreal Engine 5 – generierte/temporäre Verzeichnisse (nicht versionieren) ──
+# Gilt für den ue5/-Teilbaum. Wird beim späteren Auslagern in ein eigenes
+# Repo zum Projekt-Root-.gitignore.
+
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Plattform-/IDE-Krempel
+.DS_Store
+Thumbs.db
+
+# Cooked/Staging
+Cooked/
+*.target
+
+# NICHT ignoriert (bewusst versioniert):
+#   Content/      → .uasset/.umap via Git LFS
+#   Config/       → .ini
+#   Source/       → C++ + Daten (DT_Route.csv etc.)
+#   *.uproject
+#   Tools/        → Build-/Export-Skripte
