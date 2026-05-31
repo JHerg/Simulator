@@ -436,7 +436,7 @@
 <div id="nav-panel">
   <div id="nav-dist">– m</div>
   <div id="nav-arrow-wrap"><div id="nav-arrow">⬆</div></div>
-  <div id="nav-next">Trifelsstraße</div>
+  <div id="nav-next">Scharfeneckweg</div>
 </div>
 <!-- Tempolimit-Schild -->
 <div id="limit-sign"><div id="limit-val">30</div></div>
@@ -678,17 +678,23 @@ function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 //   Szene → GPS:  lat = LAT0 − z/mLat   |   lng = LNG0 + x/mLng
 const WP = [
 
-  // ── 1. Altbaumburgweg  (6 m, 55 m südwärts) ──────────────────────────
-  //   Startpunkt (0, 0)
-  { street:"Altbaumburgweg",            ...ll(50.96740,6.93820), tl:false, width:6  },
-  //   (0, 55) → 55 m Süd
-  { street:"Altbaumburgweg",            ...ll(50.96691,6.93820), tl:false, width:6  },
+  // ── 1. Altbaumburgweg (kurzes Stück, dann 90° RECHTS) ───────────────
+  //   Start: Hofausfahrt (−10, −45)
+  { street:"Altbaumburgweg",            x:-10, z:-45, tl:false, width:6  },
+  //   Ecke Scharfeneckweg (0, −45)
+  { street:"Altbaumburgweg",            x:0,   z:-45, tl:false, width:6  },
 
-  // ── 2. Trifelsstraße  (6 m, 187 m westwärts, RECHTS) ─────────────────
+  // ── 1b. Scharfeneckweg (≈100 m südwärts, dann 90° RECHTS) ───────────
+  //   Mittelpunkt (0, 5)
+  { street:"Scharfeneckweg",            x:0,   z:5,   tl:false, width:6  },
+  //   Ecke Triffelstraße (0, 55)
+  { street:"Scharfeneckweg",            x:0,   z:55,  tl:false, width:6  },
+
+  // ── 2. Triffelstraße  (6 m, 187 m westwärts, RECHTS) ─────────────────
   //   (−93, 55) Mittelpunkt
-  { street:"Trifelsstraße",             ...ll(50.96691,6.93687), tl:false, width:6  },
+  { street:"Triffelstraße",             ...ll(50.96691,6.93687), tl:false, width:6  },
   //   (−187, 55) → 187 m West
-  { street:"Trifelsstraße",             ...ll(50.96691,6.93553), tl:false, width:6  },
+  { street:"Triffelstraße",             ...ll(50.96691,6.93553), tl:false, width:6  },
 
   // ── 3. Ebernburgweg  (6 m, 288 m südwärts, LINKS) ────────────────────
   //   (−187, 199) Mittelpunkt
@@ -771,7 +777,7 @@ const WP = [
 
 // ── Tempolimits je Straße ────────────────────────────────────────────────────
 const LIMITS = {
-  'Altbaumburgweg':30,'Trifelsstraße':30,'Ebernburgweg':30,
+  'Altbaumburgweg':30,'Scharfeneckweg':30,'Triffelstraße':30,'Ebernburgweg':30,
   'Schiefersburger Weg':30,'Escher Str.':50,'Parkgürtel':70,
   'Auffahrt Richtung Zentrum':50,'Innere Kanalstraße':50,
   'Aachener Str.':50,'Kitschburger Str.':30,
@@ -781,14 +787,13 @@ const LIMITS = {
 function streetLimit(s){ return LIMITS[s] || 50; }
 
 // ── Hofeinfahrt-Koordinaten (früh berechnet für car-Startposition) ──────────
+// Grundstück liegt NÖRDLICH des Altbaumburgwegs (WP[0]=(-10,-45)).
+// Lokaler Rahmen: x = WP0.x + s (Osten = Richtung Hecke/Scharfeneckweg),
+//                 z = WP0.z - d (Norden = in die Tiefe ins Grundstück)
 let HOME_CX = 0, HOME_CZ = 0;
 {
-  const _hd0x = WP[1].x - WP[0].x, _hd0z = WP[1].z - WP[0].z;
-  const _hdLen = Math.hypot(_hd0x, _hd0z) || 1;
-  const _nx = -_hd0z / _hdLen, _nz = _hd0x / _hdLen;
-  const _ax =  _hd0x / _hdLen, _az = _hd0z / _hdLen;
-  HOME_CX = WP[0].x + _nx * 9 + _ax * (-5);   // Mitte Stellplatz
-  HOME_CZ = WP[0].z + _nz * 9 + _az * (-5);
+  HOME_CX = WP[0].x + 2;     // Stellplatz: Ostspalte (x ≈ −8)
+  HOME_CZ = WP[0].z - 6;     // 6 m in die Tiefe
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -1950,12 +1955,12 @@ function drawCockpit() {
 }
 
 // ── Fahrzeugzustand ───────────────────────────────────────────────────────────
-// Startet auf Stellplatz, Nase zur Hecke (=Norden), Rückwärts aus der Einfahrt
+// Startet auf Stellplatz, Nase zur Hecke (=Osten), Rückwärts aus der Einfahrt
 const _dx0 = WP[1].x - WP[0].x, _dz0 = WP[1].z - WP[0].z;
 const car = {
   x:       HOME_CX,
   z:       HOME_CZ,
-  heading: Math.PI,   // Nase nach Norden (zur Hecke) – Spieler fährt rückwärts raus
+  heading: Math.PI / 2,   // Nase nach Osten (zur Hecke) – Spieler fährt rückwärts raus
   speed:    0,
   steer:    0,
   wpIdx:    1,
@@ -2720,7 +2725,7 @@ function toast(msg) {
 
 function resetCar() {
   car.x = HOME_CX; car.z = HOME_CZ;
-  car.heading = Math.PI;   // Nase zur Hecke
+  car.heading = Math.PI / 2;   // Nase zur Hecke (Osten)
   car.speed = 0; car.steer = 0; car.wpIdx = 1; car.homeMode = false;
   _homeJourneyDone = false; _homeParkShown = false;
   document.getElementById('prog-fill').style.width = '0%';
@@ -3130,27 +3135,23 @@ function setupParkingAndFootball() {
 
 // ── Hofeinfahrt / Heimpark ────────────────────────────────────────────────────
 function buildHomePark() {
-  const d0x = WP[1].x - WP[0].x, d0z = WP[1].z - WP[0].z;
-  const d0len = Math.hypot(d0x, d0z) || 1;
-  const nx = -d0z / d0len, nz = d0x / d0len;   // +d → in die Tiefe (weg von Straße)
-  const ax = d0x / d0len,  az = d0z / d0len;   // +s → "links" Richtung Haus, −s → Stellplatz/Hecke
-  // HOME = Mitte des Stellplatzes (Auto startet/parkt hier)
-  HOME_CX = WP[0].x + nx * 9 + ax * (-5);
-  HOME_CZ = WP[0].z + nz * 9 + az * (-5);
-  // p(d, s): d = Tiefe ins Grundstück, s = Versatz entlang Straße (−s = Stellplatz-/Heckenseite)
-  const p = (d, s) => ({ x: WP[0].x + nx*d + ax*s, z: WP[0].z + nz*d + az*s });
-  // Achsen in Weltkoordinaten (für Box-Ausrichtung): Tiefe ≈ x, Seite ≈ z
-  const depthIsX = Math.abs(nx) > Math.abs(nz);
+  // Grundstück liegt NÖRDLICH des Altbaumburgwegs (WP[0]=(-10,-45) → WP[1]=(0,-45)).
+  // Lokaler Rahmen:  p(d, s) = { x: WP0.x + s,  z: WP0.z - d }
+  //   d = Tiefe nach NORDEN ins Grundstück
+  //   s = Versatz nach OSTEN entlang Altbaumburgweg (+s → Hecke/Scharfeneckweg)
+  // Fassaden zeigen nach SÜDEN (+z) zur Straße.  Auto parkt mit Nase nach Osten (zur Hecke).
+  // Scharfeneckweg liegt bei x∈[-3,3]; daher Hecke/Grundstück westlich davon (x < −3).
+  const p = (d, s) => ({ x: WP[0].x + s, z: WP[0].z - d });
 
   // ════════════════════════════════════════════════════════════════════════
   //  GRUNDRISS (von der Straße ins Grundstück geblickt):
-  //    Linke Spalte (+s):  Zaun → Garten → Haus (tief)
-  //    Rechte Spalte (−s): Stellplatz (vorne) → Gartenhaus (tief)
-  //    Hausweg: schmaler Pfad zwischen beiden Spalten
-  //    Hecke:   äußere rechte Kante (−s), über volle Tiefe
+  //    West-Spalte (kleines/negatives s): Zaun → Garten → Haus (tief)
+  //    Ost-Spalte  (mittleres s):         Stellplatz (vorne) → Gartenhaus (tief)
+  //    Hausweg: schmaler Pfad zwischen den Spalten (volle Tiefe)
+  //    Hecke:   äußere Ostkante (Richtung Scharfeneckweg), volle Tiefe
   // ════════════════════════════════════════════════════════════════════════
 
-  // ── 1. Pflasterstein-Textur (Grau/Anthrazit, zweitonig) ───────────────────
+  // ── Pflasterstein-Textur (Grau/Anthrazit, zweitonig) ──────────────────────
   const cvPv = document.createElement('canvas');
   cvPv.width = 256; cvPv.height = 256;
   const pCtx = cvPv.getContext('2d');
@@ -3170,37 +3171,33 @@ function buildHomePark() {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); return t;
   };
 
-  // Stellplatz (rechte Spalte, vorne) – Auto parkt hier
-  const stell = p(8, -5);
-  const stellMesh = new THREE.Mesh(new THREE.PlaneGeometry(9, 6),
-    new THREE.MeshLambertMaterial({ map: mkPave(3, 2) }));
+  // Stellplatz (Ost-Spalte, vorne, reicht bis an die Straße) – Auto parkt hier, Nase nach Osten
+  const stell = p(6, 2);
+  const stellMesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 8),
+    new THREE.MeshLambertMaterial({ map: mkPave(2, 3) }));
   stellMesh.rotation.x = -Math.PI / 2;
-  stellMesh.rotation.z = depthIsX ? 0 : Math.PI / 2;
   stellMesh.position.set(stell.x, 0.02, stell.z); scene.add(stellMesh);
 
-  // Hausweg (Pfad zwischen den Spalten, läuft in die Tiefe)
+  // Hausweg (Pfad zwischen den Spalten, läuft in die Tiefe nach Norden)
   const weg = p(9, -1);
-  const wegMesh = new THREE.Mesh(new THREE.PlaneGeometry(13, 2),
-    new THREE.MeshLambertMaterial({ map: mkPave(4, 1), color: 0xb8b8b2 }));
+  const wegMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 15),
+    new THREE.MeshLambertMaterial({ map: mkPave(1, 6), color: 0xb8b8b2 }));
   wegMesh.rotation.x = -Math.PI / 2;
-  wegMesh.rotation.z = depthIsX ? 0 : Math.PI / 2;
   wegMesh.position.set(weg.x, 0.018, weg.z); scene.add(wegMesh);
 
-  // ── 2. Garten (linke Spalte, vor dem Haus) ────────────────────────────────
-  const gart = p(5, 4.5);
-  const gartMesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 7),
+  // ── Garten (West-Spalte, vor dem Haus) ────────────────────────────────────
+  const gart = p(5.5, -4);
+  const gartMesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 7),
     new THREE.MeshLambertMaterial({ color: 0x4a7d2c }));
   gartMesh.rotation.x = -Math.PI / 2;
-  gartMesh.rotation.z = depthIsX ? 0 : Math.PI / 2;
   gartMesh.position.set(gart.x, 0.015, gart.z); scene.add(gartMesh);
 
-  // ── 3. Haus (linke Spalte, tief; Fassade zur Straße) ──────────────────────
-  // Fassaden-Textur: untere 2/3 Klinker (cremegelb), obere 1/3 Weißputz
+  // ── Haus (West-Spalte, tief; Fassade nach Süden zur Straße) ───────────────
   const cvH = document.createElement('canvas');
   cvH.width = 512; cvH.height = 512;
   const hCtx = cvH.getContext('2d');
-  hCtx.fillStyle = '#f0eee9'; hCtx.fillRect(0, 0, 512, 512);
-  hCtx.fillStyle = '#d4b870'; hCtx.fillRect(0, 172, 512, 340);
+  hCtx.fillStyle = '#f0eee9'; hCtx.fillRect(0, 0, 512, 512);                 // Weißputz oben
+  hCtx.fillStyle = '#d4b870'; hCtx.fillRect(0, 172, 512, 340);              // Klinker unten 2/3
   hCtx.fillStyle = '#c8a040';
   for (let r = 0; r < 21; r++) {
     const ox = (r % 2) * 30;
@@ -3210,11 +3207,11 @@ function buildHomePark() {
   for (let r = 0; r <= 22; r++) { hCtx.beginPath(); hCtx.moveTo(0, 174 + r*16); hCtx.lineTo(512, 174 + r*16); hCtx.stroke(); }
   hCtx.fillStyle = '#b0a478'; hCtx.fillRect(0, 168, 512, 6);
   const winCols = [70, 220, 370];
-  const winY = [28, 120, 285];
+  const winY = [28, 120, 285];     // 2.OG (Putz), 1.OG, EG (Klinker)
   for (let floor = 0; floor < 3; floor++) {
     for (let col = 0; col < 3; col++) {
       const wx = winCols[col], wy = winY[floor];
-      hCtx.fillStyle = '#252530'; hCtx.fillRect(wx - 2, wy - 13, 88, 11);
+      hCtx.fillStyle = '#252530'; hCtx.fillRect(wx - 2, wy - 13, 88, 11);   // Rollladenkasten
       hCtx.fillStyle = '#4a7fa0'; hCtx.fillRect(wx, wy, 84, 78);
       hCtx.strokeStyle = '#1e1e28'; hCtx.lineWidth = 9; hCtx.strokeRect(wx, wy, 84, 78);
       hCtx.lineWidth = 4;
@@ -3222,38 +3219,50 @@ function buildHomePark() {
       hCtx.beginPath(); hCtx.moveTo(wx, wy+37); hCtx.lineTo(wx+84, wy+37); hCtx.stroke();
     }
   }
-  // Balkon-Andeutung im 2.OG
-  hCtx.strokeStyle = '#252530'; hCtx.lineWidth = 5;
-  hCtx.strokeRect(28, 8, 456, 12);
+  hCtx.strokeStyle = '#252530'; hCtx.lineWidth = 5; hCtx.strokeRect(28, 8, 456, 12);   // Balkon 2.OG
   for (let b = 0; b < 12; b++) { hCtx.beginPath(); hCtx.moveTo(42 + b*37, 8); hCtx.lineTo(42 + b*37, 20); hCtx.stroke(); }
   const hTex = new THREE.CanvasTexture(cvH);
-  const houseW = 7, houseDepth = 8, houseH = 9;       // W = entlang Straße (z), Depth = in Tiefe (x)
-  const houseC = p(11.5, 4.5);
+  const houseW = 7, houseDepth = 8, houseH = 9;     // W = entlang Straße (x), Depth = Tiefe (z)
+  const houseC = p(13, -4);
   const hbMat = new THREE.MeshLambertMaterial({ color: 0xd4b870 });
-  const houseBox = new THREE.Mesh(new THREE.BoxGeometry(houseDepth, houseH, houseW), hbMat);
+  const houseBox = new THREE.Mesh(new THREE.BoxGeometry(houseW, houseH, houseDepth), hbMat);
   houseBox.position.set(houseC.x, houseH/2, houseC.z); scene.add(houseBox);
-  // Fassade zur Straße (Vorderseite bei kleinster Tiefe → +x Richtung Straße)
-  const facC = p(7.5, 4.5);
+  // Südfassade (zur Straße, +z)
   const facade = new THREE.Mesh(new THREE.PlaneGeometry(houseW, houseH),
     new THREE.MeshBasicMaterial({ map: hTex }));
-  facade.rotation.y = Math.PI / 2;            // Normale → +x (zur Straße)
-  facade.position.set(facC.x + 0.03, houseH/2, facC.z); scene.add(facade);
+  facade.position.set(houseC.x, houseH/2, houseC.z + houseDepth/2 + 0.03); scene.add(facade);
   // Kragdach (flach, weit überstehend)
   const kragMat = new THREE.MeshLambertMaterial({ color: 0x222228 });
-  const kragSlab = new THREE.Mesh(new THREE.BoxGeometry(houseDepth + 2, 0.3, houseW + 2), kragMat);
+  const kragSlab = new THREE.Mesh(new THREE.BoxGeometry(houseW + 2, 0.3, houseDepth + 2), kragMat);
   kragSlab.position.set(houseC.x, houseH + 0.15, houseC.z); scene.add(kragSlab);
-  // Sichtbare Dachsparren (laufen in die Tiefe, kragen zur Straße aus)
+  // Sichtbare Dachsparren – kragen nach Süden (zur Straße) aus
   const beamMat = new THREE.MeshLambertMaterial({ color: 0xa87848 });
   for (let i = 0; i < 7; i++) {
-    const bs = -3 + i;            // Versatz entlang Straße
-    const bp = p(11.0, 4.5 + bs * 0.9);
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(houseDepth + 1.6, 0.22, 0.18), beamMat);
-    beam.position.set(bp.x, houseH - 0.05, bp.z); scene.add(beam);
+    const bx = houseC.x - 3 + i;
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, houseDepth + 1.6), beamMat);
+    beam.position.set(bx, houseH - 0.05, houseC.z); scene.add(beam);
   }
 
-  // ── 4. Gartenhaus (rechte Spalte, tief – hinter dem Stellplatz) ───────────
-  const ghW = 4, ghDepth = 3.5, ghH = 2.5, ridgeH = 1.1;   // W entlang Straße, Depth in Tiefe
-  const ghC = p(14, -5);
+  // ── Rosenhecke an der Fassade (rankt unterhalb der ersten Fensterreihe) ───
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x2c5e18 });
+  const roseMat = new THREE.MeshLambertMaterial({ color: 0xd83a6a });
+  const hedgeBaseZ = houseC.z + houseDepth/2 + 0.35;
+  const rhBox = new THREE.Mesh(new THREE.BoxGeometry(houseW + 0.4, 1.1, 0.7), leafMat);
+  rhBox.position.set(houseC.x, 0.55, hedgeBaseZ); scene.add(rhBox);
+  for (let i = 0; i < 16; i++) {
+    const lx = houseC.x - houseW/2 + 0.3 + (i / 15) * (houseW - 0.6);
+    const ly = 1.0 + Math.random() * 1.5;
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.28 + Math.random()*0.14, 6, 5), leafMat);
+    leaf.position.set(lx, ly, hedgeBaseZ - 0.05); scene.add(leaf);
+    if (i % 2 === 0) {
+      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), roseMat);
+      rose.position.set(lx + 0.12, ly + 0.18, hedgeBaseZ + 0.18); scene.add(rose);
+    }
+  }
+
+  // ── Gartenhaus (Ost-Spalte, tief – hinter dem Stellplatz) ─────────────────
+  const ghW = 4, ghD = 3.5, ghH = 2.2, ridgeH = 1.0;   // W = entlang Straße (x), D = Tiefe (z)
+  const ghC = p(13, 2);
   const cvShed = document.createElement('canvas');
   cvShed.width = 256; cvShed.height = 256;
   const sCtx = cvShed.getContext('2d');
@@ -3263,9 +3272,9 @@ function buildHomePark() {
   sCtx.strokeStyle = '#9a8650'; sCtx.lineWidth = 1;
   for (let r = 0; r <= 16; r++) { sCtx.beginPath(); sCtx.moveTo(0, r*16); sCtx.lineTo(256, r*16); sCtx.stroke(); }
   const shedMat = new THREE.MeshLambertMaterial({ map: new THREE.CanvasTexture(cvShed) });
-  const shedBody = new THREE.Mesh(new THREE.BoxGeometry(ghDepth, ghH, ghW), shedMat);
+  const shedBody = new THREE.Mesh(new THREE.BoxGeometry(ghW, ghH, ghD), shedMat);
   shedBody.position.set(ghC.x, ghH/2, ghC.z); scene.add(shedBody);
-  // Vorderfassade (zum Stellplatz/zur Straße, +x) mit Holztür + Fenster
+  // Südfassade (Tür + Fenster, zur Straße/zum Stellplatz, +z)
   const cvSF = document.createElement('canvas');
   cvSF.width = 256; cvSF.height = 256;
   const sfCtx = cvSF.getContext('2d');
@@ -3283,87 +3292,80 @@ function buildHomePark() {
   sfCtx.lineWidth = 3;
   sfCtx.beginPath(); sfCtx.moveTo(46, 78); sfCtx.lineTo(46, 130); sfCtx.stroke();
   sfCtx.beginPath(); sfCtx.moveTo(18, 104); sfCtx.lineTo(76, 104); sfCtx.stroke();
-  const ghFront = p(14 - ghDepth/2, -5);
   const sfMesh = new THREE.Mesh(new THREE.PlaneGeometry(ghW, ghH),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cvSF), side: THREE.DoubleSide }));
-  sfMesh.rotation.y = Math.PI / 2;
-  sfMesh.position.set(ghFront.x + 0.03, ghH/2, ghFront.z); scene.add(sfMesh);
-  // Satteldach – dunkelbraun (Giebel zur Straße, First läuft in die Tiefe)
+  sfMesh.position.set(ghC.x, ghH/2, ghC.z + ghD/2 + 0.03); scene.add(sfMesh);
+  // Satteldach (First läuft entlang x, zwei Flächen kippen nach ±z) – dunkelbraun
   const sdRoofMat = new THREE.MeshLambertMaterial({ color: 0x3a1808, side: THREE.DoubleSide });
-  const sdAngle = Math.atan2(ridgeH, ghW/2);
-  const sdSlant = Math.hypot(ghW/2, ridgeH);
-  const sdTiltA = Math.PI/2 - sdAngle;
-  for (const sgn of [-1, 1]) {
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(ghDepth + 0.3, sdSlant + 0.1), sdRoofMat);
-    panel.rotation.x = -Math.PI / 2;
-    panel.rotation.y = sgn * sdTiltA;
-    const off = p(14, -5 + sgn * ghW/4);
-    panel.position.set(off.x, ghH + ridgeH/2, off.z); scene.add(panel);
+  const sdSlant = Math.hypot(ghD/2, ridgeH);
+  const sdTiltA = Math.PI/2 - Math.atan2(ridgeH, ghD/2);
+  const roofN = new THREE.Mesh(new THREE.PlaneGeometry(ghW + 0.3, sdSlant + 0.1), sdRoofMat);
+  roofN.rotation.x = sdTiltA;  roofN.position.set(ghC.x, ghH + ridgeH/2, ghC.z - ghD/4); scene.add(roofN);
+  const roofS = new THREE.Mesh(new THREE.PlaneGeometry(ghW + 0.3, sdSlant + 0.1), sdRoofMat);
+  roofS.rotation.x = -sdTiltA; roofS.position.set(ghC.x, ghH + ridgeH/2, ghC.z + ghD/4); scene.add(roofS);
+  // Giebeldreiecke (schließen die Dachenden, entlang ±x)
+  const gableMat = new THREE.MeshLambertMaterial({ color: 0xd4b870, side: THREE.DoubleSide });
+  for (const sx of [-ghW/2, ghW/2]) {
+    const tri = new THREE.BufferGeometry();
+    tri.setAttribute('position', new THREE.Float32BufferAttribute([
+      ghC.x + sx, ghH,          ghC.z - ghD/2,
+      ghC.x + sx, ghH,          ghC.z + ghD/2,
+      ghC.x + sx, ghH + ridgeH, ghC.z,
+    ], 3));
+    tri.setIndex([0,1,2]); tri.computeVertexNormals();
+    scene.add(new THREE.Mesh(tri, gableMat));
   }
   // Satellitenschüssel
   const dishMat = new THREE.MeshLambertMaterial({ color: 0xc8c8c8 });
-  const dPos = p(15, -6);
   const dishPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.7, 8), dishMat);
-  dishPost.position.set(dPos.x, ghH + ridgeH + 0.35, dPos.z); scene.add(dishPost);
+  dishPost.position.set(ghC.x + 1.2, ghH + ridgeH + 0.35, ghC.z + 0.8); scene.add(dishPost);
   const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.0, 0.4, 0.12, 16), dishMat);
   dish.rotation.x = -Math.PI*0.35; dish.rotation.y = 0.4;
-  dish.position.set(dPos.x, ghH + ridgeH + 0.72, dPos.z); scene.add(dish);
+  dish.position.set(ghC.x + 1.2, ghH + ridgeH + 0.72, ghC.z + 0.8); scene.add(dish);
 
-  // ── 5. Hecke (äußere rechte Kante, volle Tiefe) ───────────────────────────
+  // ── Hecke (äußere Ostkante Richtung Scharfeneckweg, volle Tiefe) ──────────
   const hMat = new THREE.MeshLambertMaterial({ color: 0x244d17 });
-  const hedgeC = p(9, -9);
-  const hedge = new THREE.Mesh(new THREE.BoxGeometry(15, 2.6, 1.2), hMat);
+  const hedgeC = p(9.5, 5.5);
+  const hedge = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.6, 14), hMat);
   hedge.position.set(hedgeC.x, 1.3, hedgeC.z); scene.add(hedge);
-  for (let i = 0; i < 8; i++) {
-    const bp = p(2.5 + i * 1.9, -9);
+  for (let i = 0; i < 7; i++) {
+    const bp = p(3.5 + i * 2, 5.5);
     const bump = new THREE.Mesh(new THREE.SphereGeometry(0.62 + Math.random()*0.25, 7, 6), hMat);
     bump.position.set(bp.x, 2.45 + Math.random()*0.3, bp.z); scene.add(bump);
   }
 
-  // ── 6. Anthrazit-Metallzaun (linke Spalte, Straßenfront vor dem Garten) ───
+  // ── Anthrazit-Metallzaun (West-Spalte, Straßenfront vor dem Garten) ───────
   const fenceMat = new THREE.MeshLambertMaterial({ color: 0x252530 });
-  for (const sPos of [1.2, 7.8]) {
-    const fp = p(2.6, sPos);
+  for (const sPos of [-7, -1]) {
+    const fp = p(2.4, sPos);
     const fPost = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.12), fenceMat);
     fPost.position.set(fp.x, 0.75, fp.z); scene.add(fPost);
   }
   for (let i = 0; i < 9; i++) {
-    const sb = 1.4 + i * 0.8;
-    const fp = p(2.6, sb);
+    const fp = p(2.4, -6.7 + i * 0.72);
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), fenceMat);
     bar.position.set(fp.x, 0.65, fp.z); scene.add(bar);
   }
   for (const yy of [1.22, 0.22]) {
-    const qc = p(2.6, 4.5);
-    const q = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 6.6), fenceMat);
+    const qc = p(2.4, -4);
+    const q = new THREE.Mesh(new THREE.BoxGeometry(6, 0.07, 0.07), fenceMat);
     q.position.set(qc.x, yy, qc.z); scene.add(q);
   }
-
-  // ── 7. Kletterpflanzen am Zaun + Rosen an der Hausfassade ─────────────────
-  const roseMat = new THREE.MeshLambertMaterial({ color: 0x2a5a14 });
+  // Kletterpflanzen am Zaun
+  const climbMat = new THREE.MeshLambertMaterial({ color: 0x2a5a14 });
   const pinkMat = new THREE.MeshLambertMaterial({ color: 0xd44070 });
-  for (let i = 0; i < 5; i++) {
-    const rp = p(7.4, 1.5 + i * 1.4);     // entlang Hausfassade
-    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.5 + Math.random()*0.15, 7, 6), roseMat);
-    bush.position.set(rp.x, 0.5, rp.z); scene.add(bush);
-    if (i % 2 === 0) {
-      const rose = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5), pinkMat);
-      rose.position.set(rp.x, 1.6 + i * 0.3, rp.z); scene.add(rose);
-    }
-  }
-  for (let i = 0; i < 5; i++) {
-    const cp = p(2.55, 1.6 + i * 1.5);    // am Zaun
-    const ivy = new THREE.Mesh(new THREE.SphereGeometry(0.28 + Math.random()*0.12, 6, 5), roseMat);
-    ivy.scale.y = 1.5;
-    ivy.position.set(cp.x, 0.55, cp.z); scene.add(ivy);
+  for (let i = 0; i < 6; i++) {
+    const cp = p(2.45, -6.5 + i * 1.1);
+    const ivy = new THREE.Mesh(new THREE.SphereGeometry(0.26 + Math.random()*0.12, 6, 5), climbMat);
+    ivy.scale.y = 1.5; ivy.position.set(cp.x, 0.55, cp.z); scene.add(ivy);
     if (i % 2 === 1) {
       const fl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 5, 4), pinkMat);
       fl.position.set(cp.x, 0.95, cp.z); scene.add(fl);
     }
   }
 
-  // ── 8. Hausnummern-Schild (am Eingang, zwischen Zaun und Stellplatz) ──────
-  const sgnP = p(2.6, 0);
+  // ── Hausnummern-Schild (am Eingang, zwischen Zaun und Stellplatz) ─────────
+  const sgnP = p(2.4, -0.3);
   const sPost2 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.6, 8),
     new THREE.MeshLambertMaterial({ color: 0x555555 }));
   sPost2.position.set(sgnP.x, 1.3, sgnP.z); scene.add(sPost2);
@@ -3375,46 +3377,14 @@ function buildHomePark() {
   sctx.fillStyle = '#1a1a1a'; sctx.font = 'bold 18px Arial';
   sctx.textAlign = 'center'; sctx.textBaseline = 'middle';
   sctx.fillText('Altbaumburgweg 2', 128, 48);
-  const signMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 3.8),
+  const signMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 3.2),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(scv), side: THREE.DoubleSide }));
   signMesh.position.set(sgnP.x, 2.6, sgnP.z); scene.add(signMesh);
 
   // ── Kollisionsboxen (Auto kann nicht durch Gebäude/Hecke) ─────────────────
-  collidables.push({ x: houseC.x, z: houseC.z, hw: houseDepth/2, hd: houseW/2 });
-  collidables.push({ x: ghC.x,    z: ghC.z,    hw: ghDepth/2,    hd: ghW/2 });
-  collidables.push({ x: hedgeC.x, z: hedgeC.z, hw: 7.5,          hd: 0.7 });
-}
-
-// ── Scharfeneckweg: kurze Querstraße nördlich am Grundstück (an der Hecke) ──
-function buildScharfeneckweg() {
-  const asph = new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
-  const walk = new THREE.MeshLambertMaterial({ color: 0xb8a898 });
-  const dash = new THREE.MeshBasicMaterial({ color: 0xeeeecc });
-  // Altbaumburgweg-Stummel nach Norden bis zur Kreuzung
-  scene.add(new THREE.Mesh(roadGeo(0, 0, 0, -12, 6, 0.011), asph));
-  scene.add(new THREE.Mesh(roadGeo(0, 0, 0, -12, 9, 0.004), walk));
-  // Scharfeneckweg (Ost-West, an der nördlichen Grundstückskante entlang)
-  scene.add(new THREE.Mesh(roadGeo(3, -12, -30, -12, 6, 0.011), asph));
-  scene.add(new THREE.Mesh(roadGeo(3, -12, -30, -12, 9, 0.004), walk));
-  for (let s = 0; s < 3; s++) {
-    const x0 = -3 - s*8, x1 = -6 - s*8;
-    scene.add(new THREE.Mesh(roadGeo(x0, -12, x1, -12, 0.2, 0.02), dash));
-  }
-  // Straßenschild "Scharfeneckweg"
-  const cv = document.createElement('canvas');
-  cv.width = 400; cv.height = 80;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#002288'; ctx.fillRect(0, 0, 400, 80);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.strokeRect(4, 4, 392, 72);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('Scharfeneckweg', 200, 42);
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 4, 6),
-    new THREE.MeshLambertMaterial({ color: 0x999999 }));
-  post.position.set(4.5, 2, -9); scene.add(post);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(5, 1),
-    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, side: THREE.DoubleSide }));
-  sign.position.set(4.5, 3.2, -9); scene.add(sign);
+  collidables.push({ x: houseC.x, z: houseC.z, hw: houseW/2, hd: houseDepth/2 });
+  collidables.push({ x: ghC.x,    z: ghC.z,    hw: ghW/2,    hd: ghD/2 });
+  collidables.push({ x: hedgeC.x, z: hedgeC.z, hw: 0.7,      hd: 7 });
 }
 
 function checkHomePark() {
@@ -3459,7 +3429,6 @@ function showLegendPopup() {
 
 function setupHomePark() {
   buildHomePark();
-  buildScharfeneckweg();
   document.getElementById('hp-yes').addEventListener('click', () => {
     document.getElementById('home-popup').style.display = 'none';
     _homeParkShown = true;
