@@ -86,6 +86,7 @@
       #hint{display:none;}
       #speedo{bottom:auto;top:160px;right:14px;}
       #mm{bottom:auto;top:14px;left:14px;}
+      #nav-panel{display:block;}  /* auf Mobil: Nav-Panel wieder sichtbar */
     }
     @media(pointer:fine){
       #speedo{bottom:125px;right:20px;}
@@ -106,14 +107,15 @@
     #br{bottom:20px;left:90px;width:68px;height:68px;}
     #bgas{bottom:20px;right:12px;width:88px;height:68px;background:rgba(0,120,0,.6);}
     #bbrk{bottom:20px;right:110px;width:68px;height:68px;background:rgba(160,0,0,.5);}
-    /* ── Desktop: Speedo + Minimap immer sichtbar ──── */
-    #speedo{ display:none; }   /* ersetzt durch Cockpit-Canvas */
-    #mm    { bottom:20px; left:20px;  }
+    /* ── Desktop: Speedo + Nav-Panel durch Cockpit-Canvas ersetzt ── */
+    #speedo   { display:none; }
+    #nav-panel{ display:none; }   /* Nav wird im Infotainment-Screen gezeigt */
+    #mm       { bottom:20px; left:20px; }
 
     /* ── Cockpit-Canvas-Overlay ───────────────────────── */
     #cockpit-cv{
       position:fixed;bottom:0;left:0;width:100%;
-      height:42vh;z-index:36;pointer-events:none;
+      height:44vh;z-index:36;pointer-events:none;
     }
 
     /* ── Fehler-Box ────────────────────────────────── */
@@ -1665,7 +1667,7 @@ let   _cW = 0,   _cH = 0;
 
 function _resizeCockpit() {
   _cW = window.innerWidth;
-  _cH = Math.round(window.innerHeight * 0.42);
+  _cH = Math.round(window.innerHeight * 0.44);
   cockpitCv.width  = _cW;
   cockpitCv.height = _cH;
   _cCtx = cockpitCv.getContext('2d');
@@ -1812,42 +1814,174 @@ function _drawSteeringWheel(ctx, cx, cy, r, steerAngle) {
   ctx.restore();
 }
 
+// Kleines MFD zwischen den Instrumenten-Skalen (Golf-7-Cluster-Mitte)
 function _drawMFD(ctx, cx, cy, w, h, kmh, gear, street) {
-  // Gehäuse
   const rx = cx - w/2, ry = cy - h/2;
-  ctx.fillStyle = '#0a0a0a';
-  ctx.beginPath();
-  ctx.roundRect(rx, ry, w, h, 8);
-  ctx.fill();
-  ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = '#080808';
+  ctx.beginPath(); ctx.roundRect(rx, ry, w, h, 6); ctx.fill();
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.stroke();
 
-  // Innenrahmen-Gradient (Bildschirm-Glanz)
-  const gl = ctx.createLinearGradient(rx, ry, rx, ry+h*0.4);
-  gl.addColorStop(0, 'rgba(255,255,255,0.04)');
-  gl.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = gl;
-  ctx.beginPath(); ctx.roundRect(rx+2, ry+2, w-4, h*0.4, 6); ctx.fill();
-
-  // Digitale Geschwindigkeit (groß, blau)
-  ctx.fillStyle = '#00ccff';
-  ctx.font = `bold ${h*0.42}px 'Segoe UI',Arial`;
+  // Digitale Geschwindigkeit
+  ctx.fillStyle = '#00d4ff';
+  ctx.font = `bold ${h*0.44}px 'Segoe UI',Arial`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(Math.round(kmh)), cx, cy - h*0.12);
+  ctx.fillText(String(Math.round(kmh)), cx, cy - h*0.10);
 
-  ctx.fillStyle = '#5599bb';
-  ctx.font = `${h*0.15}px 'Segoe UI',Arial`;
-  ctx.fillText('km/h', cx, cy + h*0.18);
+  ctx.fillStyle = '#4a8899';
+  ctx.font = `${h*0.14}px 'Segoe UI',Arial`;
+  ctx.fillText('km/h', cx, cy + h*0.20);
 
-  // Straßenname
-  ctx.fillStyle = '#888';
-  ctx.font = `${h*0.12}px 'Segoe UI',Arial`;
-  ctx.fillText(street.length > 18 ? street.slice(0, 17) + '…' : street, cx, cy + h*0.38);
-
-  // Gang-Anzeige (links)
+  // Gang oben links
   ctx.fillStyle = '#ffcc00';
-  ctx.font = `bold ${h*0.35}px 'Segoe UI',Arial`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('D' + gear, rx + w*0.06, cy - h*0.08);
+  ctx.font = `bold ${h*0.28}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'left';
+  ctx.fillText('D' + gear, rx + w*0.07, ry + h*0.22);
+
+  // Temp unten (fiktiv)
+  ctx.fillStyle = '#4fc3f7';
+  ctx.font = `${h*0.13}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'center';
+  ctx.fillText('20°', cx - w*0.28, cy + h*0.40);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(street.length > 12 ? street.slice(0,11)+'…' : street, cx + w*0.12, cy + h*0.40);
+}
+
+// Lüftungsschlitze (Golf-7-typische horizontale Lamellen)
+function _drawVents(ctx, x, y, w, h) {
+  ctx.save();
+  ctx.fillStyle = '#0e0e0e';
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 5); ctx.fill();
+  ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 1; ctx.stroke();
+  const count = 6, gap = h / (count + 1);
+  for (let i = 0; i < count; i++) {
+    const sy = y + gap * (i + 0.7), lh = gap * 0.55;
+    const lg = ctx.createLinearGradient(x, sy, x, sy + lh);
+    lg.addColorStop(0,   '#545454');
+    lg.addColorStop(0.45,'#888');
+    lg.addColorStop(1,   '#2e2e2e');
+    ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.roundRect(x + 3, sy, w - 6, lh, 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Infotainment-Navi-Screen (Golf-7 Discover-Pro-Stil)
+function _drawNavScreen(ctx, x, y, w, h) {
+  const arrow = document.getElementById('nav-arrow')?.textContent || '⬆';
+  const dist  = document.getElementById('nav-dist')?.textContent  || '–';
+  const next  = document.getElementById('nav-next')?.textContent  || '';
+  const soon  = document.getElementById('nav-panel')?.classList.contains('nav-soon') ?? false;
+
+  // Äußerer Bezel
+  ctx.save();
+  ctx.fillStyle = '#050505';
+  ctx.beginPath(); ctx.roundRect(x - 5, y - 5, w + 10, h + 10, 11); ctx.fill();
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x - 5, y - 5, w + 10, h + 10, 11); ctx.stroke();
+
+  // Bildschirmfläche clippen
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.clip();
+
+  // Karten-Hintergrund
+  const mapBg = ctx.createLinearGradient(x, y, x, y + h);
+  mapBg.addColorStop(0, '#0c1a2e');
+  mapBg.addColorStop(1, '#091422');
+  ctx.fillStyle = mapBg; ctx.fillRect(x, y, w, h);
+
+  // Dezentes Straßen-Raster
+  ctx.strokeStyle = 'rgba(20,50,90,0.7)'; ctx.lineWidth = 0.8;
+  const gs = Math.max(w, h) / 7;
+  for (let gx = x % gs; gx < x + w; gx += gs) {
+    ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx, y + h); ctx.stroke();
+  }
+  for (let gy = y % gs; gy < y + h; gy += gs) {
+    ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x + w, gy); ctx.stroke();
+  }
+
+  // Stilisierte Straßenlinie in Fahrtrichtung
+  ctx.strokeStyle = 'rgba(60,120,200,0.35)'; ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.5, y + h);
+  ctx.bezierCurveTo(x + w*0.5, y + h*0.65, x + w*0.52, y + h*0.45, x + w*0.5, y + h*0.25);
+  ctx.stroke();
+
+  // Obere Info-Leiste (Distanz)
+  const topH = h * 0.24;
+  const topCol = soon ? 'rgba(200,90,0,0.92)' : 'rgba(8,40,100,0.92)';
+  ctx.fillStyle = topCol;
+  ctx.fillRect(x, y, w, topH);
+
+  // Distanz
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.min(topH * 0.50, w * 0.14)}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(dist, x + w * 0.5, y + topH * 0.38);
+
+  // Nächste Straße
+  const nm = next.length > 22 ? next.slice(0, 21) + '…' : next;
+  ctx.fillStyle = soon ? '#ffd180' : '#90caf9';
+  ctx.font = `${Math.min(topH * 0.27, w * 0.068)}px 'Segoe UI',Arial`;
+  ctx.fillText(nm, x + w * 0.5, y + topH * 0.76);
+
+  // Großer Pfeil (Mitte)
+  const arrowSz = Math.min(h * 0.38, w * 0.42);
+  ctx.font = `${arrowSz}px sans-serif`;
+  ctx.fillStyle = soon ? '#ff9800' : '#4fc3f7';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(arrow, x + w * 0.5, y + topH + (h - topH) * 0.44);
+
+  // Positions-Dreieck (GPS-Marker)
+  const mx = x + w * 0.5, my = y + h * 0.78;
+  const ms = w * 0.06;
+  ctx.beginPath();
+  ctx.moveTo(mx, my - ms); ctx.lineTo(mx + ms*0.6, my + ms*0.5);
+  ctx.lineTo(mx - ms*0.6, my + ms*0.5); ctx.closePath();
+  ctx.fillStyle = '#1e88e5'; ctx.fill();
+
+  // Glasglanz
+  const gls = ctx.createLinearGradient(x, y, x + w * 0.5, y + h * 0.35);
+  gls.addColorStop(0, 'rgba(255,255,255,0.07)');
+  gls.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gls; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
+// Mittelkonsole mit DSG-Wahlhebel und Handbremse
+function _drawCenterConsole(ctx, W, H, gear) {
+  const cx = W * 0.465, cw = W * 0.095;
+  const cy = H * 0.63, ch = H * 0.37;
+
+  // Konsolen-Tunnel
+  const cg = ctx.createLinearGradient(cx - cw/2, 0, cx + cw/2, 0);
+  cg.addColorStop(0,   '#181818');
+  cg.addColorStop(0.35,'#262626');
+  cg.addColorStop(0.65,'#222222');
+  cg.addColorStop(1,   '#131313');
+  ctx.fillStyle = cg;
+  ctx.beginPath(); ctx.roundRect(cx - cw/2, cy, cw, ch, [10, 10, 0, 0]); ctx.fill();
+  ctx.strokeStyle = '#2c2c2c'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(cx - cw/2, cy, cw, ch, [10, 10, 0, 0]); ctx.stroke();
+
+  // DSG-Knopf
+  const kr = Math.min(cw * 0.22, H * 0.06);
+  const kx = cx, ky = cy + ch * 0.30;
+  const kg = ctx.createRadialGradient(kx - kr*0.3, ky - kr*0.3, 1, kx, ky, kr);
+  kg.addColorStop(0, '#555'); kg.addColorStop(1, '#1c1c1c');
+  ctx.beginPath(); ctx.arc(kx, ky, kr, 0, Math.PI * 2);
+  ctx.fillStyle = kg; ctx.fill();
+  ctx.strokeStyle = '#555'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.fillStyle = '#ffcc00';
+  ctx.font = `bold ${kr * 0.9}px 'Segoe UI',Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('D' + gear, kx, ky);
+
+  // P-Knopf (Feststellbremse)
+  const pr = kr * 0.65, px = cx, py = ky + kr * 2.2;
+  ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2);
+  ctx.fillStyle = '#aa0000'; ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${pr}px 'Segoe UI',Arial`;
+  ctx.fillText('P', px, py);
 }
 
 // 7-Gang-DSG: Schaltpunkte in km/h
@@ -1871,87 +2005,132 @@ function drawCockpit() {
   const ctx = _cCtx, W = _cW, H = _cH;
   ctx.clearRect(0, 0, W, H);
 
-  const kmh = Math.abs(car.speed) * 3.6;
-  const rpm = _speedToRPM(kmh);
+  const kmh  = Math.abs(car.speed) * 3.6;
+  const rpm  = _speedToRPM(kmh);
   const gear = _estGear(kmh);
+  const street = document.getElementById('street-lbl')?.textContent || '';
 
-  // ── Armaturenbrett-Karosserie ──────────────────────────────────────────────
+  // ── 1. ARMATURENBRETT-KÖRPER ────────────────────────────────────────────────
+  // Obere Kontur: in der Mitte tiefer (Golf-7-typische geschwungene Linie)
+  const dashTopY = x => H * 0.14 - H * 0.09 * (1 - ((x / W - 0.5) * 2) ** 2);
+
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(0, H*0.32);
-  ctx.bezierCurveTo(W*0.12, H*0.08, W*0.88, H*0.08, W, H*0.32);
-  ctx.lineTo(W, H);
-  ctx.lineTo(0, H);
-  ctx.closePath();
-  const dashGrad = ctx.createLinearGradient(0, H*0.08, 0, H);
-  dashGrad.addColorStop(0,   '#252525');
-  dashGrad.addColorStop(0.2, '#181818');
-  dashGrad.addColorStop(1,   '#111111');
+  ctx.moveTo(0, dashTopY(0));
+  for (let x = 4; x <= W; x += 4) ctx.lineTo(x, dashTopY(x));
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  const dashGrad = ctx.createLinearGradient(0, 0, 0, H);
+  dashGrad.addColorStop(0,    '#2a2a2a');
+  dashGrad.addColorStop(0.15, '#212121');
+  dashGrad.addColorStop(0.55, '#1a1a1a');
+  dashGrad.addColorStop(1,    '#111');
   ctx.fillStyle = dashGrad; ctx.fill();
+  ctx.restore();
 
-  // Zier-Chromleiste oben
+  // Chrom-Ziernaht oben
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(0, H*0.32);
-  ctx.bezierCurveTo(W*0.12, H*0.08, W*0.88, H*0.08, W, H*0.32);
-  ctx.strokeStyle = 'rgba(160,160,160,0.35)'; ctx.lineWidth = 2.5;
-  ctx.stroke();
+  ctx.moveTo(0, dashTopY(0));
+  for (let x = 4; x <= W; x += 4) ctx.lineTo(x, dashTopY(x));
+  ctx.strokeStyle = 'rgba(140,140,140,0.40)'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.restore();
 
-  // ── Instrumenten-Bereich (leicht hervorgehoben) ────────────────────────────
-  const instrX = W*0.08, instrY = H*0.06, instrW = W*0.84, instrH = H*0.80;
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.beginPath(); ctx.roundRect(instrX, instrY, instrW, instrH, 14);
-  ctx.fill();
+  // Unterer Armaturenbrett-Streifen (leichtes Kontrastband – VW Hartplastik)
+  const trimY = H * 0.70;
+  const trimG = ctx.createLinearGradient(0, trimY, 0, H);
+  trimG.addColorStop(0, '#282828'); trimG.addColorStop(1, '#161616');
+  ctx.fillStyle = trimG; ctx.fillRect(0, trimY, W, H - trimY);
+  // Abgrenzungsleiste
+  ctx.strokeStyle = 'rgba(80,80,80,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, trimY); ctx.lineTo(W, trimY); ctx.stroke();
 
-  // ── Instrumenten-Skalen ────────────────────────────────────────────────────
-  const gaugeR = Math.min(H * 0.43, W * 0.14);
-  const gY     = H * 0.52;
-  const gLX    = W * 0.22;   // Drehzahl links
-  const gRX    = W * 0.78;   // Tacho rechts
+  // ── 2. BINNACLE (Instrumenten-Hutze) ───────────────────────────────────────
+  // Linke Hälfte: tiefer schwarzer Kasten hinter dem Lenkrad
+  const binnX = W * 0.03, binnW = W * 0.44;
+  const binnY = H * 0.02, binnH = H * 0.68;
 
-  // Drehzahlmesser (links)
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(binnX, binnY, binnW, binnH, [0, 0, 12, 12]);
+  const binnG = ctx.createLinearGradient(binnX, binnY, binnX, binnY + binnH);
+  binnG.addColorStop(0, '#090909'); binnG.addColorStop(0.65, '#111');
+  binnG.addColorStop(1,  '#1a1a1a');
+  ctx.fillStyle = binnG; ctx.fill();
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 5;
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.restore();
+
+  // ── 3. INSTRUMENTE ─────────────────────────────────────────────────────────
+  const binnCX  = binnX + binnW / 2;
+  const gaugeR  = Math.min(H * 0.38, binnW * 0.20);
+  const gY      = H * 0.47;
+  const gOffset = binnW * 0.29;
+  const gLX     = binnCX - gOffset;   // RPM-Mitte
+  const gRX     = binnCX + gOffset;   // Tacho-Mitte
+
   _gauge(ctx, gLX, gY, gaugeR, {
     maxV: 7, step: 1, subStep: 0.5,
     labelEvery: 1, labelFn: v => v > 0 ? String(v) : '',
-    unit: '×1000/min',
-    value: rpm / 1000,
-    redFrom: 6
+    unit: '×1000/min', value: rpm / 1000, redFrom: 6
   });
-
-  // Geschwindigkeitsmesser (rechts)
   _gauge(ctx, gRX, gY, gaugeR, {
     maxV: 260, step: 20, subStep: 10,
-    labelEvery: 40, labelFn: v => String(v),
-    unit: 'km/h',
-    value: kmh
+    labelEvery: 40, unit: 'km/h', value: kmh
   });
 
-  // Warnanzeige 0-Markierung (linker weißer Strich)
-  // (schon durch Tick enthalten)
-
-  // ── MFD-Mitteldisplay ──────────────────────────────────────────────────────
-  const mfdW = Math.min(W*0.26, gaugeR*2.2);
+  // Kleines Cluster-MFD (zwischen den Skalen)
+  const mfdW = Math.min(gOffset * 1.15, gaugeR * 1.6);
   const mfdH = mfdW * 0.60;
-  const street = document.getElementById('street-lbl')?.textContent || '';
-  _drawMFD(ctx, W*0.50, gY - gaugeR*0.10, mfdW, mfdH, kmh, gear, street);
+  _drawMFD(ctx, binnCX, gY, mfdW, mfdH, kmh, gear, street);
 
-  // ── Lenkrad (unten mittig, halb sichtbar) ─────────────────────────────────
-  const swR = Math.min(H * 0.55, W * 0.18);
-  _drawSteeringWheel(ctx, W*0.5, H + swR*0.05, swR, -car.steer * 1.8);
+  // ── 4. LÜFTUNGSSCHLITZE (Übergang Binnacle → Infotainment) ─────────────────
+  const ventX = binnX + binnW + W * 0.012;
+  const ventW = W * 0.038;
+  const ventY = H * 0.18, ventH = H * 0.40;
+  _drawVents(ctx, ventX, ventY, ventW, ventH);
 
-  // ── Rückspiegel-Chromrahmen (oben mittig, sichtbar über 3D-Plane) ─────────
-  // Die eigentliche Spiegelfläche ist die 3D-RenderTarget-Plane.
-  // Hier zeichnen wir nur Beschriftung + untere Ziernaht.
-  const mfW = Math.min(W*0.28, 280), mfH = 20;
-  const mfX = (W - mfW) / 2, mfY = 2;
-  ctx.strokeStyle = 'rgba(180,180,180,0.5)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(mfX - 2, mfY, mfW + 4, mfH + 4, 4);
-  ctx.stroke();
+  // ── 5. INFOTAINMENT-NAVI-SCREEN ─────────────────────────────────────────────
+  const scrnX = ventX + ventW + W * 0.010;
+  const scrnW = W * 0.31;
+  const scrnY = H * 0.05;
+  const scrnH = H * 0.62;
+  _drawNavScreen(ctx, scrnX, scrnY, scrnW, scrnH);
+
+  // Lüftungsschlitze rechts des Screens (Beifahrerseite)
+  const vr2X = scrnX + scrnW + W * 0.010;
+  const vr2W = W * 0.038;
+  _drawVents(ctx, vr2X, ventY, vr2W, ventH);
+
+  // ── 6. MITTELKONSOLE & DSG-WAHLHEBEL ───────────────────────────────────────
+  _drawCenterConsole(ctx, W, H, gear);
+
+  // ── 7. LENKRAD (links unten, halb sichtbar) ─────────────────────────────────
+  // Mittelachse ca. unter der Binnacle, Fahrerperspektive
+  const swR = Math.min(H * 0.56, binnW * 0.50);
+  const swX = binnCX;
+  const swY = H + swR * 0.12;
+  _drawSteeringWheel(ctx, swX, swY, swR, -car.steer * 1.8);
+
+  // ── 8. LENKSÄULEN-ABDECKUNG (Übergang Lenkrad → Dashboard) ─────────────────
+  ctx.save();
+  const colW = swR * 0.30, colX = swX - colW / 2;
+  const colY = H * 0.68;
+  const colG = ctx.createLinearGradient(colX, 0, colX + colW, 0);
+  colG.addColorStop(0, '#111'); colG.addColorStop(0.5, '#2a2a2a');
+  colG.addColorStop(1, '#111');
+  ctx.fillStyle = colG;
+  ctx.fillRect(colX, colY, colW, H - colY);
+  ctx.restore();
+
+  // ── 9. RÜCKSPIEGEL-CHROMRAHMEN (oben mittig) ────────────────────────────────
+  const mfW = Math.min(W * 0.28, 280), mfH = 20;
+  const mfX = (W - mfW) / 2;
+  ctx.strokeStyle = 'rgba(180,180,180,0.5)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(mfX - 2, 2, mfW + 4, mfH + 4, 4); ctx.stroke();
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath(); ctx.roundRect(mfX - 2, mfY, mfW + 4, mfH + 4, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(mfX - 2, 2, mfW + 4, mfH + 4, 4); ctx.fill();
   ctx.fillStyle = 'rgba(180,180,180,0.45)';
   ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('◀ Rückansicht ▶', W/2, mfY + mfH/2 + 2);
+  ctx.fillText('◀ Rückansicht ▶', W / 2, 2 + (mfH + 4) / 2);
 }
 
 // ── Fahrzeugzustand ───────────────────────────────────────────────────────────
