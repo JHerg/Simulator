@@ -3005,8 +3005,9 @@ function drawMinimap() {
 // ── OSM-Gebäude: Hilfsfunktionen ─────────────────────────────────────────────
 
 function nearRoute(cx, cz, maxDist) {
-  for (const wp of WP)
-    if (Math.hypot(cx - wp.x, cz - wp.z) < maxDist) return true;
+  // Segment-Abstand statt nur WP-Punktabstand → lückenlose Prüfung auch bei langen Abschnitten
+  for (let i = 0; i < WP.length - 1; i++)
+    if (distToSeg(cx, cz, WP[i].x, WP[i].z, WP[i+1].x, WP[i+1].z) < maxDist) return true;
   return false;
 }
 
@@ -3115,7 +3116,7 @@ function buildOSMBuildings(elements, nodes) {
     ];
   });
 
-  const maxBld = isMobile ? 130 : 400;
+  const maxBld = isMobile ? 160 : 600;
   let count = 0;
 
   elements.filter(e => e.type === 'way' && e.tags && e.tags.building).forEach(way => {
@@ -3126,7 +3127,15 @@ function buildOSMBuildings(elements, nodes) {
 
     const cx = pts.reduce((s,p) => s+p[0], 0) / pts.length;
     const cz = pts.reduce((s,p) => s+p[1], 0) / pts.length;
-    if (!nearRoute(cx, cz, 72)) return;
+    if (!nearRoute(cx, cz, 80)) return;
+
+    // ── Ausschlusszonen manuell gebauter Gebäude ──────────────────────────────
+    // 1. Altbaumburgweg 2 – Haus, Gartenhaus, Stellplatz, Garten
+    //    Grundstück: x ∈ [−22, −1], z ∈ [−67, −40]
+    if (cx > -22 && cx < -1 && cz > -67 && cz < -40) return;
+    // 2. Schiefersburger Weg 54 – Oma-Stopp-Gebäude (OMA_CX/CZ aus buildOmaStop)
+    if (OMA_CX !== 0 && Math.hypot(cx - OMA_CX, cz - OMA_CZ) < 55) return;
+
     // Centroid UND alle Eckpunkte prüfen – verhindert Gebäude die in die Fahrbahn ragen
     if (onRouteCorridor(cx, cz)) return;
     if (pts.some(([px, pz]) => onRouteCorridor(px, pz))) return;
