@@ -601,6 +601,9 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SSAOPass }        from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+import { Sky }             from 'three/addons/objects/Sky.js';
 
 function bootMsg(text, pct) {
   document.getElementById('boot-msg').textContent = text;
@@ -842,24 +845,24 @@ const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, isMobil
 cam.rotation.order = 'YXZ';
 
 // ── Beleuchtung ───────────────────────────────────────────────────────────────
-const sun = new THREE.DirectionalLight(0xfff5d0, 1.4);
+const sun = new THREE.DirectionalLight(0xfff5d0, 2.2);
 sun.position.set(-300, 600, -200);
 if (!isMobile) {
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = sun.shadow.camera.bottom = -500;
   sun.shadow.camera.right = sun.shadow.camera.top  =  500;
   sun.shadow.camera.far = 1400;
 }
 scene.add(sun);
-scene.add(new THREE.AmbientLight(0xc8d8ff, 0.65));
-scene.add(new THREE.HemisphereLight(0x87ceeb, 0x345a20, 0.45));
+scene.add(new THREE.AmbientLight(0xc8d8ff, 0.30));
+scene.add(new THREE.HemisphereLight(0x87ceeb, 0x345a20, 0.75));
 
 // ── Boden ─────────────────────────────────────────────────────────────────────
 // Boden deckt die gesamte Route ab: Start (0,0) → Stadion (~-3900m, ~5300m)
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(9000, 10000),
-  new THREE.MeshLambertMaterial({ color: 0x3c6b2c })
+  new THREE.MeshStandardMaterial({ color: 0x3c6b2c, roughness: 1.0, metalness: 0.0 })
 );
 ground.rotation.x = -Math.PI / 2;
 ground.position.set(-1900, 0, 2700);
@@ -889,9 +892,9 @@ function roadGeo(ax, az, bx, bz, width, y) {
 (function buildRoute() {
   // Nasse Straße: MeshStandardMaterial mit Metallness/Roughness → Spiegelung
   const asphalt = cfg.weather === 'rain'
-    ? new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.22, metalness: 0.28 })
-    : new THREE.MeshLambertMaterial({ color: 0x2e2e2e });
-  const sidewalk  = new THREE.MeshLambertMaterial({ color: 0xb8a898 });
+    ? new THREE.MeshStandardMaterial({ color: 0x252525, roughness: 0.16, metalness: 0.35 })
+    : new THREE.MeshStandardMaterial({ color: 0x2e2e2e, roughness: 0.82, metalness: 0.03 });
+  const sidewalk  = new THREE.MeshStandardMaterial({ color: 0xb8a898, roughness: 0.90, metalness: 0.0 });
   const dashMat   = new THREE.MeshBasicMaterial({ color: 0xeeeecc });
 
   for (let i = 0; i < WP.length - 1; i++) {
@@ -980,11 +983,11 @@ const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
 
 // ── Bäume ─────────────────────────────────────────────────────────────────────
 (function buildTrees() {
-  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6b3f1e });
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b3f1e, roughness: 0.95, metalness: 0.0 });
   const crownMats = [
-    new THREE.MeshLambertMaterial({ color: 0x2d7a2d }),
-    new THREE.MeshLambertMaterial({ color: 0x1e6b1e }),
-    new THREE.MeshLambertMaterial({ color: 0x3a8a28 }),
+    new THREE.MeshStandardMaterial({ color: 0x2d7a2d, roughness: 0.90, metalness: 0.0 }),
+    new THREE.MeshStandardMaterial({ color: 0x1e6b1e, roughness: 0.88, metalness: 0.0 }),
+    new THREE.MeshStandardMaterial({ color: 0x3a8a28, roughness: 0.85, metalness: 0.0 }),
   ];
   const rng = (() => { let s=9876543; return ()=>{ s=(s*1664525+1013904223)&0x7fffffff; return s/0x7fffffff; }; })();
   const treeSpacing = isMobile ? 25 : 14;
@@ -3111,8 +3114,8 @@ function buildOSMBuildings(elements, nodes) {
     tex.wrapS = THREE.RepeatWrapping;
     tex.repeat.set(3, 1);   // ~3 Wiederholungen über Gebäudeumfang
     return [
-      new THREE.MeshLambertMaterial({ color: ROOF_COLS[i % ROOF_COLS.length] }),
-      new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({ color: ROOF_COLS[i % ROOF_COLS.length], roughness: 0.90, metalness: 0.05 }),
+      new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.0 }),
     ];
   });
 
@@ -5177,21 +5180,39 @@ function loop(now) {
   drawCockpit();
 }
 
-// ── Bloom / Post-Processing ───────────────────────────────────────────────────
-function setupBloom() {
-  if (isMobile) return;   // Performance: kein Bloom auf Mobilgeräten
+// ── Post-Processing (SSAO + optionaler Bloom + Output) ───────────────────────
+function setupComposer() {
+  if (isMobile) return;
   const isNight = cfg.time    === 'night';
   const isRain  = cfg.weather === 'rain';
-  // Nur bei Nacht oder Regen aktivieren (tagsüber klarer Himmel braucht kein Bloom)
-  const strength = isNight && isRain ? 1.1 : isNight ? 1.2 : isRain ? 0.3 : 0;
-  if (strength === 0) return;
-  const threshold = isNight ? 0.72 : 0.90;
+
   composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, cam));
-  composer.addPass(new UnrealBloomPass(
-    new THREE.Vector2(innerWidth, innerHeight), strength, 0.4, threshold
-  ));
+
+  // SSAO – nur bei WebGL2 und Tageszeit (tagsüber macht Ambient Occlusion am meisten)
+  const gl = renderer.getContext();
+  const hasWebGL2 = (gl instanceof WebGL2RenderingContext);
+  if (hasWebGL2 && !isNight) {
+    const ssao = new SSAOPass(scene, cam, innerWidth, innerHeight);
+    ssao.kernelRadius  = 10;
+    ssao.minDistance   = 0.001;
+    ssao.maxDistance   = 0.03;
+    composer.addPass(ssao);
+  }
+
+  // Bloom – nur bei Nacht oder Regen
+  const bloomStrength = isNight && isRain ? 1.1 : isNight ? 1.2 : isRain ? 0.3 : 0;
+  if (bloomStrength > 0) {
+    const threshold = isNight ? 0.72 : 0.90;
+    composer.addPass(new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight), bloomStrength, 0.4, threshold
+    ));
+  }
+
+  composer.addPass(new OutputPass());
 }
+// Alias für Abwärtskompatibilität (wird in applyConfig aufgerufen)
+function setupBloom() { setupComposer(); }
 
 // ── Konfiguration anwenden ────────────────────────────────────────────────────
 (function applyConfig() {
@@ -5207,10 +5228,30 @@ function setupBloom() {
   } else if (isRain) {
     skyCol=0x7a8fa8; fogNear=40; fogFar=isMobile?260:560;
   } else {
-    skyCol=0x6ab4e8; fogNear=150; fogFar=isMobile?600:1100;
+    skyCol=0xaaccff; fogNear=150; fogFar=isMobile?600:1100;
   }
-  scene.background = new THREE.Color(skyCol);
-  scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
+
+  if (!isNight && !isRain) {
+    // Physikalischer Himmel mit THREE.Sky (nur tagsüber / klar)
+    const sky = new Sky();
+    sky.scale.setScalar(450000);
+    scene.add(sky);
+    const skyUni = sky.material.uniforms;
+    skyUni['turbidity'].value     = 10;
+    skyUni['rayleigh'].value      = 2;
+    skyUni['mieCoefficient'].value = 0.005;
+    skyUni['mieDirectionalG'].value = 0.7;
+    const sunDir = new THREE.Vector3();
+    const phi   = THREE.MathUtils.degToRad(90 - 42);  // elevation 42°
+    const theta = THREE.MathUtils.degToRad(180);
+    sunDir.setFromSphericalCoords(1, phi, theta);
+    skyUni['sunPosition'].value.copy(sunDir);
+    scene.background = null;
+    scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
+  } else {
+    scene.background = new THREE.Color(skyCol);
+    scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
+  }
 
   if (isNight) { applyNightMode(); buildStreetLamps(); buildStadiumNightLighting(); }
   if (isNight || isRain) initHeadlights();
