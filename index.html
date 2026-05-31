@@ -603,6 +603,7 @@ import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { SSAOPass }        from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass }        from 'three/addons/postprocessing/SMAAPass.js';
 import { Sky }             from 'three/addons/objects/Sky.js';
 
 function bootMsg(text, pct) {
@@ -831,6 +832,8 @@ renderer.shadowMap.enabled = !isMobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+if ('useLegacyLights' in renderer) renderer.useLegacyLights = false; // physikalisch korrekte Lichteinheiten
 let composer = null;  // EffectComposer für Bloom (initialisiert in setupBloom())
 let pokalBanner = null; // Billboard – immer zur Kamera gedreht (gesetzt in buildStadiumAtmosphere)
 let stadiumWall = null, stadiumRoof = null; // Referenzen für Nacht-Materialwechsel
@@ -853,6 +856,9 @@ if (!isMobile) {
   sun.shadow.camera.left = sun.shadow.camera.bottom = -500;
   sun.shadow.camera.right = sun.shadow.camera.top  =  500;
   sun.shadow.camera.far = 1400;
+  sun.shadow.bias = -0.0004;        // gegen Shadow-Acne
+  sun.shadow.normalBias = 0.02;     // gegen Peter-Panning / Lichtleck
+  sun.shadow.radius = 3;            // weichere Schattenkanten (PCFSoft)
 }
 scene.add(sun);
 scene.add(new THREE.AmbientLight(0xc8d8ff, 0.30));
@@ -5186,18 +5192,26 @@ function setupComposer() {
   const isNight = cfg.time    === 'night';
   const isRain  = cfg.weather === 'rain';
 
-  composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, cam));
+  // Multisampling-Renderziel: bewahrt MSAA-Kantenglättung trotz Post-Processing
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const rt = new THREE.WebGLRenderTarget(size.x, size.y, {
+    type: THREE.HalfFloatType,   // HDR-Zwischenpuffer für saubere Tone-Mapping
+    samples: 4,
+  });
+  composer = new EffectComposer(renderer, rt);
 
-  // SSAO – nur bei WebGL2 und Tageszeit (tagsüber macht Ambient Occlusion am meisten)
   const gl = renderer.getContext();
-  const hasWebGL2 = (gl instanceof WebGL2RenderingContext);
+  const hasWebGL2 = (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
+
+  // SSAO rendert die Szene selbst → ersetzt den RenderPass (nur Tag/WebGL2)
   if (hasWebGL2 && !isNight) {
     const ssao = new SSAOPass(scene, cam, innerWidth, innerHeight);
     ssao.kernelRadius  = 10;
     ssao.minDistance   = 0.001;
     ssao.maxDistance   = 0.03;
     composer.addPass(ssao);
+  } else {
+    composer.addPass(new RenderPass(scene, cam));
   }
 
   // Bloom – nur bei Nacht oder Regen
@@ -5209,7 +5223,12 @@ function setupComposer() {
     ));
   }
 
+  // Tone-Mapping + sRGB
   composer.addPass(new OutputPass());
+
+  // SMAA – glättet Kanten nach allen Effekten (HDR→LDR ist bereits erfolgt)
+  const smaa = new SMAAPass(size.x, size.y);
+  composer.addPass(smaa);
 }
 // Alias für Abwärtskompatibilität (wird in applyConfig aufgerufen)
 function setupBloom() { setupComposer(); }
@@ -5235,10 +5254,9 @@ function setupBloom() { setupComposer(); }
     // Physikalischer Himmel mit THREE.Sky (nur tagsüber / klar)
     const sky = new Sky();
     sky.scale.setScalar(450000);
-    scene.add(sky);
     const skyUni = sky.material.uniforms;
-    skyUni['turbidity'].value     = 10;
-    skyUni['rayleigh'].value      = 2;
+    skyUni['turbidity'].value     = 8;
+    skyUni['rayleigh'].value      = 1.6;
     skyUni['mieCoefficient'].value = 0.005;
     skyUni['mieDirectionalG'].value = 0.7;
     const sunDir = new THREE.Vector3();
@@ -5246,6 +5264,23 @@ function setupBloom() { setupComposer(); }
     const theta = THREE.MathUtils.degToRad(180);
     sunDir.setFromSphericalCoords(1, phi, theta);
     skyUni['sunPosition'].value.copy(sunDir);
+
+    // ── Image-Based Lighting: Environment-Map aus dem Himmel erzeugen ──────────
+    // Alle PBR-Materialien (Straße, Gebäude, Auto) spiegeln so den realen Himmel
+    // und erhalten realistische Umgebungsbeleuchtung statt flachem Ambient.
+    if (!isMobile) {
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        const envScene = new THREE.Scene();
+        envScene.add(sky);
+        const envRT = pmrem.fromScene(envScene);
+        scene.environment = envRT.texture;
+        scene.environmentIntensity = 0.9;
+        pmrem.dispose();
+      } catch (e) { /* IBL optional – bei Fehler einfach ohne */ }
+    }
+    scene.add(sky);
     scene.background = null;
     scene.fog = new THREE.Fog(skyCol, fogNear, fogFar);
   } else {
