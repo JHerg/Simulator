@@ -678,10 +678,10 @@ function ll(lat, lng){ return { x:(lng-LNG0)*mLng, z:(LAT0-lat)*mLat }; }
 //   Szene → GPS:  lat = LAT0 − z/mLat   |   lng = LNG0 + x/mLng
 const WP = [
 
-  // ── 1. Altbaumburgweg (kurzes Stück, dann 90° RECHTS) ───────────────
-  //   Start: Hofausfahrt (−10, −45)
-  { street:"Altbaumburgweg",            x:-10, z:-45, tl:false, width:6  },
-  //   Ecke Scharfeneckweg (0, −45)
+  // ── 1. Altbaumburgweg (langer Abschnitt westwärts, dann 90° RECHTS) ──────
+  //   Start: weit im Westen (−80, −45)
+  { street:"Altbaumburgweg",            x:-80, z:-45, tl:false, width:6  },
+  //   Ecke Scharfeneckweg (0, −45) – Hofausfahrt liegt bei x≈−10 dazwischen
   { street:"Altbaumburgweg",            x:0,   z:-45, tl:false, width:6  },
 
   // ── 1b. Scharfeneckweg (≈100 m südwärts, dann 90° RECHTS) ───────────
@@ -787,13 +787,13 @@ const LIMITS = {
 function streetLimit(s){ return LIMITS[s] || 50; }
 
 // ── Hofeinfahrt-Koordinaten (früh berechnet für car-Startposition) ──────────
-// Grundstück liegt NÖRDLICH des Altbaumburgwegs (WP[0]=(-10,-45)).
-// Lokaler Rahmen: x = WP0.x + s (Osten = Richtung Hecke/Scharfeneckweg),
-//                 z = WP0.z - d (Norden = in die Tiefe ins Grundstück)
+// Grundstück liegt NÖRDLICH des Altbaumburgwegs, Einfahrt bei x≈−10, z=−45.
+// Lokaler Rahmen: BASE_X=−10, BASE_Z=−45  (WP[0] wurde nach Westen verschoben)
+const HOME_BASE_X = -10, HOME_BASE_Z = -45;
 let HOME_CX = 0, HOME_CZ = 0;
 {
-  HOME_CX = WP[0].x + 2;     // Stellplatz: Ostspalte (x ≈ −8)
-  HOME_CZ = WP[0].z - 6;     // 6 m in die Tiefe
+  HOME_CX = HOME_BASE_X + 2;  // Stellplatz: Ostspalte → x = −8
+  HOME_CZ = HOME_BASE_Z - 6;  // 6 m in die Tiefe  → z = −51
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -3135,13 +3135,13 @@ function setupParkingAndFootball() {
 
 // ── Hofeinfahrt / Heimpark ────────────────────────────────────────────────────
 function buildHomePark() {
-  // Grundstück liegt NÖRDLICH des Altbaumburgwegs (WP[0]=(-10,-45) → WP[1]=(0,-45)).
-  // Lokaler Rahmen:  p(d, s) = { x: WP0.x + s,  z: WP0.z - d }
+  // Grundstück liegt NÖRDLICH des Altbaumburgwegs, Einfahrt bei (−10, −45).
+  // Lokaler Rahmen:  p(d, s) = { x: HOME_BASE_X + s,  z: HOME_BASE_Z - d }
   //   d = Tiefe nach NORDEN ins Grundstück
   //   s = Versatz nach OSTEN entlang Altbaumburgweg (+s → Hecke/Scharfeneckweg)
   // Fassaden zeigen nach SÜDEN (+z) zur Straße.  Auto parkt mit Nase nach Osten (zur Hecke).
   // Scharfeneckweg liegt bei x∈[-3,3]; daher Hecke/Grundstück westlich davon (x < −3).
-  const p = (d, s) => ({ x: WP[0].x + s, z: WP[0].z - d });
+  const p = (d, s) => ({ x: HOME_BASE_X + s, z: HOME_BASE_Z - d });
 
   // ════════════════════════════════════════════════════════════════════════
   //  GRUNDRISS (von der Straße ins Grundstück geblickt):
@@ -3460,13 +3460,13 @@ function checkParking() {
 
 // ── Oma-Stopp Schiefersburger Weg 54: Gebäude, Parkfläche, Einfahrt ───────────
 function buildOmaStop() {
-  // Segment Schiefersburger Weg: WP[6] → WP[7] (westwärts, z konstant)
-  const A = WP[6], B = WP[7];
+  // Segment Schiefersburger Weg: WP[8] → WP[9] (westwärts, z konstant)
+  const A = WP[8], B = WP[9];
   const dx = B.x - A.x, dz = B.z - A.z;
   const len = Math.hypot(dx, dz) || 1;
   const fx = dx / len, fz = dz / len;          // Fahrtrichtung (westwärts)
   const rx = -fz, rz = fx;                       // rechts = Nordseite
-  // Basispunkt auf der Straße: kurz vor der Abbiegung (18 m vor WP[7])
+  // Basispunkt auf der Straße: kurz vor der Abbiegung (18 m vor WP[9])
   const baseX = B.x - fx * 18, baseZ = B.z - fz * 18;
   const halfW = (A.width || 7) / 2;
 
