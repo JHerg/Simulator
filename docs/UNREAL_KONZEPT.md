@@ -37,6 +37,11 @@ bleiben muss:
   Bewegung — Federung, Reifengrip, Gewichtsverlagerung.
 - **Skalierbare Welt:** World Partition + Level Streaming, damit die komplette
   ~4 km lange Strecke ohne Ladebalken befahrbar ist.
+- **1:1-Maßstab:** Alle Straßenlängen und Abstände exakt aus OSM-GPS-Daten
+  (via `GeoConvertLibrary`). Im Browser-Prototyp waren Straßen manuell
+  geschätzt und zu lang — in UE5 entspricht 1 Meter im Spiel 1 echten Meter.
+- **Fotorealistische Hero-Gebäude** via Photogrammetrie (RealityScan): eigenes
+  Haus, Oma-Haus und weitere markante Gebäude als echte 3D-Scans. Siehe §6.10.
 - **Saubere Trennung** von Daten (Strecke, POIs), Logik (Gameplay) und
   Präsentation (Materialien, Effekte) — im Browser-Prototyp steckt alles in
   einer Datei.
@@ -303,6 +308,56 @@ OSM (OpenStreetMap) steht unter der ODbL-Lizenz — kostenlos, auch für
 eigene Spiele nutzbar, solange die Quellenangabe erhalten bleibt.
 Qualitativ ist OSM für Köln/Bilderstöckchen sehr vollständig.
 
+### 6.10 Photogrammetrie — fotorealistische Hero-Gebäude
+
+> Ziel: Altbaumburgweg 2 und Schiefersburger Weg 54 sollen so aussehen,
+> als würde man ein Foto anschauen. Fotos mit dem Handy machen → Software
+> errechnet daraus ein fotorealistisches 3D-Modell. Professionelle Studios
+> nutzen exakt diesen Workflow.
+
+**Werkzeugkette (kostenlos):**
+
+1. **RealityScan** (App von Epic Games, iOS + Android, kostenlos)
+   - Fotos direkt in der App aufnehmen → automatische 3D-Rekonstruktion
+   - Ergebnis direkt als Mesh in UE5 importierbar
+   - Ideal für Gebäude-Außenfassaden
+
+2. Alternativ: **Meshroom** (PC-Software, open source, kostenlos)
+   - Mehr Kontrolle, besser für große Objekte
+   - Benötigt eine NVIDIA-GPU (der UM790 Pro hat nur iGPU → RealityScan bevorzugen)
+
+**Fotoprotokoll pro Gebäude (~60–80 Fotos, 30 Minuten):**
+
+| Was | Fotos | Hinweis |
+|---|---|---|
+| Rundgang ums Haus (Hüfthöhe) | 30–40 | Gleichmäßiger Abstand ~8m, alle 2m ein Foto |
+| Jede Fassade frontal | 10–15 | Von links, Mitte, rechts |
+| Ecken diagonal | 8–10 | Verbindet die Fassaden im Modell |
+| Dach (von Straße aus, Blick hoch) | 5–8 | Drohne wäre ideal, aber nicht Pflicht |
+| Wichtige Details (Türen, Fenster) | 5–10 | Nahaufnahmen für Texturqualität |
+
+**Ideale Bedingungen:**
+- **Bewölkter Tag** (diffuses Licht, keine Schatten auf Fassaden)
+- Kein Regen (Reflexionen auf nassen Oberflächen verwirren die Software)
+- Keine Autos/Menschen im Weg (werden sonst ins Modell gebacken)
+- Handy-Kamera reicht vollständig aus (12 MP+)
+
+**Prioritäten-Liste Hero-Gebäude:**
+1. **Altbaumburgweg 2** (dein Haus — Start des Spiels, höchste Sichtbarkeit)
+2. **Schiefersburger Weg 54** (Oma-Haus — wichtiger Gameplay-Moment)
+3. **RheinEnergie-Stadion Außenfassade** (öffentliches Gebäude, Drohnenfotos erlaubt)
+4. Weitere markante Gebäude entlang der Route nach Belieben
+
+**Wichtig zu den Rechten:**
+- Fotos von **privaten Gebäuden von der Straße aus** sind in Deutschland erlaubt
+  (Panoramafreiheit, §59 UrhG) — auch für eigene Spielprojekte.
+- Das Spiel bleibt privat/nicht-kommerziell → kein Problem.
+
+**Ergebnis im Spiel:**
+Das Photogrammetrie-Modell wird als Nanite-Mesh importiert und georeferenziert
+an die exakte GPS-Position des Hauses gesetzt. Wer das Viertel kennt, erkennt
+sein Haus sofort.
+
 ---
 
 ## 7. Audio
@@ -396,18 +451,29 @@ und Straßengeräusche.
 - *Ziel: Release-Kandidat 1.0.*
 
 ### M6 — Free-Roaming „Bilderstöckchen" V1.1 (≈ 4–5 Wochen)
-- OSM-Straßennetz im 2 km-Radius um Altbaumburgweg vollständig importieren.
+- OSM-Straßennetz im **2 km-Radius** um Altbaumburgweg vollständig importieren.
+  Alle Abstände 1:1 real (GPS → Meter via GeoConvertLibrary, kein manuelles
+  Schätzen wie im Browser-Prototyp).
 - Gebäude-Batch (Blender+blender-osm) für den Radius, gleiche Materialien.
+- **Photogrammetrie-Hero-Assets** einbauen (siehe §6.10): Altbaumburgweg 2 +
+  Schiefersburger Weg 54 als fotorealistische RealityScan-Modelle.
 - World-Partition-Zellen für den erweiterten Bereich, Streaming-Budget prüfen.
 - NPC-Verkehr auf Hauptstraßen des Viertels.
 - Entdeckungs-Marker für bekannte Orte (optional).
-- *Ziel: Freies Fahren durch Bilderstöckchen ohne Zielvorgabe.*
+- *Ziel: Freies Fahren durch Bilderstöckchen — echte Abstände, erkennbare Häuser.*
 
-### Stretch-Goals (nach 1.1)
+### M7 — Free-Roaming Erweiterung auf 5 km V1.2 (≈ 3–4 Wochen)
+- OSM-Radius von 2 km auf **5 km** erweitern (~78 km² Fläche).
+- Umfasst dann: Bilderstöckchen, Bocklemünd, Vogelsang, Ossendorf, Ehrenfeld,
+  Nippes, Longerich — ein großer Teil von Köln-West/-Nord.
+- World-Partition und Streaming-Budget skalieren.
+- Weitere Photogrammetrie-Spots nach Bedarf.
+- *Ziel: Köln-Feeling auf Stadtteil-Ebene — freies Erkunden.*
+
+### Stretch-Goals (nach 1.2)
 - 3D-Cockpit mit funktionierenden Displays.
 - Chaos-Fahrphysik.
 - Dynamischer Tagesverlauf.
-- Free-Roaming-Radius auf 5 km erweitern (mehr Kölner Viertel).
 - VR-Modus.
 
 ---
