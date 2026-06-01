@@ -40,13 +40,18 @@ bleiben muss:
 - **Saubere Trennung** von Daten (Strecke, POIs), Logik (Gameplay) und
   Präsentation (Materialien, Effekte) — im Browser-Prototyp steckt alles in
   einer Datei.
+- **Free-Roaming-Zone (V1.1):** Frei befahrbares Viertel Bilderstöckchen im
+  2 km-Radius um den Altbaumburgweg — echte OSM-Straßen, echte Gebäude,
+  kein Zielpunkt, einfach fahren. Siehe §6.9.
 
 ### 1.3 Nicht-Ziele (Scope-Disziplin)
-- Kein Open-World-Köln. Nur der **Korridor entlang der Route** (≈ 80–120 m
-  je Seite) wird ausmodelliert. Das hält die Asset-Menge beherrschbar.
-- Kein Multiplayer, kein Schadensmodell, kein freies Roaming abseits der Route
-  in Version 1.0.
+- Kein Open-World-Köln. Version 1.0: nur der **Korridor entlang der Route**
+  (≈ 80–120 m je Seite). Version 1.1: **2 km-Radius Free-Roaming** rund um
+  den Altbaumburgweg (Bilderstöckchen) — geplant, aber nach 1.0.
+- Kein Multiplayer, kein Schadensmodell.
 - Kein Mobile-Build in 1.0 (UE5-Lumen-Zielplattform ist PC/Konsole).
+- **Keine Google-Maps-Daten** (Lizenzverbot für Spieleentwicklung). Wir nutzen
+  stattdessen OpenStreetMap (freie Lizenz) + Megascans-Texturen.
 
 ---
 
@@ -258,6 +263,46 @@ Der Prototyp simuliert ein 2D-Spiel und zeichnet es auf Canvas. In UE5:
 - Einfache **Parkzonen-Erkennung** (Overlap + Ausrichtungs-/Geschwindigkeits-
   prüfung), wie `checkParking()` / `checkHomePark()` / `checkOmaPark()`.
 
+### 6.9 Free-Roaming-Zone „Bilderstöckchen" (V1.1)
+
+> **Ziel:** Frei durch das echte Viertel fahren — kein Ziel, kein Timer,
+> einfach das Gefühl von GTA 5 im eigenen Stadtteil.
+
+**Geografischer Umfang:**
+- Mittelpunkt: Altbaumburgweg 2 (`LAT0=50.9674, LNG0=6.9382`)
+- Radius: **2 km** → ca. 4 km² Fläche
+- Umfasst: Bilderstöckchen, Teile von Bocklemünd, Vogelsang, Ossendorf
+- Straßen: vollständiges OSM-Netz im Radius (Hauptstraßen + Nebenstraßen)
+
+**Datenbasis (OSM, lizenzfrei):**
+- Overpass-Abfrage: `way["highway"](around:2000, 50.9674, 6.9382)` → alle
+  Straßen im 2 km-Radius
+- Gebäude: `way["building"](around:2000, 50.9674, 6.9382)` → Footprints
+  mit Höhen aus `building:levels`
+- Vegetation, Parkflächen, Gewässer aus OSM-Landuse-Daten
+
+**Technische Umsetzung:**
+- **Straßennetz:** OSM-Geometrie → Spline-Meshes (gleiche Pipeline wie die
+  Hauptroute, nur flächendeckend statt linear)
+- **Gebäude:** Batch-Import via Blender+blender-osm → Nanite-Meshes, gleiche
+  Fassadenmaterialien wie Hauptroute
+- **World Partition:** 2 km-Radius in ~16 Streaming-Zellen à 500×500 m;
+  nur die Zelle um den Spieler + Nachbarzellen geladen
+- **Verkehr:** vereinfachtes NPC-Netz auf Hauptstraßen des Viertels
+- **Kein Navi-Zwang:** freies Fahren ohne Wegpunkt-Führung; optionale
+  „Entdeckungs-Markers" (bekannte Orte im Viertel)
+
+**Abgrenzung zu V1.0:**
+- V1.0: nur der Korridor (80 m beidseitig der Route) — schneller fertig
+- V1.1: der volle 2 km-Radius — baut auf derselben Pipeline auf,
+  nur mehr Fläche. Kein Architektur-Umbau nötig.
+
+**Warum OSM und nicht Google Maps:**
+Google Maps verbietet die Nutzung für eigene Spiele ausdrücklich.
+OSM (OpenStreetMap) steht unter der ODbL-Lizenz — kostenlos, auch für
+eigene Spiele nutzbar, solange die Quellenangabe erhalten bleibt.
+Qualitativ ist OSM für Köln/Bilderstöckchen sehr vollständig.
+
 ---
 
 ## 7. Audio
@@ -350,11 +395,19 @@ und Straßengeräusche.
 - Bugfixing, Balancing, finaler Look-Dev.
 - *Ziel: Release-Kandidat 1.0.*
 
-### Stretch-Goals (nach 1.0)
+### M6 — Free-Roaming „Bilderstöckchen" V1.1 (≈ 4–5 Wochen)
+- OSM-Straßennetz im 2 km-Radius um Altbaumburgweg vollständig importieren.
+- Gebäude-Batch (Blender+blender-osm) für den Radius, gleiche Materialien.
+- World-Partition-Zellen für den erweiterten Bereich, Streaming-Budget prüfen.
+- NPC-Verkehr auf Hauptstraßen des Viertels.
+- Entdeckungs-Marker für bekannte Orte (optional).
+- *Ziel: Freies Fahren durch Bilderstöckchen ohne Zielvorgabe.*
+
+### Stretch-Goals (nach 1.1)
 - 3D-Cockpit mit funktionierenden Displays.
 - Chaos-Fahrphysik.
 - Dynamischer Tagesverlauf.
-- Mehr Strecke / freies Fahren im Korridor.
+- Free-Roaming-Radius auf 5 km erweitern (mehr Kölner Viertel).
 - VR-Modus.
 
 ---
