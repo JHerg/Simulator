@@ -1,13 +1,16 @@
 # Cologne Drive — UE5-Neuauflage
 
 Zweites Spiel auf Basis des Browser-Fahrsimulators (`../index.html`):
-gleiche Strecke, gleiche Story, gleiche Minispiele — fotorealistisch in
-**Unreal Engine 5** (Lumen / Nanite / World Partition).
+fotorealistisch in **Unreal Engine 5** (Lumen / Nanite / World Partition).
 
-> **Status:** Vorproduktion / Scaffold. Das eigentliche `.uproject` und die
-> Binärassets entstehen lokal (UE5 läuft nicht in dieser Umgebung). Dieser
-> Ordner enthält das **datengetriebene Fundament**, das von Anfang an stimmen
-> muss — Strecke, Geo-Konvertierung, Projektkonventionen.
+**Strategie:** Einstieg als **5 km Open World** rund um Altbaumburgweg 2
+(Bilderstöckchen, Köln) — echte OSM-Straßen, echte Gebäude, frei befahrbar.
+Die Story-Route (Altbaumburgweg → RheinEnergie-Stadion) wird als kuratierter
+Pfad in diese Open World eingebettet.
+
+> **Status:** Aktive Entwicklung — M0 abgeschlossen, M1 (OSM-Import) als nächstes.
+> Das `.uproject` und Binärassets entstehen lokal (UE5 läuft nicht im CI).
+> **Commit-Regel:** Nach jeder UE5-Session sofort alle Content-Änderungen committen.
 
 ## Konzept & Einstieg
 
@@ -65,15 +68,14 @@ lassen — die UE5-Daten bleiben synchron.
 Konvertierung **ausschließlich** über `UGeoConvertLibrary` (siehe
 `Source/.../Geo/GeoConvertLibrary.h`). Niemals woanders hartcodieren.
 
-## Nächste Schritte (Meilenstein M0 → M1)
+## Nächste Schritte (Meilenstein M1 — OSM-Import)
 
-1. **UE5-Projekt anlegen** (Vehicle-Template, UE 5.4 LTS), diesen `ue5/`-Ordner
-   als Projekt-Root verwenden; `Config/DefaultEngine.ini` übernehmen.
-2. **`git lfs install`** + erste `Content/`-Commits über LFS.
-3. **`DT_Route.csv` importieren** als DataTable mit Row-Struct `FRouteWaypoint`.
-4. **`BP_RouteSpline`** bauen: liest `DT_Route`, erzeugt Spline via
-   `GeoToWorld()`, instanziert Spline-Mesh-Straße → **Greybox befahrbar**.
-5. Achsen-Vorzeichen (UE.Y) **einmal verifizieren** und fixieren.
+1. **CesiumForUnreal** Plugin (kostenlos, UE Marketplace) installieren.
+2. **OSM-Daten** für 5 km-Radius laden: Overpass-API-Export als GeoJSON.
+3. **Straßen generieren:** OSM-Geometrie → Spline-Meshes in UE5.
+4. **World Partition** für das 5 km-Gebiet konfigurieren.
+5. **Ersten Fahrt-Test** im echten Kölner Straßennetz.
+6. **Sofort committen** — alle Content/.uasset Dateien nach der Session.
 
 ## Später auslagern
 
