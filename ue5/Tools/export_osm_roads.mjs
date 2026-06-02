@@ -14,7 +14,7 @@
  *   1. https://overpass-turbo.eu öffnen
  *   2. Diese Abfrage einfügen und "Ausführen":
  *        [out:json][timeout:60];
- *        way["highway"](around:1000,50.9674,6.9382);
+ *        way["highway"](around:2000,50.9674,6.9382);
  *        out geom;
  *   3. "Exportieren" → "rohe OSM-Daten / GeoJSON" → Datei speichern als
  *        ue5/Source/Data/osm_export.geojson   (oder .json)

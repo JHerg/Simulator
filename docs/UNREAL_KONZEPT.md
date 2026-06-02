@@ -5,8 +5,8 @@
 > **Bezug:** Neuentwicklung als eigenständiges, zweites Spiel auf Basis des
 > bestehenden Browser-Simulators (`index.html`, Three.js r158).
 > **Neue Richtung (Juni 2026):** Einstieg als **Open World**, gestaffelt:
-> Start mit **1 km-Radius** (Bilderstöckchen-Kern, ~3 km²), spätere Erweiterung
-> auf 2 km und 5 km — ohne Neubau, nur die Overpass-Abfrage ändert sich.
+> Start mit **2 km-Radius** (~12 km², Bilderstöckchen + umliegendes Köln-West),
+> spätere Erweiterung auf 5 km — ohne Neubau, nur die Overpass-Abfrage ändert sich.
 > Die Story-Route (Altbaumburgweg → Stadion) wird als kuratierter Pfad *auf*
 > dieser Open World gebaut — nicht umgekehrt.
 
@@ -50,14 +50,14 @@ bleiben muss:
   Präsentation (Materialien, Effekte) — im Browser-Prototyp steckt alles in
   einer Datei.
 - **Open World als Einstieg (V1.0):** Kein linearer Korridor — direkt ein
-  frei befahrbares Viertel, gestaffelt ab **1 km-Radius** um Altbaumburgweg 2
-  (später 2 km / 5 km). Echte OSM-Straßen, echte Gebäude, einfach rumfahren und
-  das Viertel wiedererkennen. Die Story-Route wird als optionaler Pfad durch
-  diese Welt ergänzt. Siehe §6.9.
+  frei befahrbares Viertel, gestartet mit **2 km-Radius** (~12 km²) um
+  Altbaumburgweg 2 (später 5 km). Echte OSM-Straßen, echte Gebäude, einfach
+  rumfahren und das Viertel wiedererkennen. Die Story-Route wird als optionaler
+  Pfad durch diese Welt ergänzt. Siehe §6.9.
 
 ### 1.3 Nicht-Ziele (Scope-Disziplin)
-- Kein vollständiges Köln. **Start: 1 km-Radius** (~3 km²) um Altbaumburgweg 2.
-  Erst wenn Pipeline + Spielgefühl stehen, gestaffelt auf 2 km / 5 km erweitern.
+- Kein vollständiges Köln. **Start: 2 km-Radius** (~12 km²) um Altbaumburgweg 2.
+  Erst wenn Pipeline + Spielgefühl stehen, auf 5 km erweitern.
 - Kein Multiplayer, kein Schadensmodell.
 - Kein Mobile-Build in 1.0 (UE5-Lumen-Zielplattform ist PC/Konsole).
 - **Keine Google-Maps-Daten** (Lizenzverbot für Spieleentwicklung). Wir nutzen
@@ -281,17 +281,18 @@ Der Prototyp simuliert ein 2D-Spiel und zeichnet es auf Canvas. In UE5:
 
 **Geografischer Umfang (gestaffelt):**
 - Mittelpunkt: Altbaumburgweg 2 (`LAT0=50.9674, LNG0=6.9382`)
-- **Start: 1 km-Radius** → ca. 3 km² (Bilderstöckchen-Kern, dein Haus, Oma-Haus,
-  Hauptstraßen). Vergleichbar mit dem dichten Innenstadt-Teil von GTA IV.
-- Ausbau: 2 km (~12 km², wie Mafia/GTA IV) → 5 km (~78 km², wie GTA V)
-- Erweiterung ändert **nur die Overpass-Abfrage** (`around:1000` → `2000` → `5000`),
+- **Start: 2 km-Radius** → ca. 12 km² (Bilderstöckchen + Köln-West, dein Haus,
+  Oma-Haus, Hauptstraßen bis Aachener Str. / Stadion-Nähe). Vergleichbar mit
+  dem Mafia/GTA-IV-Stadtzentrum.
+- Ausbau: 5 km (~78 km², wie GTA V)
+- Erweiterung ändert **nur die Overpass-Abfrage** (`around:2000` → `5000`),
   kein Architektur-Umbau — schon importierte Zellen bleiben bestehen
 - Straßen: vollständiges OSM-Netz im Radius (Hauptstraßen + Nebenstraßen)
 
 **Datenbasis (OSM, lizenzfrei):**
-- Overpass-Abfrage: `way["highway"](around:1000, 50.9674, 6.9382)` → alle
-  Straßen im 1 km-Radius (Radius später erhöhen)
-- Gebäude: `way["building"](around:1000, 50.9674, 6.9382)` → Footprints
+- Overpass-Abfrage: `way["highway"](around:2000, 50.9674, 6.9382)` → alle
+  Straßen im 2 km-Radius (Radius später erhöhen)
+- Gebäude: `way["building"](around:2000, 50.9674, 6.9382)` → Footprints
   mit Höhen aus `building:levels`
 - Vegetation, Parkflächen, Gewässer aus OSM-Landuse-Daten
 
@@ -300,7 +301,7 @@ Der Prototyp simuliert ein 2D-Spiel und zeichnet es auf Canvas. In UE5:
   oder blender-osm → manuelle Spline-Generierung)
 - **Gebäude:** Batch-Import via Blender+blender-osm → Nanite-Meshes,
   parametrisierte Fassadenmaterialien
-- **World Partition:** 1 km-Radius in ~16 Streaming-Zellen à 500×500 m;
+- **World Partition:** 2 km-Radius in ~64 Streaming-Zellen à 500×500 m;
   nur die Zelle um den Spieler + Nachbarzellen geladen (skaliert mit Radius)
 - **Verkehr:** vereinfachtes NPC-Netz auf Hauptstraßen des Viertels
 - **Kein Navi-Zwang:** freies Fahren ohne Wegpunkt-Führung; optionale
@@ -427,12 +428,12 @@ und Straßengeräusche.
 - SM6 / Nanite aktiviert
 
 ### M1 — OSM-Import & Straßennetz (≈ 2–3 Wochen)
-- OSM-Daten für **1 km-Radius** laden (Overpass API → GeoJSON)
+- OSM-Daten für **2 km-Radius** laden (Overpass API → GeoJSON)
 - Tool-Wahl: **CesiumForUnreal**-Plugin oder **blender-osm** → Spline-Meshes
 - Straßen als befahrbare Spline-Mesh-Flächen generieren (Asphalt, Gehwege)
-- World Partition für das 1 km-Gebiet anlegen
+- World Partition für das 2 km-Gebiet anlegen (~64 Streaming-Zellen à 500×500 m)
 - Vehicle (Arcade) auf dem Straßennetz fahrbar
-- *Ziel: Das echte Straßennetz Bilderstöckchens ist befahrbar — grau, aber maßstabsgetreu.*
+- *Ziel: Das echte Straßennetz von Bilderstöckchen + Köln-West ist befahrbar — grau, aber maßstabsgetreu.*
 
 ### M2 — Gebäude & Vegetation (≈ 3–4 Wochen)
 - OSM-Gebäude-Batch-Import (blender-osm → Nanite-Meshes)
@@ -509,7 +510,7 @@ Tooling-Skripten (WP-Export, Batch-Import) und Dokumentation einspringen.
 
 1. **CesiumForUnreal** Plugin im UE5 Marketplace (kostenlos) installieren
    — oder: **blender-osm** (Blender-Plugin, ~10 €) als Alternative evaluieren.
-2. **OSM-Daten laden:** Overpass-Turbo-Export für 1 km-Radius als GeoJSON/OSM.
+2. **OSM-Daten laden:** Overpass-Turbo-Export für 2 km-Radius als GeoJSON/OSM.
 3. **Straßen als Spline-Meshes** generieren — Asphalt-Mesh entlang der Straßen-
    Geometrie, World Partition für das Gebiet aktivieren.
 4. **Vehicle platzieren** und erstes Rumfahren im echten Straßennetz testen.
