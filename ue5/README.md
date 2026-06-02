@@ -3,10 +3,11 @@
 Zweites Spiel auf Basis des Browser-Fahrsimulators (`../index.html`):
 fotorealistisch in **Unreal Engine 5** (Lumen / Nanite / World Partition).
 
-**Strategie:** Einstieg als **5 km Open World** rund um Altbaumburgweg 2
+**Strategie:** Einstieg als **Open World** rund um Altbaumburgweg 2
 (Bilderstöckchen, Köln) — echte OSM-Straßen, echte Gebäude, frei befahrbar.
-Die Story-Route (Altbaumburgweg → RheinEnergie-Stadion) wird als kuratierter
-Pfad in diese Open World eingebettet.
+Start mit **1 km-Radius** (~3 km²), später gestaffelt auf 2 km / 5 km erweiterbar
+(nur die Overpass-Abfrage ändert sich). Die Story-Route (Altbaumburgweg →
+RheinEnergie-Stadion) wird als kuratierter Pfad in diese Open World eingebettet.
 
 > **Status:** Aktive Entwicklung — M0 abgeschlossen, M1 (OSM-Import) als nächstes.
 > Das `.uproject` und Binärassets entstehen lokal (UE5 läuft nicht im CI).
@@ -71,9 +72,9 @@ Konvertierung **ausschließlich** über `UGeoConvertLibrary` (siehe
 ## Nächste Schritte (Meilenstein M1 — OSM-Import)
 
 1. **CesiumForUnreal** Plugin (kostenlos, UE Marketplace) installieren.
-2. **OSM-Daten** für 5 km-Radius laden: Overpass-API-Export als GeoJSON.
+2. **OSM-Daten** für 1 km-Radius laden: Overpass-API-Export als GeoJSON.
 3. **Straßen generieren:** OSM-Geometrie → Spline-Meshes in UE5.
-4. **World Partition** für das 5 km-Gebiet konfigurieren.
+4. **World Partition** für das 1 km-Gebiet konfigurieren.
 5. **Ersten Fahrt-Test** im echten Kölner Straßennetz.
 6. **Sofort committen** — alle Content/.uasset Dateien nach der Session.
 
