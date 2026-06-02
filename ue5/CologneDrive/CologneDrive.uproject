@@ -11,7 +11,7 @@
 		},
 		{
 			"Name": "ChaosVehiclePhysics",
-			"Enabled": true
+			"Enabled": false
 		}
 	]
 }
