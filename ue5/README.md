@@ -5,7 +5,7 @@ fotorealistisch in **Unreal Engine 5** (Lumen / Nanite / World Partition).
 
 **Strategie:** Einstieg als **Open World** rund um Altbaumburgweg 2
 (Bilderstöckchen, Köln) — echte OSM-Straßen, echte Gebäude, frei befahrbar.
-Start mit **2 km-Radius** (~12 km²), später auf 5 km erweiterbar
+Start mit **1,9 km-Radius** (~11 km²), später auf 5 km erweiterbar
 (nur die Overpass-Abfrage ändert sich). Die Story-Route (Altbaumburgweg →
 RheinEnergie-Stadion) wird als kuratierter Pfad in diese Open World eingebettet.
 
@@ -72,7 +72,7 @@ Konvertierung **ausschließlich** über `UGeoConvertLibrary` (siehe
 ## Nächste Schritte (Meilenstein M1 — OSM-Import)
 
 1. **CesiumForUnreal** Plugin (kostenlos, UE Marketplace) installieren.
-2. **OSM-Daten** für 2 km-Radius laden: Overpass-API-Export als GeoJSON.
+2. **OSM-Daten** für 1,9 km-Radius laden: Overpass-API-Export als GeoJSON.
 3. **Straßen generieren:** OSM-Geometrie → Spline-Meshes in UE5.
 4. **World Partition** für das 1 km-Gebiet konfigurieren.
 5. **Ersten Fahrt-Test** im echten Kölner Straßennetz.

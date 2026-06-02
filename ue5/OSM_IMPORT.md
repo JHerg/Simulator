@@ -13,11 +13,11 @@ Straßen in UE5. Ablauf in 3 Phasen — **Phase A machst du im Browser**, Phase 
 
    ```
    [out:json][timeout:60];
-   way["highway"](around:2000,50.9674,6.9382);
+   way["highway"](around:1900,50.9674,6.9382);
    out geom;
    ```
 
-   > `around:2000` = 2 km-Radius (~12 km²). Für mehr später: `5000`.
+   > `around:1900` = 1,9 km-Radius (~11 km²). Für mehr später: `5000`.
 
 3. Klick **„Ausführen"** (▶). Rechts erscheint das Straßennetz auf der Karte —
    das ist dein Viertel.
