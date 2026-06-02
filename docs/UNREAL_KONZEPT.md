@@ -1,10 +1,14 @@
 # Köln-Fahrsimulator 2 — Unreal Engine 5 Konzept
 
 > **Arbeitstitel:** *Cologne Drive* (UE5-Neuauflage)
-> **Status:** Konzept / Vorproduktion
+> **Status:** Aktive Entwicklung — Open-World-First-Ansatz
 > **Bezug:** Neuentwicklung als eigenständiges, zweites Spiel auf Basis des
 > bestehenden Browser-Simulators (`index.html`, Three.js r158).
-> Gleiche Strecke, gleiche Story, gleiche Minispiele — fotorealistisch in UE5.
+> **Neue Richtung (Juni 2026):** Einstieg als **Open World**, gestaffelt:
+> Start mit **1,9 km-Radius** (~11 km², Bilderstöckchen + umliegendes Köln-West),
+> spätere Erweiterung auf 5 km — ohne Neubau, nur die Overpass-Abfrage ändert sich.
+> Die Story-Route (Altbaumburgweg → Stadion) wird als kuratierter Pfad *auf*
+> dieser Open World gebaut — nicht umgekehrt.
 
 Dieses Dokument ist das **Gesamtkonzept**. Die technische Asset-Pipeline
 (Ordnerstruktur, Namenskonventionen, Import-Workflows, Formate, LODs) ist
@@ -45,14 +49,15 @@ bleiben muss:
 - **Saubere Trennung** von Daten (Strecke, POIs), Logik (Gameplay) und
   Präsentation (Materialien, Effekte) — im Browser-Prototyp steckt alles in
   einer Datei.
-- **Free-Roaming-Zone (V1.1):** Frei befahrbares Viertel Bilderstöckchen im
-  2 km-Radius um den Altbaumburgweg — echte OSM-Straßen, echte Gebäude,
-  kein Zielpunkt, einfach fahren. Siehe §6.9.
+- **Open World als Einstieg (V1.0):** Kein linearer Korridor — direkt ein
+  frei befahrbares Viertel, gestartet mit **1,9 km-Radius** (~11 km²) um
+  Altbaumburgweg 2 (später 5 km). Echte OSM-Straßen, echte Gebäude, einfach
+  rumfahren und das Viertel wiedererkennen. Die Story-Route wird als optionaler
+  Pfad durch diese Welt ergänzt. Siehe §6.9.
 
 ### 1.3 Nicht-Ziele (Scope-Disziplin)
-- Kein Open-World-Köln. Version 1.0: nur der **Korridor entlang der Route**
-  (≈ 80–120 m je Seite). Version 1.1: **2 km-Radius Free-Roaming** rund um
-  den Altbaumburgweg (Bilderstöckchen) — geplant, aber nach 1.0.
+- Kein vollständiges Köln. **Start: 1,9 km-Radius** (~11 km²) um Altbaumburgweg 2.
+  Erst wenn Pipeline + Spielgefühl stehen, auf 5 km erweitern.
 - Kein Multiplayer, kein Schadensmodell.
 - Kein Mobile-Build in 1.0 (UE5-Lumen-Zielplattform ist PC/Konsole).
 - **Keine Google-Maps-Daten** (Lizenzverbot für Spieleentwicklung). Wir nutzen
@@ -268,39 +273,44 @@ Der Prototyp simuliert ein 2D-Spiel und zeichnet es auf Canvas. In UE5:
 - Einfache **Parkzonen-Erkennung** (Overlap + Ausrichtungs-/Geschwindigkeits-
   prüfung), wie `checkParking()` / `checkHomePark()` / `checkOmaPark()`.
 
-### 6.9 Free-Roaming-Zone „Bilderstöckchen" (V1.1)
+### 6.9 Open World Bilderstöckchen / Köln-West (V1.0 — Primärziel)
 
-> **Ziel:** Frei durch das echte Viertel fahren — kein Ziel, kein Timer,
-> einfach das Gefühl von GTA 5 im eigenen Stadtteil.
+> **Ziel:** Direkt einsteigen mit einer frei befahrbaren Open World —
+> kein Ziel, kein Timer, einfach das Gefühl von GTA 5 im eigenen Stadtteil.
+> Das ist das **erste sichtbare Ergebnis**, nicht ein späteres Add-on.
 
-**Geografischer Umfang:**
+**Geografischer Umfang (gestaffelt):**
 - Mittelpunkt: Altbaumburgweg 2 (`LAT0=50.9674, LNG0=6.9382`)
-- Radius: **2 km** → ca. 4 km² Fläche
-- Umfasst: Bilderstöckchen, Teile von Bocklemünd, Vogelsang, Ossendorf
+- **Start: 1,9 km-Radius** → ca. 12 km² (Bilderstöckchen + Köln-West, dein Haus,
+  Oma-Haus, Hauptstraßen bis Aachener Str. / Stadion-Nähe). Vergleichbar mit
+  dem Mafia/GTA-IV-Stadtzentrum.
+- Ausbau: 5 km (~78 km², wie GTA V)
+- Erweiterung ändert **nur die Overpass-Abfrage** (`around:1900` → `5000`),
+  kein Architektur-Umbau — schon importierte Zellen bleiben bestehen
 - Straßen: vollständiges OSM-Netz im Radius (Hauptstraßen + Nebenstraßen)
 
 **Datenbasis (OSM, lizenzfrei):**
-- Overpass-Abfrage: `way["highway"](around:2000, 50.9674, 6.9382)` → alle
-  Straßen im 2 km-Radius
-- Gebäude: `way["building"](around:2000, 50.9674, 6.9382)` → Footprints
+- Overpass-Abfrage: `way["highway"](around:1900, 50.9674, 6.9382)` → alle
+  Straßen im 1,9 km-Radius (Radius später erhöhen)
+- Gebäude: `way["building"](around:1900, 50.9674, 6.9382)` → Footprints
   mit Höhen aus `building:levels`
 - Vegetation, Parkflächen, Gewässer aus OSM-Landuse-Daten
 
 **Technische Umsetzung:**
-- **Straßennetz:** OSM-Geometrie → Spline-Meshes (gleiche Pipeline wie die
-  Hauptroute, nur flächendeckend statt linear)
-- **Gebäude:** Batch-Import via Blender+blender-osm → Nanite-Meshes, gleiche
-  Fassadenmaterialien wie Hauptroute
-- **World Partition:** 2 km-Radius in ~16 Streaming-Zellen à 500×500 m;
-  nur die Zelle um den Spieler + Nachbarzellen geladen
+- **Straßennetz:** OSM-Geometrie → Spline-Meshes (über CesiumForUnreal-Plugin
+  oder blender-osm → manuelle Spline-Generierung)
+- **Gebäude:** Batch-Import via Blender+blender-osm → Nanite-Meshes,
+  parametrisierte Fassadenmaterialien
+- **World Partition:** 1,9 km-Radius in ~64 Streaming-Zellen à 500×500 m;
+  nur die Zelle um den Spieler + Nachbarzellen geladen (skaliert mit Radius)
 - **Verkehr:** vereinfachtes NPC-Netz auf Hauptstraßen des Viertels
 - **Kein Navi-Zwang:** freies Fahren ohne Wegpunkt-Führung; optionale
-  „Entdeckungs-Markers" (bekannte Orte im Viertel)
+  „Entdeckungs-Marker" für bekannte Orte
 
-**Abgrenzung zu V1.0:**
-- V1.0: nur der Korridor (80 m beidseitig der Route) — schneller fertig
-- V1.1: der volle 2 km-Radius — baut auf derselben Pipeline auf,
-  nur mehr Fläche. Kein Architektur-Umbau nötig.
+**Story-Route als Schicht obendrauf:**
+Die DT_Route (34 Wegpunkte, Altbaumburgweg → Stadion) wird als **kuratierter
+Pfad** durch die bestehende Open World eingebettet — kein separater Bau nötig,
+die Straßen existieren bereits im OSM-Netz.
 
 **Warum OSM und nicht Google Maps:**
 Google Maps verbietet die Nutzung für eigene Spiele ausdrücklich.
@@ -406,75 +416,65 @@ und Straßengeräusche.
 
 ## 10. Projekt-Roadmap (Meilensteine)
 
-> Zeitangaben sind grobe Richtwerte für ein **Zwei-Personen-Team** in
-> Teilzeit/Hobby-Intensität. Sie dienen der Reihenfolge, nicht als Deadline.
+> Zeitangaben sind grobe Richtwerte für Hobby-Intensität.
+> **Neue Strategie ab Juni 2026:** Open World zuerst — die Story-Route wird
+> als Pfad in der fertigen Welt eingebettet, nicht umgekehrt.
 
-### M0 — Setup & Greybox (≈ 1–2 Wochen)
-- UE5-Projekt, Git + Git LFS (oder Perforce), Ordnerstruktur & Namenskonvention
-  gemäß `ASSET_PIPELINE.md` anlegen.
-- `DT_Route` aus dem Prototyp-`WP[]`-Array exportieren (Skript: WP → CSV/JSON).
-- Georeferencing-Origin festlegen (= `LAT0/LNG0` des Prototyps).
-- **Greybox-Strecke:** `BP_RouteSpline` + Spline-Mesh-Straße über die volle
-  Route, befahrbar mit Arcade-Vehicle. *Ziel: Ende-zu-Ende fahrbar in grau.*
+### M0 — Setup & Fundament ✅ ABGESCHLOSSEN
+- UE5 5.7 installiert, Vehicle-Template-Projekt angelegt (`ue5/CologneDrive/`)
+- Git LFS eingerichtet, Ordnerstruktur & Namenskonvention nach `ASSET_PIPELINE.md`
+- `GeoConvertLibrary.h` — Koordinatensystem festgelegt (LAT0/LNG0)
+- `export_route.mjs` — DT_Route.csv generiert (34 WP, 14 Straßen, 8,81 km)
+- SM6 / Nanite aktiviert
 
-### M1 — Fahrgefühl & Navigation (≈ 2–3 Wochen)
-- Fahrzeugsteuerung final (Arcade), Kamera, Kollision.
-- `BP_NavSystem`, Wegpunkt-Logik, HUD-Prototyp (2D-UMG), Minimap.
-- Tempolimits, Ampeln (`BP_TrafficLight` + Manager).
-- *Ziel: Die Fahrt fühlt sich gut an, Navigation führt korrekt.*
+### M1 — OSM-Import & Straßennetz (≈ 2–3 Wochen)
+- OSM-Daten für **1,9 km-Radius** laden (Overpass API → GeoJSON)
+- Tool-Wahl: **CesiumForUnreal**-Plugin oder **blender-osm** → Spline-Meshes
+- Straßen als befahrbare Spline-Mesh-Flächen generieren (Asphalt, Gehwege)
+- World Partition für das 2 km-Gebiet anlegen (~64 Streaming-Zellen à 500×500 m)
+- Vehicle (Arcade) auf dem Straßennetz fahrbar
+- *Ziel: Das echte Straßennetz von Bilderstöckchen + Köln-West ist befahrbar — grau, aber maßstabsgetreu.*
 
-### M2 — Welt-Aufbau (Asset-Pipeline-Kern) (≈ 4–6 Wochen)
-- OSM-Import des Korridors, Bereinigung, Bake zu Nanite-Meshes.
-- PCG für Vegetation/Straßenmöblierung/Laternen.
-- Materialien (Master-Material + Instanzen, Megascans-Integration).
-- Lighting-Presets (Tag/Nacht/Regen) + `BP_WeatherController`.
-- *Ziel: Die Strecke sieht „nach Köln" aus, alle 4 Wetter-Zustände stehen.*
+### M2 — Gebäude & Vegetation (≈ 3–4 Wochen)
+- OSM-Gebäude-Batch-Import (blender-osm → Nanite-Meshes)
+- PCG: Bäume, Büsche, Straßenmöblierung, Laternen
+- Master-Material + Megascans-Instanzen für Fassaden, Asphalt, Grünflächen
+- Lighting-Presets (Tag/Nacht/Regen) + `BP_WeatherController`
+- *Ziel: Das Viertel sieht nach Köln aus, Bilderstöckchen ist erkennbar.*
 
-### M3 — Hero-Assets (≈ 3–4 Wochen)
-- Altbaumburgweg 2, Oma-Haus, RheinEnergie-Stadion in Blender → UE5.
-- VW Golf Sportsvan 7 (Exterieur + Cockpit-Mesh).
-- Platzierung georeferenziert an exakt den Prototyp-Positionen.
-- *Ziel: Alle Story-Locations stehen in finaler Qualität.*
+### M3 — Hero-Assets & Photogrammetrie (≈ 3–4 Wochen)
+- **Altbaumburgweg 2** via RealityScan (60–80 Fotos) → Nanite-Mesh an GPS-Position
+- **Schiefersburger Weg 54** (Oma-Haus) ebenso
+- **RheinEnergie-Stadion** Außenfassade (Referenzfotos + Blender)
+- **VW Golf Sportsvan 7** (Exterieur + Cockpit-Mesh)
+- *Ziel: Wer das Viertel kennt, erkennt sein Haus sofort.*
 
-### M4 — Gameplay & Minispiele (≈ 4–5 Wochen)
-- Story-State-Machine (`BP_CologneGameMode`), Trigger, SaveGame.
-- Fußballspiel (`BP_MatchSim` + Stadion-Sub-Level + Crowd).
-- Pressekonferenz (Sequencer + UMG).
-- Schere-Stein-Papier bei Oma (`WBP_RockPaperScissors`).
-- Verkehr & Fußgänger.
-- *Ziel: Spiel von Start bis Ende durchspielbar.*
+### M4 — Story-Route & Navigation (≈ 2–3 Wochen)
+- DT_Route als kuratierter Pfad in die bestehende Welt einbetten
+- `BP_NavSystem`, HUD (Tacho, Navi-Hinweise, Minimap)
+- Ampeln (`BP_TrafficLight`) an den 5 Kreuzungen der Route
+- *Ziel: Geführte Fahrt Altbaumburgweg → Stadion durch die echte Open World.*
 
-### M5 — Audio, Polish, Performance (≈ 3–4 Wochen, laufend)
-- MetaSound-Motor, Voice-Clips, Crowd-Audio, Mixing.
-- World-Partition-Tuning, Scalability-Stufen, Grafikmenü.
-- Bugfixing, Balancing, finaler Look-Dev.
-- *Ziel: Release-Kandidat 1.0.*
+### M5 — Gameplay & Minispiele (≈ 4–5 Wochen)
+- Story-State-Machine (`BP_CologneGameMode`), Trigger, SaveGame
+- Fußballspiel (`BP_MatchSim` + Stadion-Sub-Level + Crowd)
+- Pressekonferenz (Sequencer + UMG)
+- Schere-Stein-Papier bei Oma (`WBP_RockPaperScissors`)
+- NPC-Verkehr & Fußgänger
+- *Ziel: Spiel von Start bis Ende durchspielbar — Release V1.0.*
 
-### M6 — Free-Roaming „Bilderstöckchen" V1.1 (≈ 4–5 Wochen)
-- OSM-Straßennetz im **2 km-Radius** um Altbaumburgweg vollständig importieren.
-  Alle Abstände 1:1 real (GPS → Meter via GeoConvertLibrary, kein manuelles
-  Schätzen wie im Browser-Prototyp).
-- Gebäude-Batch (Blender+blender-osm) für den Radius, gleiche Materialien.
-- **Photogrammetrie-Hero-Assets** einbauen (siehe §6.10): Altbaumburgweg 2 +
-  Schiefersburger Weg 54 als fotorealistische RealityScan-Modelle.
-- World-Partition-Zellen für den erweiterten Bereich, Streaming-Budget prüfen.
-- NPC-Verkehr auf Hauptstraßen des Viertels.
-- Entdeckungs-Marker für bekannte Orte (optional).
-- *Ziel: Freies Fahren durch Bilderstöckchen — echte Abstände, erkennbare Häuser.*
+### M6 — Audio & Polish (≈ 3 Wochen)
+- MetaSound-Motor, Voice-Clips, Crowd-Audio, Ducking/Mixing
+- World-Partition-Tuning, Scalability-Stufen, In-Game-Grafikmenü
+- Bugfixing, Balancing, finaler Look-Dev
+- *Ziel: Release-Kandidat V1.0 fertig.*
 
-### M7 — Free-Roaming Erweiterung auf 5 km V1.2 (≈ 3–4 Wochen)
-- OSM-Radius von 2 km auf **5 km** erweitern (~78 km² Fläche).
-- Umfasst dann: Bilderstöckchen, Bocklemünd, Vogelsang, Ossendorf, Ehrenfeld,
-  Nippes, Longerich — ein großer Teil von Köln-West/-Nord.
-- World-Partition und Streaming-Budget skalieren.
-- Weitere Photogrammetrie-Spots nach Bedarf.
-- *Ziel: Köln-Feeling auf Stadtteil-Ebene — freies Erkunden.*
-
-### Stretch-Goals (nach 1.2)
-- 3D-Cockpit mit funktionierenden Displays.
-- Chaos-Fahrphysik.
-- Dynamischer Tagesverlauf.
-- VR-Modus.
+### Stretch-Goals (nach V1.0)
+- 3D-Cockpit mit funktionierenden Displays (Render Targets)
+- Chaos-Fahrphysik statt Arcade
+- Dynamischer Tagesverlauf
+- VR-Modus
+- Radius auf 10 km+ erweitern
 
 ---
 
@@ -506,13 +506,15 @@ Tooling-Skripten (WP-Export, Batch-Import) und Dokumentation einspringen.
 
 ---
 
-## 13. Nächste konkrete Schritte
+## 13. Nächste konkrete Schritte (M1 — OSM-Import)
 
-1. **`ASSET_PIPELINE.md` lesen** — die technische Detailbasis.
-2. **WP-Export-Skript** schreiben: liest `WP[]` aus `index.html`, schreibt
-   `DT_Route.csv` (lat, lng, street, width, tl) für den UE5-Import.
-3. **UE5-Projekt aufsetzen** (M0): Vehicle-Template, Git-LFS, Ordnerstruktur.
-4. **Greybox-Strecke** aus `DT_Route` generieren — erster fahrbarer Build.
+1. **CesiumForUnreal** Plugin im UE5 Marketplace (kostenlos) installieren
+   — oder: **blender-osm** (Blender-Plugin, ~10 €) als Alternative evaluieren.
+2. **OSM-Daten laden:** Overpass-Turbo-Export für 1,9 km-Radius als GeoJSON/OSM.
+3. **Straßen als Spline-Meshes** generieren — Asphalt-Mesh entlang der Straßen-
+   Geometrie, World Partition für das Gebiet aktivieren.
+4. **Vehicle platzieren** und erstes Rumfahren im echten Straßennetz testen.
+5. **Sofort committen** nach jeder Session (BP, Level, Assets).
 
 > Dieses Dokument ist bewusst lebendig. Wir verfeinern es mit jeder
 > Erkenntnis aus der Vorproduktion.
