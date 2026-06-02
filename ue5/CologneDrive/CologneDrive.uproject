@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.7",
+	"Category": "",
+	"Description": "Cologne Drive — UE5 remake of the browser driving simulator",
+	"Modules": [],
+	"Plugins": [
+		{
+			"Name": "ChaosVehiclesPlugin",
+			"Enabled": true
+		},
+		{
+			"Name": "ChaosVehiclePhysics",
+			"Enabled": true
+		}
+	]
+}
