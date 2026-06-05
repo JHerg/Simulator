@@ -1472,26 +1472,56 @@ const npcs = [];
 
 function createNPC(wpStart, color, reverse) {
   const g   = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color });
-  const blk = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const gls = new THREE.MeshBasicMaterial({ color: 0x223344 });
+  // Lackierte Karosserie mit Reflexion (nutzt scene.environment für Glanz)
+  const mat = new THREE.MeshStandardMaterial({ color, metalness: 0.35, roughness: 0.38 });
+  const blk = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.6, metalness: 0.2 });
+  const hub = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.35, metalness: 0.8 });
+  const gls = new THREE.MeshStandardMaterial({ color: 0x11202e, roughness: 0.1, metalness: 0.1,
+                                               transparent: true, opacity: 0.78 });
+  const head = new THREE.MeshBasicMaterial({ color: 0xfff6cc });   // Scheinwerfer
+  const tail = new THREE.MeshBasicMaterial({ color: 0xcc1111 });   // Rücklicht
 
-  // Karosserie
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 4.0), mat);
-  body.position.y = 0.75; g.add(body);
-  // Dach
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.7, 2.1), mat);
-  roof.position.set(0, 1.6, -0.25); g.add(roof);
+  // Unterbau (Chassis, etwas schmaler – wirkt wie Stoßstangen-Ebene)
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.42, 4.0), blk);
+  sill.position.y = 0.42; g.add(sill);
+  // Hauptkarosserie
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.6, 3.9), mat);
+  body.position.y = 0.82; g.add(body);
+  // Motorhaube vorne (etwas niedriger → Auto-Silhouette)
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.32, 1.1), mat);
+  hood.position.set(0, 1.0, 1.35); g.add(hood);
+  // Kabine/Dach (zurückgesetzt, schmaler)
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.62, 2.0), mat);
+  roof.position.set(0, 1.45, -0.35); g.add(roof);
+  if (!isMobile) { body.castShadow = roof.castShadow = true; }
+
   // Frontscheibe
-  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.6), gls);
-  ws.position.set(0, 1.55, 0.8); ws.rotation.x = -0.28; g.add(ws);
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.62), gls);
+  ws.position.set(0, 1.5, 0.72); ws.rotation.x = -0.42; g.add(ws);
   // Heckscheibe
-  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.55), gls);
-  rw.position.set(0, 1.57, -1.3); rw.rotation.set(0.28, Math.PI, 0); g.add(rw);
-  // Räder (4 Stück)
-  [[-0.88,0.3,1.2],[0.88,0.3,1.2],[-0.88,0.3,-1.2],[0.88,0.3,-1.2]].forEach(([rx,ry,rz])=>{
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.22,12), blk);
+  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.55), gls);
+  rw.position.set(0, 1.5, -1.4); rw.rotation.set(0.42, Math.PI, 0); g.add(rw);
+  // Seitenfenster (links/rechts)
+  [-1, 1].forEach(sx => {
+    const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5), gls);
+    sw.position.set(sx * 0.81, 1.5, -0.35);
+    sw.rotation.y = sx * Math.PI / 2; g.add(sw);
+  });
+
+  // Scheinwerfer (vorne, z+) und Rücklichter (hinten, z-)
+  [-0.6, 0.6].forEach(hx => {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08), head);
+    hl.position.set(hx, 0.78, 1.97); g.add(hl);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08), tail);
+    tl.position.set(hx, 0.85, -1.97); g.add(tl);
+  });
+
+  // Räder (4 Stück, mit silberner Nabe)
+  [[-0.9,0.34,1.25],[0.9,0.34,1.25],[-0.9,0.34,-1.25],[0.9,0.34,-1.25]].forEach(([rx,ry,rz])=>{
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.24,14), blk);
     w.rotation.z = Math.PI/2; w.position.set(rx,ry,rz); g.add(w);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.26,10), hub);
+    cap.rotation.z = Math.PI/2; cap.position.set(rx,ry,rz); g.add(cap);
   });
 
   scene.add(g);
@@ -1509,15 +1539,19 @@ function createNPC(wpStart, color, reverse) {
 }
 
 function initNPCs() {
+  // Mehr Verkehr – auf Handy etwas reduziert (Performance)
+  const nFwd = isMobile ? 10 : 18;   // vorwärts (war 7)
+  const nRev = isMobile ?  6 : 11;   // Gegenverkehr (war 4)
+
   // Gleichlaufende NPCs (vorwärts)
-  const step = Math.floor(WP.length / 8);
-  for (let i = 0; i < 7; i++) {
+  const step = Math.max(1, Math.floor(WP.length / (nFwd + 1)));
+  for (let i = 0; i < nFwd; i++) {
     const idx = Math.min(1 + step * (i + 1), WP.length - 3);
     npcs.push(createNPC(idx, NPC_COLORS[i % NPC_COLORS.length]));
   }
-  // Gegenverkehr: 4 NPCs fahren die Route rückwärts
-  const rstep = Math.floor(WP.length / 5);
-  for (let i = 0; i < 4; i++) {
+  // Gegenverkehr: NPCs fahren die Route rückwärts
+  const rstep = Math.max(1, Math.floor(WP.length / (nRev + 1)));
+  for (let i = 0; i < nRev; i++) {
     const idx = Math.max(WP.length - 2 - rstep * i, 1);
     npcs.push(createNPC(idx, NPC_COLORS[(i + 2) % NPC_COLORS.length], true));
   }
