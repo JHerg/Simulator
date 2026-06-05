@@ -5258,9 +5258,19 @@ function loop(now) {
   cockpit.visible    = true;
   mirrorPlane.visible = true; mirrorFrame.visible = true;
 
-  // ── Hauptszene rendern ────────────────────────────────────────────────────
-  if (composer) composer.render();
-  else renderer.render(scene, cam);
+  // ── Hauptszene rendern (mit Fallback: nie schwarzer Bildschirm) ───────────
+  if (composer) {
+    try {
+      composer.render();
+    } catch (e) {
+      console.warn('Composer-Render fehlgeschlagen → direkter Render-Fallback', e);
+      composer = null;                 // Post-Processing dauerhaft deaktivieren
+      renderer.setRenderTarget(null);
+      renderer.render(scene, cam);
+    }
+  } else {
+    renderer.render(scene, cam);
+  }
 
   // ── 2D-Cockpit-Canvas overlay ─────────────────────────────────────────────
   drawCockpit();
@@ -5283,8 +5293,12 @@ function setupComposer() {
   const gl = renderer.getContext();
   const hasWebGL2 = (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
 
-  // SSAO rendert die Szene selbst → ersetzt den RenderPass (nur Tag/WebGL2)
-  if (hasWebGL2 && !isNight) {
+  // SSAO deaktiviert: produzierte tagsüber einen komplett schwarzen Bildschirm
+  // (Inkompatibilität SSAOPass ↔ HalfFloat-/MSAA-Renderziel). Nachtfahrt nutzte
+  // bereits RenderPass und lief problemlos – daher jetzt RenderPass für beide.
+  // SSAO kann später separat (eigenes RT ohne MSAA) wieder aktiviert werden.
+  const USE_SSAO = false;
+  if (USE_SSAO && hasWebGL2 && !isNight) {
     const ssao = new SSAOPass(scene, cam, innerWidth, innerHeight);
     ssao.kernelRadius  = 10;
     ssao.minDistance   = 0.001;
