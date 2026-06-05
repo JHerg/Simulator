@@ -57,6 +57,7 @@
     }
     #speedo .v{font-size:30px;font-weight:bold;color:#0af;line-height:1;}
     #speedo .u{font-size:11px;color:#777;}
+    #speedo .g{font-size:13px;font-weight:bold;color:#ffaa33;line-height:1;margin-top:2px;}
 
     /* ── Minimap ─────────────────────────────────────── */
     #mm{
@@ -451,7 +452,7 @@
 <div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
 <div id="toast"></div>
 <div id="blitz-flash"></div>
-<div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div></div>
+<div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div><div class="g" id="gear">N</div></div>
 <div id="mm"><canvas id="mm-cv" width="160" height="160" style="display:block;"></canvas></div>
 <div id="osm-lbl">🗺 Lade OSM…</div>
 <!-- Aktuelle Straße (nur als Datenspeicher für das MFD, nicht sichtbar) -->
@@ -1694,6 +1695,7 @@ function updatePedestrians(dt) {
       // Weg vom Auto laufen: Richtung prüfen und ggf. umkehren
       if (!p.panicking) {
         p.panicking = true;
+        STATS.pedScared++;
         const awayX = p.mesh.position.x - car.x;
         const awayZ = p.mesh.position.z - car.z;
         const awayAng = Math.atan2(awayX, awayZ);
@@ -2720,23 +2722,61 @@ function playCrashSound(impact) {
   }
 }
 
+// ── 6-Gang-Getriebe: Drehzahl steigt im Gang, fällt beim Hochschalten ──────────
+//   Obergrenzen je Gang als Anteil der Höchstgeschwindigkeit (52,8 m/s)
+const GEAR_TOPS = [0.13, 0.27, 0.43, 0.62, 0.82, 1.0];
+let _curGear = 1, _shiftT = -1;
+
+function _gearOf(spdFrac) {
+  let lo = 0;
+  for (let g = 0; g < GEAR_TOPS.length; g++) {
+    const hi = GEAR_TOPS[g];
+    if (spdFrac <= hi || g === GEAR_TOPS.length - 1) {
+      return { gear: g + 1, rpm: Math.min(1, Math.max(0, (spdFrac - lo) / (hi - lo))) };
+    }
+    lo = hi;
+  }
+  return { gear: 1, rpm: 0 };
+}
+
+// Aktueller Gang für die HUD-Anzeige (N / R / 1–6)
+function currentGearLabel() {
+  if (car.speed < -0.2) return 'R';
+  if (Math.abs(car.speed) < 0.4) return 'N';
+  return String(_curGear);
+}
+
 function updateEngineSound() {
   if (!_actx || _actx.state === 'suspended') return;
-  const spd = Math.min(car.speed / MAX_SPD, 1);
   const now = _actx.currentTime;
-  const hz  = 62 + spd * 128;  // 62 Hz Leerlauf → 190 Hz Vollgas
+  const spdFrac  = Math.min(Math.abs(car.speed) / MAX_SPD, 1);
+  const reversing = car.speed < -0.2;
+  const gi  = reversing ? { gear: 0, rpm: Math.min(1, spdFrac / 0.1) } : _gearOf(spdFrac);
+  const rpm = 0.2 + gi.rpm * 0.8;          // 0,2 Leerlauf … 1,0 Drehzahlbegrenzer
+  const thr = car._throttle || 0;          // tatsächliche Gasstellung (Last)
+  const hz  = 55 + rpm * 150;              // Tonhöhe folgt der DREHZAHL, nicht dem Tempo
 
-  _engFilt.frequency.setTargetAtTime(hz,          now, 0.08);
-  _engGain.gain.setTargetAtTime(0.14 + spd * 0.11, now, 0.07);
-  _lfoOsc.frequency.setTargetAtTime(hz * 2,        now, 0.07);
-  _lfoMod.gain.setTargetAtTime(0.04 + spd * 0.07,  now, 0.08);
-  _subOsc.frequency.setTargetAtTime(hz * 0.5,      now, 0.10);
-  _subGain.gain.setTargetAtTime(0.04 + spd * 0.08, now, 0.09);
-  // Sägezahn-Grundton: RPM-Tonhöhe + Lowpass öffnet mit dem Gas
+  // Schaltvorgang: beim Hochschalten fällt die Drehzahl → kurze Gas-Wegnahme hörbar
+  let shifted = false;
+  if (!reversing && gi.gear > 0 && gi.gear !== _curGear) {
+    if (gi.gear > _curGear) shifted = true;
+    _curGear = gi.gear;
+    _shiftT = now;
+  }
+  const shiftDip = (now - _shiftT) < 0.16 ? 0.4 : 1;   // 160 ms Gain-Einbruch beim Schalten
+
+  const loud = (0.10 + rpm * 0.10 + thr * 0.06) * shiftDip;
+  _engFilt.frequency.setTargetAtTime(hz,           now, 0.04);
+  _engGain.gain.setTargetAtTime(loud,              now, shifted ? 0.015 : 0.06);
+  _lfoOsc.frequency.setTargetAtTime(hz * 2,        now, 0.05);
+  _lfoMod.gain.setTargetAtTime(0.03 + rpm * 0.05,  now, 0.07);
+  _subOsc.frequency.setTargetAtTime(hz * 0.5,      now, 0.08);
+  _subGain.gain.setTargetAtTime(0.04 + rpm * 0.07, now, 0.08);
+  // Sägezahn-Grundton: Lowpass öffnet mit GAS (Last) → der Motor "atmet"
   if (_engOsc) {
-    _engOsc.frequency.setTargetAtTime(hz * 0.5,            now, 0.06);
-    _engOscFilt.frequency.setTargetAtTime(380 + spd*1500,  now, 0.08);
-    _engOscGain.gain.setTargetAtTime(0.025 + spd * 0.06,   now, 0.08);
+    _engOsc.frequency.setTargetAtTime(hz * 0.5,                          now, 0.04);
+    _engOscFilt.frequency.setTargetAtTime(360 + (rpm*0.5 + thr*0.5)*1700, now, 0.06);
+    _engOscGain.gain.setTargetAtTime((0.02 + rpm * 0.05) * shiftDip,      now, 0.05);
   }
 }
 
@@ -2983,6 +3023,7 @@ function checkBlitzer(dt) {
     if (Math.hypot(car.x - b.x, car.z - b.z) < 9 && car.speed > 13.9) {
       b.cooldown = 25;
       const kmh = Math.round(car.speed * 3.6);
+      STATS.speedFlashes++; STATS.fines += 150;
       _buildBlitzerFlash();
       _blitzSound();
       setTimeout(_blitzSound, 80);
@@ -2998,6 +3039,7 @@ function checkTrafficLights(dt) {
     if (!tl.userData.isRed) continue;
     if (Math.hypot(car.x - tl.position.x, car.z - tl.position.z) < 5) {
       _redLightCooldown = 18;
+      STATS.redLights++; STATS.fines += 200;
       toast('🚔 Rotlicht überfahren! Bußgeld 200 € + 2 Punkte');
       if (_actx && _actx.state !== 'suspended') {
         const t = _actx.currentTime;
@@ -3162,6 +3204,35 @@ function updateRain(rd, dt) {
   rd.mesh.geometry.attributes.position.needsUpdate = true;
 }
 
+// ── Stadtverkehr-Statistik (Tagesbilanz am Ende der Heimfahrt) ────────────────
+const STATS = {
+  carsRammed: 0,    // angefahrene/geschobene Autos
+  hardCrashes: 0,   // harte Aufpralle (impact > 8)
+  pedScared: 0,     // erschreckte Fußgänger
+  speedFlashes: 0,  // Blitzer-Auslösungen
+  redLights: 0,     // überfahrene rote Ampeln
+  hitAndRun: 0,     // Fahrerflucht
+  fines: 0,         // Bußgeld-Summe in Euro
+};
+let _huPending = null;   // offener Unfall → Fahrerflucht-Risiko
+
+function checkHitAndRun() {
+  if (!_huPending) return;
+  const d = Math.hypot(car.x - _huPending.x, car.z - _huPending.z);
+  const fled = () => {
+    STATS.hitAndRun++; STATS.fines += 1000; _huPending = null;
+    toast('🚨 Fahrerflucht! +1000 € & Strafanzeige');
+  };
+  if (Math.abs(car.speed) < 1.5 && d < 14) {
+    _huPending = null;
+    toast('🤝 Angehalten — Unfall geregelt. Korrekt!');
+  } else if (d > 32) {
+    fled();
+  } else if (performance.now() - _huPending.t > 22000) {
+    fled();
+  }
+}
+
 function checkCollisions() {
   // Gebäude (AABB)
   for (const b of collidables) {
@@ -3203,10 +3274,14 @@ function checkCollisions() {
       npc.crashed = true;
       npc.crashTimer = 8;
       npc.spin = (Math.random() - 0.5) * (impact > 8 ? 4 : 1.2);
+      STATS.carsRammed++;
       if (impact > 8) {
         npc.tilt = (Math.random() - 0.5) * 0.4;
         playCrashSound(impact);
         _shakeAmt = Math.max(_shakeAmt, 0.18);
+        STATS.hardCrashes++;
+        // Harter Crash → Unfall mit Fahrerflucht-Risiko eröffnen
+        _huPending = { x: car.x, z: car.z, t: performance.now() };
       } else {
         _shakeAmt = Math.max(_shakeAmt, 0.05);
       }
@@ -3257,6 +3332,8 @@ function updateCar(dt) {
 
   // KEIN Auto-Pilot – vollständig manuelles Fahren (Auto-Lenkung entfernt)
   // KEIN Auto-Gas – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
+
+  car._throttle = throttle;   // Gasstellung für Motorsound (Last) merken
 
   // Geschwindigkeit + Rückwärtsgang
   if (throttle > 0) {
@@ -3362,6 +3439,10 @@ function resetCar() {
   car.heading = Math.PI / 2;   // Nase zur Hecke (Osten)
   car.speed = 0; car.steer = 0; car.wpIdx = 1; car.homeMode = false;
   _homeJourneyDone = false; _homeParkShown = false;
+  // Statistik zurücksetzen
+  STATS.carsRammed = STATS.hardCrashes = STATS.pedScared = 0;
+  STATS.speedFlashes = STATS.redLights = STATS.hitAndRun = STATS.fines = 0;
+  _huPending = null;
   document.getElementById('prog-fill').style.width = '0%';
   document.getElementById('street-lbl').textContent = WP[0].street;
   toast('🔄 Neustart – Hofeinfahrt Altbaumburgweg');
@@ -4081,11 +4162,43 @@ function showLegendPopup() {
     `Die Straßen Kölns ein letztes Mal unter den Rädern.`
       .split('\n').join('<br>');
 
+  // ── Stadtverkehr-Bilanz des Tages ──────────────────────────────────────────
+  const driveRows = [];
+  if (STATS.carsRammed)   driveRows.push(`🚗 Autos gerammt/geschoben: <b>${STATS.carsRammed}</b>` +
+                                          (STATS.hardCrashes ? ` &nbsp;(davon ${STATS.hardCrashes} heftig)` : ''));
+  if (STATS.hitAndRun)    driveRows.push(`🚨 Fahrerflucht: <b>${STATS.hitAndRun}×</b>`);
+  if (STATS.speedFlashes) driveRows.push(`📸 Geblitzt: <b>${STATS.speedFlashes}×</b>`);
+  if (STATS.redLights)    driveRows.push(`🚦 Rote Ampeln überfahren: <b>${STATS.redLights}×</b>`);
+  if (STATS.pedScared)    driveRows.push(`🚶 Fußgänger erschreckt: <b>${STATS.pedScared}</b>`);
+
+  // Fahr-Urteil je nach Bußgeld-Summe
+  let verdict;
+  if (STATS.fines === 0 && STATS.carsRammed === 0 && STATS.pedScared === 0)
+    verdict = '🏅 Mustergültige Fahrt — kein einziger Verstoß. Vorbildlich!';
+  else if (STATS.fines === 0)
+    verdict = '🙂 Ein paar Schrecksekunden, aber kein Bußgeld. Solide Fahrt.';
+  else if (STATS.fines < 400)
+    verdict = '😐 Kleinere Verstöße. Das nächste Mal etwas vorsichtiger.';
+  else if (STATS.fines < 1200)
+    verdict = '😬 Eine teure Heimfahrt. Der Bußgeldbescheid kommt per Post.';
+  else
+    verdict = '🚓 Ein Fall für die Verkehrspsychologie. Der Führerschein wackelt!';
+
+  const driveBlock = driveRows.length
+    ? `<hr style="border:0;border-top:1px solid rgba(255,255,255,.15);margin:10px 0">` +
+      `<div style="font-size:13px;color:#ffcc66;margin-bottom:6px">🏙 Stadtverkehr-Bilanz</div>` +
+      driveRows.join('<br>') +
+      `<br><span style="color:#ff8866">💶 Bußgelder gesamt: <b>${STATS.fines} €</b></span>` +
+      `<br><span style="font-size:13px;color:#aac">${verdict}</span>`
+    : `<hr style="border:0;border-top:1px solid rgba(255,255,255,.15);margin:10px 0">` +
+      `<div style="font-size:13px;color:#aac">${verdict}</div>`;
+
   document.getElementById('legend-stats').innerHTML =
     `⚽ Endergebnis: <b>${score}</b> &nbsp;·&nbsp; Sieger: <b>${winner}</b><br>` +
     (rcKoeln || rcBayern
       ? `🟥 Rote Karten: Köln ×${rcKoeln} &nbsp; Bayern ×${rcBayern}`
-      : `🏆 Kein Spieler vom Platz gestellt`);
+      : `🏆 Kein Spieler vom Platz gestellt`) +
+    driveBlock;
 
   document.getElementById('legend-popup').style.display = 'flex';
 }
@@ -5850,9 +5963,11 @@ function loop(now) {
     updateSquealSound(Math.abs((car.vx||0)*fzS - (car.vz||0)*fxS)); }
   checkBlitzer(dt);
   checkTrafficLights(dt);
+  checkHitAndRun();
 
   document.getElementById('spd').textContent =
     (car.speed < -0.2 ? '↩ ' : '') + Math.round(Math.abs(car.speed) * 3.6);
+  document.getElementById('gear').textContent = currentGearLabel();
 
   // ── Rückspiegel: Rückkamera auf RenderTarget rendern ──────────────────────
   rearCam.position.set(car.x, 1.28, car.z);
