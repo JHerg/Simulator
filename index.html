@@ -985,6 +985,8 @@ function roadGeo(ax, az, bx, bz, width, y) {
 // ── Gebäude ───────────────────────────────────────────────────────────────────
 // Zufällige Box-Gebäude entfernt – echte OSM-Footprints werden in loadOSM() extrudiert
 const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
+const osmBuildings = [];   // [OPT-3] Referenzen aller OSM-Gebäude-Meshes (für Distanz-Culling)
+let   frameCount   = 0;    // [OPT-3] Frame-Zähler (Culling nur alle 10 Frames)
 
 
 // ── Bäume (InstancedMesh – 1 Draw-Call pro Material statt 2 Meshes je Baum) ────
@@ -3233,6 +3235,7 @@ function buildOSMBuildings(elements, nodes) {
     const mesh = new THREE.Mesh(geo, matPairs[mIdx]);
     mesh.position.y = 0;
     scene.add(mesh);
+    osmBuildings.push(mesh);   // [OPT-3]
 
     // AABB für Kollisionserkennung
     const minX = Math.min(...pts.map(p=>p[0])), maxX = Math.max(...pts.map(p=>p[0]));
@@ -5184,6 +5187,18 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min((now - lastT) / 1000, 0.05);
   lastT = now;
+
+  // ── [OPT-3] Distanz-Culling für OSM-Gebäude (alle 10 Frames) ──────────────
+  if ((frameCount++ % 10) === 0 && osmBuildings.length) {
+    const cutoff  = (scene.fog ? scene.fog.far : 1100) + 80;
+    const cutoff2 = cutoff * cutoff;
+    for (let i = 0; i < osmBuildings.length; i++) {
+      const b = osmBuildings[i];
+      const ddx = b.position.x - car.x;
+      const ddz = b.position.z - car.z;
+      b.visible = (ddx*ddx + ddz*ddz) < cutoff2;
+    }
+  }
 
   // Fußball-Modus: 3D-Szene rendern
   if (footballActive) {
