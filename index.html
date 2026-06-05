@@ -987,7 +987,8 @@ function roadGeo(ax, az, bx, bz, width, y) {
 const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
 
 
-// ── Bäume ─────────────────────────────────────────────────────────────────────
+// ── Bäume (InstancedMesh – 1 Draw-Call pro Material statt 2 Meshes je Baum) ────
+// [OPT-1] Performance: prozedurale Positionen sammeln, dann instanziert rendern.
 (function buildTrees() {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b3f1e, roughness: 0.95, metalness: 0.0 });
   const crownMats = [
@@ -996,8 +997,11 @@ const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
     new THREE.MeshStandardMaterial({ color: 0x3a8a28, roughness: 0.85, metalness: 0.0 }),
   ];
   const rng = (() => { let s=9876543; return ()=>{ s=(s*1664525+1013904223)&0x7fffffff; return s/0x7fffffff; }; })();
-  const treeSpacing = isMobile ? 25 : 14;
+  const treeSpacing = isMobile ? 18 : 14;   // [OPT-1] dichter möglich (war 25 mobil), Instancing trägt das
 
+  // 1) Positionen einsammeln
+  const trunks = [];   // {x,z,h}
+  const crowns = [];   // {x,y,z,cr,matIdx}
   for (let i = 0; i < WP.length-1; i++) {
     const A = WP[i], B = WP[i+1];
     const dx = B.x-A.x, dz = B.z-A.z;
@@ -1019,21 +1023,40 @@ const collidables = [];  // {x,z,hw,hd} – für Kollisionserkennung
         const pz = bz + nz*side*off;
         const h  = 4 + rng()*4;
         const cr = 1.4 + rng()*1.6;
-
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.18,h,6), trunkMat);
-        trunk.position.set(px, h/2, pz);
-        scene.add(trunk);
-
-        const crown = new THREE.Mesh(
-          new THREE.SphereGeometry(cr, isMobile?5:8, isMobile?5:8),
-          crownMats[Math.floor(rng()*crownMats.length)]
-        );
-        crown.position.set(px, h + cr*0.55, pz);
-        if (!isMobile) crown.castShadow = true;
-        scene.add(crown);
+        trunks.push({ x:px, z:pz, h });
+        crowns.push({ x:px, y:h + cr*0.55, z:pz, cr, matIdx: Math.floor(rng()*crownMats.length) });
       });
     }
   }
+
+  const m = new THREE.Matrix4();
+
+  // 2) Alle Stämme in EIN InstancedMesh (Basis-Zylinder Höhe 1, per Scale gestreckt)
+  const trunkGeo  = new THREE.CylinderGeometry(0.14, 0.18, 1, 6);
+  const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, trunks.length);
+  trunks.forEach((tr, idx) => {
+    m.makeScale(1, tr.h, 1);
+    m.setPosition(tr.x, tr.h/2, tr.z);
+    trunkInst.setMatrixAt(idx, m);
+  });
+  trunkInst.instanceMatrix.needsUpdate = true;
+  scene.add(trunkInst);
+
+  // 3) Kronen pro Material in je EIN InstancedMesh (Basis-Kugel r=1, per Scale skaliert)
+  const crownGeo = new THREE.SphereGeometry(1, isMobile?5:8, isMobile?5:8);
+  crownMats.forEach((mat, matIdx) => {
+    const subset = crowns.filter(c => c.matIdx === matIdx);
+    if (!subset.length) return;
+    const inst = new THREE.InstancedMesh(crownGeo, mat, subset.length);
+    subset.forEach((c, idx) => {
+      m.makeScale(c.cr, c.cr, c.cr);
+      m.setPosition(c.x, c.y, c.z);
+      inst.setMatrixAt(idx, m);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    if (!isMobile) inst.castShadow = true;
+    scene.add(inst);
+  });
 })();
 
 // ── Zebrastreifen + Haltelinien an Ampelkreuzungen ────────────────────────────
