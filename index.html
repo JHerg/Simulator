@@ -691,6 +691,10 @@ cfg = cfg || { time:'day', weather:'clear' };
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
               || window.innerWidth < 700;
+// Android-Tablets/-Handys haben oft schwächere GPUs (Mali/Adreno-Mittelklasse) und
+// physisch größere, hochauflösende Schirme → eigenes, sparsameres Profil.
+const isAndroid = /Android/i.test(navigator.userAgent);
+const lowPerf   = isAndroid;   // aggressiveres Spar-Profil für schwache Geräte
 
 // ── Geo-Koordinaten → Szene (Meter) ─────────────────────────────────────────
 // Referenzpunkt: Altbaumburgweg 2, 50739 Köln (exakt laut Routenplaner)
@@ -834,7 +838,9 @@ let HOME_CX = 0, HOME_CZ = 0;
 // ── Renderer ─────────────────────────────────────────────────────────────────
 const canvas = document.getElementById('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile });
-renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.5 : 2));
+// Pixelratio-Obergrenze: Android niedriger (große Schirme + schwache GPU → weniger Pixel)
+const PR_CAP = isAndroid ? 1.0 : (isMobile ? 1.5 : 2);
+renderer.setPixelRatio(Math.min(devicePixelRatio, PR_CAP));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = !isMobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -849,10 +855,10 @@ let stadiumWall = null, stadiumRoof = null; // Referenzen für Nacht-Materialwec
 // ── Szene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x6ab4e8);
-scene.fog = new THREE.Fog(0x6ab4e8, 150, isMobile ? 600 : 1100);
+scene.fog = new THREE.Fog(0x6ab4e8, 150, lowPerf ? 460 : isMobile ? 600 : 1100);
 
 // ── Kamera (Cockpit) ─────────────────────────────────────────────────────────
-const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, isMobile ? 700 : 1300);
+const cam = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.2, lowPerf ? 560 : isMobile ? 700 : 1300);
 cam.rotation.order = 'YXZ';
 
 // ── Beleuchtung ───────────────────────────────────────────────────────────────
@@ -1007,7 +1013,7 @@ let   frameCount   = 0;    // [OPT-3] Frame-Zähler (Culling nur alle 10 Frames)
     new THREE.MeshStandardMaterial({ color: 0x3a8a28, roughness: 0.85, metalness: 0.0 }),
   ];
   const rng = (() => { let s=9876543; return ()=>{ s=(s*1664525+1013904223)&0x7fffffff; return s/0x7fffffff; }; })();
-  const treeSpacing = isMobile ? 18 : 14;   // [OPT-1] dichter möglich (war 25 mobil), Instancing trägt das
+  const treeSpacing = lowPerf ? 24 : isMobile ? 18 : 14;   // [OPT-1] dichter möglich (war 25 mobil), Instancing trägt das
 
   // 1) Positionen einsammeln
   const trunks = [];   // {x,z,h}
@@ -1548,8 +1554,8 @@ function createNPC(wpStart, color, reverse) {
 
 function initNPCs() {
   // Mehr Verkehr – auf Handy etwas reduziert (Performance)
-  const nFwd = isMobile ? 10 : 18;   // vorwärts (war 7)
-  const nRev = isMobile ?  6 : 11;   // Gegenverkehr (war 4)
+  const nFwd = lowPerf ? 7 : isMobile ? 10 : 18;   // vorwärts (war 7)
+  const nRev = lowPerf ? 4 : isMobile ?  6 : 11;   // Gegenverkehr (war 4)
 
   // Gleichlaufende NPCs (vorwärts)
   const step = Math.max(1, Math.floor(WP.length / (nFwd + 1)));
@@ -2921,14 +2927,15 @@ let _shakeAmt = 0;
 function applyNightMode() {
   scene.background = new THREE.Color(0x040810);
   scene.fog = new THREE.Fog(0x040810, cfg.weather==='rain' ? 18 : 25,
-    isMobile ? (cfg.weather==='rain' ? 130 : 175) : (cfg.weather==='rain' ? 220 : 340));
+    lowPerf ? (cfg.weather==='rain' ? 105 : 140)
+    : isMobile ? (cfg.weather==='rain' ? 130 : 175) : (cfg.weather==='rain' ? 220 : 340));
   sun.intensity = 0.04;
   scene.children.forEach(c => {
     if (c.isAmbientLight)    c.intensity = 0.12;
     if (c.isHemisphereLight) c.intensity = 0.09;
   });
   // PointLight-Pool (bewegt sich mit dem Auto → simuliert Straßenbeleuchtung)
-  const n = isMobile ? 3 : 5;
+  const n = lowPerf ? 2 : isMobile ? 3 : 5;
   for (let i = 0; i < n; i++) {
     const l = new THREE.PointLight(0xff9944, 3.5, 70);
     scene.add(l);
@@ -3631,7 +3638,7 @@ function buildOSMBuildings(elements, nodes) {
     ];
   });
 
-  const maxBld = isMobile ? 220 : 1100;
+  const maxBld = lowPerf ? 130 : isMobile ? 220 : 1100;
   let count = 0;
 
   elements.filter(e => e.type === 'way' && e.tags && e.tags.building).forEach(way => {
@@ -5899,6 +5906,34 @@ function _drawPressConf(t) {
   });
 }
 
+// ── Adaptive Render-Auflösung ─────────────────────────────────────────────────
+//   Misst die Bildrate und senkt bei Lastspitzen automatisch die Render-Auflösung
+//   (und hebt sie bei Reserve wieder an). Hält das Spiel auf schwacher Hardware
+//   flüssig, ohne das Bild auf starken Geräten zu verschlechtern. Nur mobil aktiv.
+let _renderScale = 1.0;
+const _MIN_SCALE = isAndroid ? 0.55 : 0.7;
+function _setRenderScale(s) {
+  _renderScale = Math.max(_MIN_SCALE, Math.min(1.0, s));
+  const pr = Math.min(devicePixelRatio, PR_CAP) * _renderScale;
+  renderer.setPixelRatio(pr);
+  if (composer) { composer.setPixelRatio?.(pr); composer.setSize(innerWidth, innerHeight); }
+}
+let _fpsAccum = 0, _fpsFrames = 0, _drsCooldown = 0;
+function _adaptResolution(dt) {
+  if (!isMobile) return;                 // nur auf mobilen Geräten regeln
+  _fpsAccum += dt; _fpsFrames++;
+  if (_drsCooldown > 0) _drsCooldown -= dt;
+  if (_fpsAccum < 0.6) return;           // alle ~0,6 s auswerten
+  const fps = _fpsFrames / _fpsAccum;
+  _fpsAccum = 0; _fpsFrames = 0;
+  if (_drsCooldown > 0) return;
+  if (fps < 45 && _renderScale > _MIN_SCALE) {
+    _setRenderScale(_renderScale - 0.12); _drsCooldown = 1.2;   // schnell runter
+  } else if (fps > 57 && _renderScale < 1.0) {
+    _setRenderScale(_renderScale + 0.08); _drsCooldown = 2.0;   // langsam wieder rauf
+  }
+}
+
 // ── Resize ────────────────────────────────────────────────────────────────────
 window.addEventListener('resize', () => {
   cam.aspect = innerWidth / innerHeight;
@@ -5937,6 +5972,8 @@ function loop(now) {
     renderer.render(fbScene, fbCamera);
     return;
   }
+
+  _adaptResolution(dt);
 
   const elapsed = clock.getElapsedTime();
   updateCar(dt);
