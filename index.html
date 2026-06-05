@@ -236,6 +236,27 @@
       transition:transform .15s,box-shadow .15s;
     }
     #cfg-football:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(0,200,0,.5);}
+    #cfg-freedrive{
+      padding:15px 42px;border-radius:14px;
+      font-size:18px;font-weight:bold;
+      background:linear-gradient(135deg,#664422,#cc8844);
+      color:#fff;border:none;cursor:pointer;
+      box-shadow:0 4px 22px rgba(160,100,0,.38);
+      transition:transform .15s,box-shadow .15s;
+    }
+    #cfg-freedrive:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(200,130,0,.5);}
+    #flensburg-hud{
+      position:fixed;top:14px;left:50%;transform:translateX(-50%);
+      background:rgba(0,0,0,.72);color:#ffcc44;border-radius:10px;
+      padding:4px 14px;font-size:14px;font-weight:bold;
+      pointer-events:none;display:none;z-index:60;letter-spacing:.03em;
+    }
+    #freedrive-timer{
+      position:fixed;top:14px;left:50%;transform:translateX(-50%);
+      background:rgba(0,0,0,.72);color:#88ccff;border-radius:10px;
+      padding:4px 14px;font-size:14px;font-weight:bold;
+      pointer-events:none;display:none;z-index:60;
+    }
 
     /* ── Tempolimit-Schild ──────────────────────────────── */
     #limit-sign{
@@ -458,6 +479,7 @@
   <div id="cfg-btn-row">
     <button id="cfg-start">🚗 Fahrt starten</button>
     <button id="cfg-football">⚽ Zum Fußball</button>
+    <button id="cfg-freedrive">🕹 Freies Fahren</button>
   </div>
 </div>
 
@@ -466,6 +488,8 @@
 <canvas id="cockpit-cv"></canvas>
 
 <div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
+<div id="flensburg-hud">📋 <span id="flen-pts">0</span>/8 Pkt.</div>
+<div id="freedrive-timer">🕹 <span id="fd-time">0:00</span></div>
 <div id="toast"></div>
 <div id="blitz-flash"></div>
 <div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div><div class="g" id="gear">N</div></div>
@@ -703,11 +727,25 @@ async function boot() {
       console.error(e);
     }
   });
+
+  // Freies Fahren
+  document.getElementById('cfg-freedrive').addEventListener('click', () => {
+    cfgEl.style.display = 'none';
+    try {
+      _freeDriveMode = true;
+      startSimulator(getCfg());
+    } catch(e) {
+      bootError('Render-Fehler: ' + e.message);
+      document.getElementById('boot-screen').style.display = 'flex';
+      console.error(e);
+    }
+  });
 }
 
 boot();
 
 let _startDirectFootball = false;
+let _freeDriveMode = false;
 
 function startSimulator(cfg) {
 cfg = cfg || { time:'day', weather:'clear' };
@@ -1654,8 +1692,18 @@ function updateNPCs(dt) {
     let diff = Math.atan2(dx, dz) - npc.heading;
     diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     npc.heading += diff * Math.min(1, 3.4 * dt);
-    npc.x += Math.sin(npc.heading) * npc.speed * dt;
-    npc.z += Math.cos(npc.heading) * npc.speed * dt;
+
+    // Rote Ampel: NPC hält an, wenn eine rote Ampel < 15 m voraus ist
+    let npcSpd = npc.speed;
+    const fwdX = Math.sin(npc.heading), fwdZ = Math.cos(npc.heading);
+    for (const tl of trafficLights) {
+      if (!tl.userData.isRed) continue;
+      const tdx = tl.position.x - npc.x, tdz = tl.position.z - npc.z;
+      const dot = tdx * fwdX + tdz * fwdZ;
+      if (dot > 1 && dot < 15 && Math.hypot(tdx, tdz) < 15) { npcSpd = 0; break; }
+    }
+    npc.x += Math.sin(npc.heading) * npcSpd * dt;
+    npc.z += Math.cos(npc.heading) * npcSpd * dt;
     npc.mesh.position.set(npc.x, 0, npc.z);
     npc.mesh.rotation.y = npc.heading + Math.PI;
   });
@@ -1751,6 +1799,149 @@ function updatePedestrians(dt) {
     // Kopf wackelt bei Panik
     if (p.panicking) p.mesh.rotation.z = Math.sin(now * 0.02) * 0.18;
     else p.mesh.rotation.z = 0;
+  });
+}
+
+// ── Zebrastreifen-Fußgänger (queren bei rot für Autos) ───────────────────────
+const crosswalkPeds = [];
+
+function buildCrosswalkPeds() {
+  const SKIN  = [0xffcc99, 0xdaa57a, 0x8d5524, 0xf1c27d];
+  const CLOTH = [0x334488, 0x884433, 0x338844, 0xaa8833, 0x444444, 0x884488];
+  let ci = 0;
+  WP.forEach((wp, i) => {
+    if (!wp.tl || i === 0 || i >= WP.length - 1) return;
+    const prev = WP[i - 1];
+    const dx = wp.x - prev.x, dz = wp.z - prev.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const nx = -dz / len, nz = dx / len;
+    const rw = (wp.width || 8) / 2 + 2;
+    // 1-2 Fußgänger pro Zebrastreifen
+    const count = 1 + (i % 2);
+    for (let k = 0; k < count; k++) {
+      const side = k % 2 === 0 ? 1 : -1;
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.16, 0.95, 6),
+        new THREE.MeshLambertMaterial({ color: CLOTH[ci % CLOTH.length] })
+      );
+      body.position.y = 0.62; g.add(body);
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 6, 6),
+        new THREE.MeshLambertMaterial({ color: SKIN[ci % SKIN.length] })
+      );
+      head.position.y = 1.35; g.add(head);
+      ci++;
+      const sx = wp.x + nx * rw * side, sz = wp.z + nz * rw * side;
+      const ex = wp.x - nx * rw * side, ez = wp.z - nz * rw * side;
+      g.position.set(sx, 0, sz);
+      scene.add(g);
+      // Nearest traffic light (pre-computed)
+      let nearTL = null, nearD = Infinity;
+      for (const tl of trafficLights) {
+        const d = Math.hypot(tl.position.x - wp.x, tl.position.z - wp.z);
+        if (d < nearD) { nearD = d; nearTL = tl; }
+      }
+      crosswalkPeds.push({
+        mesh: g, sx, sz, ex, ez, nx, nz, t: 0, dir: 0,
+        waitTimer: k * 2.5 + Math.random() * 2,
+        crossSpd: 1.2 + Math.random() * 0.4,
+        nearTL,
+      });
+    }
+  });
+}
+
+function updateCrosswalkPeds(dt) {
+  crosswalkPeds.forEach(cp => {
+    const carsRed = cp.nearTL ? cp.nearTL.userData.isRed : false;
+    if (cp.dir === 0) {
+      cp.waitTimer -= dt;
+      if (carsRed && cp.waitTimer <= 0) { cp.dir = 1; }
+    } else {
+      const dist = Math.hypot(cp.ex - cp.sx, cp.ez - cp.sz);
+      cp.t += cp.dir * cp.crossSpd * dt / dist;
+      if (cp.t >= 1) {
+        cp.t = 1; cp.dir = 0;
+        cp.waitTimer = 5 + Math.random() * 4;
+        // Swap start/end so they go back next time
+        const tx = cp.sx, tz = cp.sz;
+        cp.sx = cp.ex; cp.sz = cp.ez; cp.ex = tx; cp.ez = tz;
+      }
+      if (cp.t < 0) cp.t = 0;
+      const px = cp.sx + (cp.ex - cp.sx) * cp.t;
+      const pz = cp.sz + (cp.ez - cp.sz) * cp.t;
+      cp.mesh.position.set(px, 0, pz);
+      cp.mesh.rotation.y = Math.atan2(cp.ex - cp.sx, cp.ez - cp.sz);
+      // Rush if light turned green while crossing
+      if (!carsRed) cp.crossSpd = Math.min(3.5, cp.crossSpd + dt);
+    }
+    // Panic when car is close
+    const dCar = Math.hypot(cp.mesh.position.x - car.x, cp.mesh.position.z - car.z);
+    if (dCar < 6 && Math.abs(car.speed) > 2) cp.dir = 0; // freeze in panic
+  });
+}
+
+// ── Kölsch-Sammelstücke 🍺 ───────────────────────────────────────────────────
+const kolschItems = [];
+
+function buildKolschItems() {
+  const indices = [
+    Math.floor(WP.length * 0.10),
+    Math.floor(WP.length * 0.25),
+    Math.floor(WP.length * 0.45),
+    Math.floor(WP.length * 0.65),
+    Math.floor(WP.length * 0.85),
+  ];
+  indices.forEach((idx, i) => {
+    const wp = WP[Math.min(idx, WP.length - 1)];
+    const g = new THREE.Group();
+    const glass = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.15, 0.7, 8),
+      new THREE.MeshBasicMaterial({ color: 0xf0a010, transparent: true, opacity: 0.85 })
+    );
+    glass.position.y = 0.45; g.add(glass);
+    const foam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.21, 0.2, 0.14, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+    foam.position.y = 0.84; g.add(foam);
+    // Shining ring to make it visible
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.45, 0.06, 6, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffdd00 })
+    );
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.6; g.add(ring);
+    const ox = 4 + i * 0.5, oz = 4 - i * 0.5;
+    g.position.set(wp.x + ox, 0.5, wp.z + oz);
+    scene.add(g);
+    kolschItems.push({ mesh: g, x: wp.x + ox, z: wp.z + oz, collected: false, phase: i * 1.3 });
+  });
+}
+
+function updateKolsch(elapsed) {
+  kolschItems.forEach(item => {
+    if (item.collected) return;
+    item.mesh.position.y = Math.sin(elapsed * 2.2 + item.phase) * 0.28 + 0.6;
+    item.mesh.rotation.y = elapsed * 1.1 + item.phase;
+    if (Math.hypot(car.x - item.x, car.z - item.z) < 6) {
+      item.collected = true;
+      scene.remove(item.mesh);
+      _kolschCollected++;
+      if (_actx && _actx.state !== 'suspended') {
+        const t = _actx.currentTime;
+        [880, 1100, 1320].forEach((f, j) => {
+          const o = _actx.createOscillator(), gn = _actx.createGain();
+          o.type = 'sine'; o.frequency.value = f;
+          gn.gain.setValueAtTime(0.12, t + j * 0.07);
+          gn.gain.exponentialRampToValueAtTime(0.001, t + j * 0.07 + 0.18);
+          o.connect(gn); gn.connect(_actx.destination);
+          o.start(t + j * 0.07); o.stop(t + j * 0.07 + 0.19);
+        });
+      }
+      toast(`🍺 Kölsch gesammelt! (${_kolschCollected}/5)` +
+            (_kolschCollected === 5 ? ' — Prost! Alle gesammelt! 🏆' : ''));
+    }
   });
 }
 
@@ -2406,6 +2597,7 @@ function _wpPassed(wpIdx, towardNext) {
 }
 
 function checkWaypoint() {
+  if (_freeDriveMode) return;
   if (car.homeMode) {
     // ── Heimfahrt: WP rückwärts abarbeiten ──
     if (car.wpIdx < 0) return;
@@ -3205,6 +3397,7 @@ function checkBlitzer(dt) {
       _blitzSound();
       setTimeout(_blitzSound, 80);
       toast('📸 GEBLITZT! ' + kmh + ' km/h — Bußgeld 150 €');
+      addFlensburg(1, 'Geschwindigkeitsverstoß');
     }
   });
 }
@@ -3217,7 +3410,8 @@ function checkTrafficLights(dt) {
     if (Math.hypot(car.x - tl.position.x, car.z - tl.position.z) < 5) {
       _redLightCooldown = 18;
       STATS.redLights++; STATS.fines += 200;
-      toast('🚔 Rotlicht überfahren! Bußgeld 200 € + 2 Punkte');
+      toast('🚔 Rotlicht überfahren! Bußgeld 200 €');
+      addFlensburg(2, 'Rotlichtverstoß');
       if (_actx && _actx.state !== 'suspended') {
         const t = _actx.currentTime;
         [490, 580, 490, 580].forEach((f, i) => {
@@ -3445,6 +3639,13 @@ const STATS = {
   fuelCost: 0,      // getankter Sprit in Euro
 };
 
+// ── Flensburg Punkteregister ──────────────────────────────────────────────────
+let _flensburg = 0;
+
+// ── Polizei-Verfolgung ────────────────────────────────────────────────────────
+let _policeCar = null, _policeSiren = null, _policeBlinkT = 0;
+let _kolschCollected = 0;
+
 // ── Tank ──────────────────────────────────────────────────────────────────────
 let fuel = 100;                 // Tankfüllung in Prozent
 let _fuelEmpty = false, _lowFuelWarned = false;
@@ -3456,6 +3657,8 @@ function checkHitAndRun() {
   const fled = () => {
     STATS.hitAndRun++; STATS.fines += 1000; _huPending = null;
     toast('🚨 Fahrerflucht! +1000 € & Strafanzeige');
+    addFlensburg(3, 'Fahrerflucht');
+    spawnPolice();
   };
   if (Math.abs(car.speed) < 1.5 && d < 14) {
     _huPending = null;
@@ -3465,6 +3668,118 @@ function checkHitAndRun() {
   } else if (performance.now() - _huPending.t > 22000) {
     fled();
   }
+}
+
+function addFlensburg(pts, reason) {
+  _flensburg += pts;
+  const el = document.getElementById('flensburg-hud');
+  if (el) {
+    el.style.display = 'block';
+    document.getElementById('flen-pts').textContent = _flensburg;
+  }
+  setTimeout(() => toast(`📋 +${pts} Flensburg-Pkt: ${reason} (${_flensburg}/8)`), 400);
+  if (_flensburg >= 8) {
+    setTimeout(() => {
+      document.getElementById('legend-title').textContent = '🚫 Führerschein entzogen!';
+      document.getElementById('legend-text').innerHTML =
+        'Das Kraftfahrt-Bundesamt Flensburg hat Ihnen die Fahrerlaubnis entzogen.<br><br>' +
+        'Mit <b>' + _flensburg + ' Punkten</b> haben Sie das gesetzliche Maximum überschritten.';
+      document.getElementById('legend-stats').innerHTML =
+        '🛑 Bitte stellen Sie das Fahrzeug ab und wenden Sie sich an die zuständige Behörde.';
+      document.getElementById('legend-close').textContent = '🏠 Verstanden';
+      document.getElementById('legend-popup').style.display = 'flex';
+    }, 2200);
+  } else if (_flensburg >= 4) {
+    setTimeout(() => toast(`⚠️ Warnung: ${_flensburg}/8 Pkt — bei 8 wird der Führerschein entzogen!`), 3500);
+  }
+}
+
+// ── Polizei-Einsatzfahrzeug ───────────────────────────────────────────────────
+function spawnPolice() {
+  if (_policeCar) return;
+  const g = new THREE.Group();
+  const wMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.4 });
+  const bMat = new THREE.MeshStandardMaterial({ color: 0x0033aa, metalness: 0.2, roughness: 0.5 });
+  const blk  = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.6, metalness: 0.2 });
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.42, 4.0), blk);
+  sill.position.y = 0.42; g.add(sill);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.6, 3.9), wMat);
+  body.position.y = 0.82; g.add(body);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.18, 3.9), bMat);
+  stripe.position.y = 1.02; g.add(stripe);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.62, 2.0), wMat);
+  roof.position.set(0, 1.45, -0.35); g.add(roof);
+  [[-0.9,0.34,1.25],[0.9,0.34,1.25],[-0.9,0.34,-1.25],[0.9,0.34,-1.25]].forEach(([rx,ry,rz])=>{
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.24,14), blk);
+    w.rotation.z = Math.PI/2; w.position.set(rx,ry,rz); g.add(w);
+  });
+  const lMat = new THREE.MeshBasicMaterial({ color: 0x2255ff });
+  const lBar = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.16, 0.35), lMat);
+  lBar.position.set(0, 1.79, -0.2); g.add(lBar);
+
+  const spawnX = car.x - Math.sin(car.heading) * 140;
+  const spawnZ = car.z - Math.cos(car.heading) * 140;
+  g.position.set(spawnX, 0, spawnZ);
+  scene.add(g);
+
+  _policeCar = { mesh: g, lMat, x: spawnX, z: spawnZ, heading: car.heading, speed: 0, caught: false };
+  _policeBlinkT = 0;
+  _startPoliceSiren();
+  toast('🚔 Polizei! Einsatzfahrzeug folgt — bleiben Sie stehen!');
+}
+
+function _startPoliceSiren() {
+  if (!_actx) return;
+  const osc  = _actx.createOscillator();
+  const gain = _actx.createGain();
+  osc.type = 'sawtooth'; osc.frequency.value = 880;
+  gain.gain.value = 0.14;
+  osc.connect(gain); gain.connect(_actx.destination);
+  osc.start();
+  let hi = true;
+  const iv = setInterval(() => {
+    if (!_policeCar) { clearInterval(iv); try { osc.stop(); } catch(e){} return; }
+    hi = !hi;
+    osc.frequency.setTargetAtTime(hi ? 880 : 650, _actx.currentTime, 0.08);
+  }, 480);
+  _policeSiren = { osc, gain, iv };
+}
+
+function stopPoliceSiren() {
+  if (!_policeSiren) return;
+  clearInterval(_policeSiren.iv);
+  try { _policeSiren.osc.stop(); } catch(e){}
+  _policeSiren = null;
+}
+
+function updatePolice(dt) {
+  if (!_policeCar) return;
+  const pc = _policeCar;
+  _policeBlinkT += dt;
+  pc.lMat.color.setHex((_policeBlinkT % 0.45 < 0.22) ? 0x2255ff : 0xff2200);
+
+  if (pc.caught) return;
+  const dx = car.x - pc.x, dz = car.z - pc.z;
+  const dist = Math.hypot(dx, dz);
+
+  if (dist < 5 && Math.abs(car.speed) < 3) {
+    pc.caught = true;
+    stopPoliceSiren();
+    STATS.fines += 500;
+    toast('🚔 Gestellt! +500 € — Fahrerflucht wird zur Anzeige gebracht.');
+    setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 6000);
+    return;
+  }
+  const chaseSpd = Math.min(46, 30 + dist * 0.18);
+  pc.speed += (chaseSpd - pc.speed) * Math.min(1, dt * 2.5);
+  const th = Math.atan2(dx, dz);
+  let diff = th - pc.heading;
+  diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  pc.heading += diff * Math.min(1, 2.8 * dt);
+  pc.x += Math.sin(pc.heading) * pc.speed * dt;
+  pc.z += Math.cos(pc.heading) * pc.speed * dt;
+  pc.mesh.position.set(pc.x, 0, pc.z);
+  pc.mesh.rotation.y = pc.heading + Math.PI;
 }
 
 function checkCollisions() {
@@ -3686,6 +4001,12 @@ function resetCar() {
   STATS.carsRammed = STATS.hardCrashes = STATS.pedScared = 0;
   STATS.speedFlashes = STATS.redLights = STATS.hitAndRun = STATS.fines = STATS.fuelCost = 0;
   _huPending = null;
+  _flensburg = 0; _kolschCollected = 0;
+  document.getElementById('flensburg-hud').style.display = 'none';
+  document.getElementById('flen-pts').textContent = '0';
+  if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; }
+  stopPoliceSiren();
+  kolschItems.forEach(item => { if (item.collected) { item.collected = false; scene.add(item.mesh); } });
   fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
   document.getElementById('prog-fill').style.width = '0%';
   document.getElementById('street-lbl').textContent = WP[0].street;
@@ -4415,6 +4736,8 @@ function showLegendPopup() {
   if (STATS.redLights)    driveRows.push(`🚦 Rote Ampeln überfahren: <b>${STATS.redLights}×</b>`);
   if (STATS.pedScared)    driveRows.push(`🚶 Fußgänger erschreckt: <b>${STATS.pedScared}</b>`);
   if (STATS.fuelCost)     driveRows.push(`⛽ Getankt: <b>${STATS.fuelCost} €</b>`);
+  if (_flensburg > 0)     driveRows.push(`📋 Flensburg-Punkte: <b>${_flensburg}/8</b>`);
+  if (_kolschCollected > 0) driveRows.push(`🍺 Kölsch gesammelt: <b>${_kolschCollected}/5</b>`);
 
   // Fahr-Urteil je nach Bußgeld-Summe
   let verdict;
@@ -6215,12 +6538,21 @@ function loop(now) {
 
   const elapsed = clock.getElapsedTime();
   updateCar(dt);
-  checkParking();
-  checkHomePark();
-  checkOmaPark();
+  if (!_freeDriveMode) { checkParking(); checkHomePark(); checkOmaPark(); }
   checkGasStation();
+  // Freier-Fahrmodus-Timer
+  if (_freeDriveMode) {
+    const fdEl = document.getElementById('freedrive-timer');
+    if (fdEl && fdEl.style.display === 'none') fdEl.style.display = 'block';
+    const secs = Math.floor(elapsed);
+    document.getElementById('fd-time').textContent =
+      Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+  }
   updateNPCs(dt);
   updatePedestrians(dt);
+  updateCrosswalkPeds(dt);
+  updatePolice(dt);
+  updateKolsch(elapsed);
   updateCamera();
   updateHeadlights();
   if (nightLightPool.length) updateNightLights();
@@ -6404,6 +6736,8 @@ function setupBloom() { setupComposer(); }
 initNPCs();
 buildZebraAndStopLines();
 buildPedestrians();
+buildCrosswalkPeds();
+buildKolschItems();
 setupParkingAndFootball();
 setupHomePark();
 setupOmaStop();
