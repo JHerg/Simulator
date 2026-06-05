@@ -2195,6 +2195,8 @@ const car = {
   heading: Math.PI / 2,   // Nase nach Osten (zur Hecke) – Spieler fährt rückwärts raus
   speed:    0,
   steer:    0,
+  vx:       0,    // [OPT-2] Welt-Geschwindigkeit X (für Schlupf/Drift)
+  vz:       0,    // [OPT-2] Welt-Geschwindigkeit Z
   wpIdx:    1,
   homeMode: false,   // true = Heimfahrt (WP rückwärts)
 };
@@ -2860,6 +2862,8 @@ function checkCollisions() {
 
 // ── Physik ────────────────────────────────────────────────────────────────────
 const MAX_SPD = 52.8, MAX_REV = 5, ACCEL = 7, BRAKE = 16, DRAG = 1.6, STEER_SPD = 2.4;
+const GRIP        = 8.0;   // [OPT-2] Abbau der Quergeschwindigkeit (höher = mehr Haftung)
+const GRIP_HANDBR = 2.2;   // [OPT-2] reduzierter Grip bei Handbremse → Drift
 // 52.8 m/s = 190 km/h
 
 function updateCar(dt) {
@@ -2923,9 +2927,33 @@ function updateCar(dt) {
   car.steer += (steerIn - car.steer) * 6 * dt;
   car.heading += car.steer * STEER_SPD * sFactor * reverse * dt;
 
-  // Position
-  car.x += Math.sin(car.heading) * car.speed * dt;
-  car.z += Math.cos(car.heading) * car.speed * dt;
+  // ── [OPT-2] Geschwindigkeit in Längs-/Querkomponente zerlegen ───────────────
+  const fxDir = Math.sin(car.heading), fzDir = Math.cos(car.heading); // vorwärts
+  const sxDir = fzDir, szDir = -fxDir;                                 // quer (90° gedreht)
+
+  // Welt-Velocity in lokale Komponenten projizieren
+  let vForward = car.vx * fxDir + car.vz * fzDir;
+  let vSide    = car.vx * sxDir + car.vz * szDir;
+
+  // Motor/Bremse steuern car.speed → das ist die Längskomponente
+  vForward = car.speed;
+
+  // Grip baut Quergeschwindigkeit ab; Handbremse = weniger Grip → Ausbrechen
+  const gripNow = (braking === 2) ? GRIP_HANDBR : GRIP;
+  vSide -= vSide * Math.min(1, gripNow * dt);
+
+  // zurück in Weltkoordinaten
+  car.vx = fxDir * vForward + sxDir * vSide;
+  car.vz = fzDir * vForward + szDir * vSide;
+
+  // Position integrieren
+  car.x += car.vx * dt;
+  car.z += car.vz * dt;
+
+  // Lenken bringt etwas Quer-Impuls (sonst entstünde nie Schlupf)
+  const slipInput = car.steer * absSp * 0.04;
+  car.vx += sxDir * slipInput;
+  car.vz += szDir * slipInput;
 
   checkWaypoint();
   checkCollisions();
