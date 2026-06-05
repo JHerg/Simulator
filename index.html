@@ -3554,6 +3554,10 @@ const FB = {
   passTarget: -1,
   dribCount: 0,
   setpiece: null,
+  extraTime: false,
+  extraTimeHalfShown: false,
+  shootout: null,
+  done: false,
 };
 
 const FB3S = 0.15;
@@ -4569,6 +4573,10 @@ function startFootballMatch() {
   initFBPlayers();
   FB.redCards = [0, 0];
   FB.penalty = null;
+  FB.extraTime = false;
+  FB.extraTimeHalfShown = false;
+  FB.shootout = null;
+  FB.done = false;
   FB.players.forEach(p => { p.redCard = false; });
   FB.ball.y3 = 0;
   FB.ball.vy3 = 0;
@@ -4610,13 +4618,13 @@ function showFBBanner(text, color) {
 }
 
 function updateFootball(dt) {
-  if (FB.gameTime >= 90) return;
+  if (FB.done) return;
   const bM = 14;   // = visual field margin (goal line position)
   const goalHalf = FB_VH * 0.095;
   const goalTop  = FB_VH / 2 - goalHalf;
   const goalBot  = FB_VH / 2 + goalHalf;
 
-  // ── Elfmeter-Modus: Spielzeit pausiert, Ball-Physik läuft ──
+  // ── Elfmeter-Modus (läuft auch in Verlängerung + Elfmeterschießen) ──
   if (FB.penalty) {
     FB.penalty.t -= dt;
     if (FB.penalty.t <= 0) {
@@ -4632,6 +4640,10 @@ function updateFootball(dt) {
       } else {
         const { team, scored } = FB.penalty;
         FB.penalty = null;
+        if (FB.shootout) {
+          _processShootoutKick(team, scored);
+          return;
+        }
         if (scored) {
           FB.score[team]++;
           document.getElementById('fb-score').textContent = FB.score[0] + ' : ' + FB.score[1];
@@ -4667,7 +4679,29 @@ function updateFootball(dt) {
     return;
   }
 
-  // ── Normale Spielzeit ──
+  // ── Elfmeterschießen-Phase (kein Spieluhr-Ticker) ──
+  if (FB.shootout) {
+    if (!FB.shootout.animating) _triggerNextShootoutKick();
+    return;
+  }
+
+  // ── Spielzeitende prüfen ──
+  const maxTime = FB.extraTime ? 120 : 90;
+  if (FB.gameTime >= maxTime) {
+    if (FB.score[0] !== FB.score[1]) {
+      showFootballResult();
+    } else if (!FB.extraTime) {
+      FB.extraTime = true;
+      FB.gameTime = 90;
+      showFBBanner('⏱ Verlängerung!', '#ffdd44');
+      setTimeout(() => _playWhistle(false), 500);
+    } else {
+      _startPenaltyShootout();
+    }
+    return;
+  }
+
+  // ── Spielzeit läuft ──
   FB.gameTime += dt * FB.speedFactor;
   if (FB.goalCooldown > 0) FB.goalCooldown -= dt * FB.speedFactor;
 
@@ -4675,9 +4709,16 @@ function updateFootball(dt) {
     FB.halfShown = true;
     showFBBanner('⏸ Halbzeit', '#ffee88');
   }
+  if (FB.extraTime && FB.gameTime >= 105 && !FB.extraTimeHalfShown) {
+    FB.extraTimeHalfShown = true;
+    showFBBanner('⏸ Verlängerung — 2. Halbzeit', '#ffdd44');
+    setTimeout(() => _playWhistle(false), 200);
+  }
 
-  document.getElementById('fb-time').textContent = Math.floor(Math.min(FB.gameTime, 90)) + "'";
-  if (FB.gameTime >= 90) { showFootballResult(); return; }
+  const dispTime = FB.extraTime
+    ? (90 + Math.floor(FB.gameTime - 90)) + "'"
+    : Math.floor(Math.min(FB.gameTime, 90)) + "'";
+  document.getElementById('fb-time').textContent = dispTime;
 
   // ── Standardsituations-Handler: Ball einfrieren → Warten → Ausführen ──
   if (FB.setpiece) {
@@ -5103,7 +5144,8 @@ function drawFootball() {
 }
 
 function triggerPenalty(team) {
-  if (FB.gameTime >= 90 || FB.penalty) return;
+  const maxT = FB.extraTime ? 120 : 90;
+  if (FB.gameTime >= maxT || FB.penalty || FB.shootout) return;
   const scored = Math.random() < 0.78;
   const px = team === 0 ? FB_VW * 0.88 : FB_VW * 0.12;
   FB.ball.x = px; FB.ball.y = FB_VH / 2;
@@ -5113,7 +5155,8 @@ function triggerPenalty(team) {
 }
 
 function giveRedCard(team) {
-  if (FB.gameTime >= 90) return;
+  const maxT = FB.extraTime ? 120 : 90;
+  if (FB.gameTime >= maxT || FB.shootout) return;
   const eligible = FB.players.filter(p => p.team === team && p.role !== 'gk' && !p.redCard);
   if (eligible.length === 0) {
     showFBBanner('Keine weiteren Feldspieler!', '#ff9900');
@@ -5127,19 +5170,119 @@ function giveRedCard(team) {
   showFBBanner('🟥 ROTE KARTE! ' + tName + ' (' + (rMap[p.role]||p.role) + ')', '#ff4444');
 }
 
-function showFootballResult() {
-  const sc = document.getElementById('fb-result-score');
-  sc.textContent = FB.score[0] + ' : ' + FB.score[1];
-  const win = document.getElementById('fb-result-winner');
-  if (FB.score[0] > FB.score[1]) {
-    sc.style.color = '#ff6655'; win.textContent = '🎉 CF Köln gewinnt!';
-  } else if (FB.score[1] > FB.score[0]) {
-    sc.style.color = '#88aaff'; win.textContent = 'Bavaria München gewinnt.';
+// ── Elfmeterschießen ──────────────────────────────────────────────────────────
+function _startPenaltyShootout() {
+  FB.shootout = { shots: [[], []], goals: [0, 0], animating: false, done: false };
+  document.getElementById('fb-time').textContent = 'ES';
+  showFBBanner('⚽ ELFMETER-SCHIESSEN!', '#ffee00');
+  setTimeout(() => _playWhistle(false), 300);
+  setTimeout(() => _playWhistle(false), 900);
+}
+
+function _shootoutStatus() {
+  const s0 = FB.shootout.shots[0].map(g => g ? '⚽' : '✗').join('');
+  const s1 = FB.shootout.shots[1].map(g => g ? '⚽' : '✗').join('');
+  return 'KÖL ' + (s0 || '—') + '  |  BAY ' + (s1 || '—');
+}
+
+function _triggerNextShootoutKick() {
+  const sh = FB.shootout;
+  if (sh.done || sh.animating) return;
+  const k0 = sh.shots[0].length, k1 = sh.shots[1].length;
+  const total = k0 + k1;
+  const nextTeam = (total % 2 === 0) ? 0 : 1;
+  const currentRound = Math.floor(total / 2) + 1;
+  const roundStr = currentRound <= 5 ? ' ' + currentRound + '/5' : ' VSD';
+  sh.animating = true;
+  const scored = Math.random() < 0.75;
+  const px = nextTeam === 0 ? FB_VW * 0.88 : FB_VW * 0.12;
+  FB.ball.x = px; FB.ball.y = FB_VH / 2;
+  FB.ball.vx = 0; FB.ball.vy = 0;
+  FB.penalty = { team: nextTeam, scored, phase: 'setup', t: 0.9 };
+  document.getElementById('fb-time').textContent = 'ES';
+  showFBBanner('🟡 ELFMETER' + roundStr + ' — ' + (nextTeam === 0 ? 'CF Köln' : 'Bavaria München'), nextTeam === 0 ? '#ff8855' : '#88aaff');
+}
+
+function _processShootoutKick(team, scored) {
+  const sh = FB.shootout;
+  sh.shots[team].push(scored);
+  if (scored) sh.goals[team]++;
+  const k0 = sh.shots[0].length, k1 = sh.shots[1].length;
+  const g0 = sh.goals[0], g1 = sh.goals[1];
+  const status = _shootoutStatus();
+  if (scored) {
+    showFBBanner('⚽ TREFFER! ' + status, team === 0 ? '#ff6644' : '#88aaff');
+    _playCheer(true);
   } else {
-    sc.style.color = '#fff'; win.textContent = '🤝 Unentschieden!';
+    showFBBanner('✗ VERSCHOSSEN! ' + status, '#ffdd88');
+    _playCheer(false);
+  }
+  let over = false;
+  if (k0 === k1 + 1 && k0 <= 5) {
+    const bavRemain = 5 - k1;
+    if (g0 > g1 + bavRemain) over = true;
+  }
+  if (k0 === k1) {
+    if (k0 <= 5) {
+      const rem = 5 - k0;
+      if (g0 > g1 + rem || g1 > g0 + rem) over = true;
+      if (k0 === 5 && g0 !== g1) over = true;
+    } else {
+      const idx = k0 - 1;
+      if (sh.shots[0][idx] !== sh.shots[1][idx]) over = true;
+    }
+  }
+  if (over) {
+    sh.done = true;
+    setTimeout(_finishShootout, 2200);
+  } else {
+    // Pause before next kick so result banner is visible
+    setTimeout(() => { if (FB.shootout && !FB.shootout.done) FB.shootout.animating = false; }, 2300);
+  }
+}
+
+function _finishShootout() {
+  const g0 = FB.shootout.goals[0], g1 = FB.shootout.goals[1];
+  if (g0 > g1) {
+    showFBBanner('🏆 CF KÖLN POKALSIEGER! ' + g0 + ':' + g1 + ' i.E.', '#ff6644');
+    _playCheer(true);
+  } else {
+    showFBBanner('🏆 BAVARIA MÜNCHEN POKALSIEGER! ' + g0 + ':' + g1 + ' i.E.', '#88aaff');
+    _playCheer(false);
+  }
+  setTimeout(showFootballResult, 3500);
+}
+
+function showFootballResult() {
+  FB.done = true;
+  const sc = document.getElementById('fb-result-score');
+  const win = document.getElementById('fb-result-winner');
+  const abp = document.getElementById('fb-result-abpfiff');
+  if (FB.shootout) {
+    const g0 = FB.shootout.goals[0], g1 = FB.shootout.goals[1];
+    abp.textContent = '⚽ Elfmeterschießen!';
+    sc.textContent = FB.score[0] + ' : ' + FB.score[1];
+    if (g0 > g1) {
+      sc.style.color = '#ff6655';
+      win.textContent = '🎉 CF Köln gewinnt! (' + g0 + ':' + g1 + ' i.E.)';
+    } else {
+      sc.style.color = '#88aaff';
+      win.textContent = 'Bavaria München gewinnt. (' + g0 + ':' + g1 + ' i.E.)';
+    }
+  } else {
+    abp.textContent = FB.extraTime ? '⏱ Abpfiff — nach Verlängerung' : '⏱ Abpfiff!';
+    sc.textContent = FB.score[0] + ' : ' + FB.score[1];
+    if (FB.score[0] > FB.score[1]) {
+      sc.style.color = '#ff6655';
+      win.textContent = '🎉 CF Köln gewinnt' + (FB.extraTime ? ' nach Verlängerung!' : '!');
+    } else if (FB.score[1] > FB.score[0]) {
+      sc.style.color = '#88aaff';
+      win.textContent = 'Bavaria München gewinnt' + (FB.extraTime ? ' nach Verlängerung.' : '.');
+    } else {
+      sc.style.color = '#fff'; win.textContent = '🤝 Unentschieden!';
+    }
   }
   document.getElementById('fb-result').style.display = 'flex';
-  // Abpfiff: 3 Pfiffe + auslaufende Crowd
   _playWhistle(true);
   setTimeout(() => _playWhistle(false), 900);
   setTimeout(() => _playWhistle(false), 1500);
@@ -5153,6 +5296,9 @@ function showFootballResult() {
 function returnFromFootball() {
   footballActive = false;
   FB.penalty = null;
+  FB.done = false;
+  FB.shootout = null;
+  _pcData = null;
   _stopCrowd();
   document.getElementById('football-screen').style.display = 'none';
   // Fahrszene-UI wiederherstellen
@@ -5177,7 +5323,7 @@ function returnFromFootball() {
 }
 
 // ── Pressekonferenz ───────────────────────────────────────────────────────────
-let _pcActive = false, _pcStart = 0, _pcRafId = null, _pcFlashes = [];
+let _pcActive = false, _pcStart = 0, _pcRafId = null, _pcFlashes = [], _pcData = null;
 
 function showPressConference() {
   document.getElementById('fb-result').style.display = 'none';
@@ -5188,11 +5334,118 @@ function showPressConference() {
   cv.width = innerWidth; cv.height = innerHeight;
   _pcActive = true;
   _pcStart = performance.now();
-  // Kamera-Blitze zufällig verteilen
   _pcFlashes = [];
-  for (let ft = 1.2; ft < 36; ft += 0.9 + Math.random() * 2.8)
+  for (let ft = 1.2; ft < 42; ft += 0.9 + Math.random() * 2.8)
     _pcFlashes.push({ t: ft, dur: 0.10 + Math.random() * 0.12 });
-  setTimeout(() => { document.getElementById('pc-home-btn').classList.add('vis'); }, 26000);
+  setTimeout(() => { document.getElementById('pc-home-btn').classList.add('vis'); }, 30000);
+
+  // Ergebnis-Kontext einmalig berechnen
+  const koelnWon = FB.score[0] > FB.score[1] ||
+    (FB.shootout != null && FB.shootout.goals[0] > FB.shootout.goals[1]);
+  const bayernWon = FB.score[1] > FB.score[0] ||
+    (FB.shootout != null && FB.shootout.goals[1] > FB.shootout.goals[0]);
+  const viaET  = FB.extraTime && !FB.shootout;
+  const viaPen = FB.shootout != null;
+  const penG   = viaPen ? FB.shootout.goals : [0, 0];
+
+  const rPick = arr => arr[Math.floor(Math.random() * arr.length)];
+  const winnerCol = koelnWon ? '#ff8866' : '#88aaff';
+  const loserCol  = koelnWon ? '#88aaff' : '#ff8866';
+
+  const winCoachSpeaker = koelnWon ? 'CHEFTRAINER CF KÖLN' : bayernWon ? 'CHEFTRAINER BAVARIA' : 'CHEFTRAINER';
+  const losCoachSpeaker = koelnWon ? 'CHEFTRAINER BAVARIA' : bayernWon ? 'CHEFTRAINER CF KÖLN' : 'CHEFTRAINER';
+  const winCapSpeaker   = koelnWon ? 'KAPITÄN CF KÖLN' : bayernWon ? 'KAPITÄN BAVARIA' : 'KAPITÄN';
+
+  const winCoachText = koelnWon ? rPick(viaPen ? [
+    'Elfmeter ist kein Glück — das sind Nerven aus Stahl! Meine Jungs haben heute Unmögliches möglich gemacht. Dieser Pokal gehört nach Köln!',
+    'Das Elfmeterschießen ist die härteste Prüfung, die der Fußball kennt. Und wir haben sie bestanden. Ich bin unendlich stolz auf diese Mannschaft!',
+  ] : viaET ? [
+    'Dreißig Minuten Verlängerung, jeder Muskel brennt — aber wir haben nie aufgehört zu glauben. Das ist für unsere Fans, für die Stadt!',
+    'Verlängerung war brutal. Aber diese Mannschaft hat Herz. Köln ist Pokalsieger — das ist einfach unglaublich!',
+  ] : [
+    'Außergewöhnlich! Die Mannschaft hat heute alles gegeben — dieser Pokal gehört nach Köln!',
+    'Wir haben als Team gekämpft, als Team gelitten und als Team gewonnen. Das ist für die ganze Stadt!',
+    'Was eine Leistung! Ich bin so unglaublich stolz auf meine Jungs. Das Stadion, die Fans — unvergesslich!',
+  ]) : bayernWon ? rPick(viaPen ? [
+    'Elfmeter ist mentale Stärke — und Bavaria hat sie. Wir haben verdient gewonnen, das zeigt das Ergebnis.',
+    'Das war ein harter Kampf, aber Bayern ist Bayern. Im Elfmeterschießen haben wir das bewiesen.',
+  ] : viaET ? [
+    'In der Verlängerung zeigt sich, wer die bessere Kondition und den stärkeren Willen hat. Das war heute Bavaria München.',
+    'Verlängerung fordert alles vom Körper. Aber Bayern hat die Klasse — und das hat man heute gesehen.',
+  ] : [
+    'Klasse setzt sich durch. Wir waren heute die klar bessere Mannschaft — das Ergebnis spricht für sich.',
+    'Effizient, fokussiert, hungrig — das ist Bayern. Diesen Pokal holen wir für unsere Fans!',
+    'Meine Mannschaft hat von Anfang an dominiert. Das war eine starke Leistung, auf die wir stolz sein können.',
+  ]) : 'Beide Teams haben alles gegeben — ein packendes Finale.';
+
+  const losCoachText = koelnWon ? rPick(viaPen ? [
+    'Elfmeterschießen ist bitter. Meine Mannschaft hat über 120 Minuten alles gegeben. Das reicht heute nicht — das tut weh.',
+    'Wir sind mit dem Kopf durch die Wand. Aber am Ende entscheidet ein Zentimeter. Das ist harter Fußball.',
+  ] : viaET ? [
+    'Wir wären fast über die Runden gekommen. In der Verlängerung haben uns die Kräfte verlassen. Das schmerzt sehr.',
+    'Nach 90 Minuten auf Augenhöhe — und dann verliert man in der Verlängerung. Das ist schwer zu verarbeiten.',
+  ] : [
+    'Das war nicht genug. Wir haben zu viele Chancen vergeben und in den entscheidenden Momenten versagt.',
+    'Der Gegner war heute in den Schlüsselmomenten besser. Das müssen wir akzeptieren und aufarbeiten.',
+    'Es tut weh. Gerade vor diesen Fans wollten wir liefern. Das ist uns heute leider nicht gelungen.',
+  ]) : bayernWon ? rPick(viaPen ? [
+    'Elfmeter ist Lotterie. Meine Jungs haben über 120 Minuten alles gegeben. Das Ergebnis heute tut weh.',
+    'Das Elfmeterschießen ist brutal. Wir haben bis zum letzten Meter gekämpft — leider war es nicht genug.',
+  ] : viaET ? [
+    'Wir haben in der Verlängerung die entscheidenden Fehler gemacht. Das darf uns auf diesem Niveau nicht passieren.',
+    'Neunzig Minuten lang waren wir auf Augenhöhe. Die Verlängerung war unser Problem. Das müssen wir analysieren.',
+  ] : [
+    'Die Niederlage tut weh, gerade hier vor unseren Fans. Wir haben Fehler gemacht, die wir aufarbeiten müssen.',
+    'Das war nicht unser Spiel. Die Leistung war unter unserem Niveau — das erwarte ich von meiner Mannschaft nicht.',
+    'In den entscheidenden Momenten haben wir nicht geliefert. Das ist bitter, aber das ist Fußball.',
+  ]) : 'Heute haben beide Teams alles gegeben.';
+
+  const winCapText = koelnWon ? rPick(viaPen ? [
+    'Elfmeter-Schiessen ist reine Nervensache. Wir haben uns vorher klar gemacht: Wir glauben daran. Und heute hat das gestimmt!',
+    'Das ist der geilste Moment meiner Karriere! Elfmeter für Köln — und wir haben gewonnen. Unglaublich!',
+  ] : viaET ? [
+    'Verlängerung, beide Beine brennen — aber keiner von uns hat aufgehört. Das ist diese Mannschaft!',
+    'In der Verlängerung habe ich in die Augen meiner Jungs geschaut. Da war kein Zweifel. Das ist unser Titel!',
+  ] : [
+    'Das Tor in der zweiten Halbzeit — und dann die Fans! Dieses Stadion hat uns getragen. Unbeschreiblich!',
+    'Wir haben bis zur letzten Sekunde gekämpft. Das ist für Köln, für jeden der mitgefightet hat!',
+    'Dieser Moment... ich kann es noch nicht in Worte fassen. Das ist für die Fans, für die Stadt — für alle!',
+  ]) : bayernWon ? rPick(viaPen ? [
+    'Bayern ist Bayern — auch im Elfmeterschießen. Wir haben die Nerven behalten. Das war verdient.',
+    'Das Elfmeterschießen ist Willenskraft. Und Bayern hat davon mehr als genug — das wissen wir.',
+  ] : viaET ? [
+    'In der Verlängerung haben wir gezeigt, was Bayern ausmacht: Wille, Qualität, Klasse.',
+    'Wir gehen nie unter — das ist Bavaria. In der Verlängerung haben wir das eindrucksvoll bewiesen.',
+  ] : [
+    'Wir haben die Qualität immer gezeigt. Heute haben wir sie auch auf den Platz gebracht — Top!',
+    'Bayern ist Pokalsieger! Das war unser Ziel, das haben wir erreicht. Die Fans haben es verdient.',
+  ]) : 'In einem Finale ist jeder Moment entscheidend. Heute war Kampf bis zum Ende.';
+
+  const etStr = viaPen ? ' (n.E.)' : viaET ? ' (n.V.)' : '';
+  const scoreStr = 'CF Köln  ' + FB.score[0] + ' : ' + FB.score[1] + '  Bavaria München' +
+    (viaPen ? '  (' + penG[0] + ':' + penG[1] + ' i.E.)' : '');
+
+  _pcData = {
+    koelnWon, bayernWon, viaET, viaPen, scoreStr, etStr, winnerCol, loserCol,
+    phases: [
+      { tIn: 3.2,  tOut: 7.4,  speaker: 'REPORTER', col: '#cccccc',
+        text: koelnWon ? 'Herr Trainer, Köln ist Pokalsieger' + etStr + '! Was fühlen Sie in diesem Moment?' :
+              bayernWon ? 'Herr Trainer, Bavaria hat den Pokal geholt. Was ist das Geheimnis heute Abend?' :
+              'Herr Trainer, wie bewerten Sie dieses Finale?' },
+      { tIn: 7.4,  tOut: 16.0, speaker: winCoachSpeaker, col: winnerCol, text: winCoachText },
+      { tIn: 17.0, tOut: 21.0, speaker: 'REPORTER', col: '#cccccc',
+        text: koelnWon ? 'Herr Trainer, was sagen Sie zu dieser Leistung — trotz allem Widerstand?' :
+              bayernWon ? 'Herr Trainer, wie schwer ist diese Niederlage zu verarbeiten?' :
+              'Wie geht es Ihnen nach diesem Ergebnis?' },
+      { tIn: 21.0, tOut: 30.0, speaker: losCoachSpeaker, col: loserCol, text: losCoachText },
+      { tIn: 31.0, tOut: 35.0, speaker: 'REPORTER', col: '#cccccc',
+        text: koelnWon ? 'Kapitän, was war der Schlüsselmoment — der Moment, wo ihr geglaubt habt?' :
+              bayernWon ? 'Kapitän, was macht diese Mannschaft in den entscheidenden Momenten stark?' :
+              'Kapitän, wie bewerten Sie diesen Abend?' },
+      { tIn: 35.0, tOut: 44.0, speaker: winCapSpeaker, col: winnerCol, text: winCapText },
+    ],
+  };
+
   _pcRafId = requestAnimationFrame(_pcTick);
 }
 
@@ -5216,11 +5469,11 @@ function _pcHex(hex, f) {
 }
 
 function _drawPressConf(t) {
+  if (!_pcData) return;
   const cv = document.getElementById('pc-canvas');
   const ctx = cv.getContext('2d');
   const W = cv.width, H = cv.height;
-  const koelnWon = FB.score[0] > FB.score[1];
-  const bayernWon = FB.score[1] > FB.score[0];
+  const { koelnWon, bayernWon, viaET, viaPen, scoreStr, etStr, winnerCol, loserCol } = _pcData;
 
   // ── Hintergrund: dunkler Presseraum ────────────────────────────────────────
   ctx.fillStyle = '#06080d'; ctx.fillRect(0, 0, W, H);
@@ -5271,7 +5524,11 @@ function _drawPressConf(t) {
   // Namensschild
   ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font=`${H*0.016}px 'Segoe UI',Arial`;
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  const labelTxt = koelnWon?'CF KÖLN — Pressekonferenz':bayernWon?'BAVARIA MÜNCHEN — Pressekonferenz':'Pressekonferenz — DFB-Pokalfinale 2025';
+  const labelTxt = koelnWon
+    ? 'CF KÖLN — Pressekonferenz' + etStr
+    : bayernWon
+    ? 'BAVARIA MÜNCHEN — Pressekonferenz' + etStr
+    : 'Pressekonferenz — DFB-Pokalfinale 2025';
   ctx.fillText(labelTxt, W*0.5, tY + tH*0.55);
 
   // Mikrofone
@@ -5312,10 +5569,12 @@ function _drawPressConf(t) {
   ctx.beginPath(); ctx.roundRect(W*0.22, H*0.03, W*0.56, H*0.115, 11); ctx.stroke();
   ctx.fillStyle='#7799cc'; ctx.font=`${H*0.021}px 'Segoe UI',Arial`;
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText('⏱ Abpfiff — DFB-Pokalfinale 2025 · RheinEnergie Stadion', W*0.5, H*0.055);
+  const abpStr = '⏱ Abpfiff — DFB-Pokalfinale 2025 · RheinEnergie Stadion' +
+    (viaPen ? ' · n.E.' : viaET ? ' · n.V.' : '');
+  ctx.fillText(abpStr, W*0.5, H*0.055);
   const sCol = koelnWon?'#ff6655':bayernWon?'#88aaff':'#ffffff';
-  ctx.fillStyle=sCol; ctx.font=`bold ${H*0.044}px 'Segoe UI',Arial`;
-  ctx.fillText(`CF Köln  ${FB.score[0]} : ${FB.score[1]}  Bavaria München`, W*0.5, H*0.105);
+  ctx.fillStyle=sCol; ctx.font=`bold ${H*0.038}px 'Segoe UI',Arial`;
+  ctx.fillText(scoreStr, W*0.5, H*0.105);
   ctx.globalAlpha = 1;
 
   // Vordere Journalisten-Silhouetten
@@ -5331,32 +5590,7 @@ function _drawPressConf(t) {
   }
 
   // ── Animierte Gesprächs-Phasen ───────────────────────────────────────────────
-  const phases = [
-    { tIn: 3.2, tOut: 7.4,
-      speaker: 'REPORTER',
-      col: '#cccccc',
-      text: 'Herr Trainer, wie bewerten Sie das heutige Spiel?' },
-    { tIn: 7.4, tOut: 14.0,
-      speaker: koelnWon ? 'CHEFTRAINER CF KÖLN' : bayernWon ? 'CHEFTRAINER BAVARIA' : 'CHEFTRAINER',
-      col: koelnWon ? '#ff8866' : bayernWon ? '#88aaff' : '#aaaaaa',
-      text: koelnWon
-        ? 'Außergewöhnlich! Die Mannschaft hat heute alles gegeben — dieser Pokal gehört nach Köln!'
-        : bayernWon
-        ? 'Gratulation an CF Köln. Wir werden stärker zurückkommen — das verspreche ich.'
-        : 'Beide Teams haben alles gegeben. Das ist ein vollkommen gerechtes Ergebnis.' },
-    { tIn: 15.0, tOut: 19.5,
-      speaker: 'REPORTER',
-      col: '#cccccc',
-      text: 'Was war der Schlüsselmoment im heutigen Spiel?' },
-    { tIn: 19.5, tOut: 26.0,
-      speaker: koelnWon ? 'MANNSCHAFTSKAPITÄN CF KÖLN' : bayernWon ? 'MANNSCHAFTSKAPITÄN BAVARIA' : 'KAPITÄN',
-      col: koelnWon ? '#ff8866' : bayernWon ? '#88aaff' : '#aaaaaa',
-      text: koelnWon
-        ? 'Das Tor in der zweiten Halbzeit — und die Fans! Dieses Stadion hat uns nach vorn getrieben. Unglaublich!'
-        : bayernWon
-        ? 'Wir haben die Qualität immer gezeigt. Heute haben wir sie auch auf den Platz gebracht.'
-        : 'In einem Finale ist jeder Moment entscheidend. Heute war Kampf bis zur letzten Minute.' },
-  ];
+  const phases = _pcData.phases;
 
   phases.forEach(ph => {
     if (t < ph.tIn - 0.1 || t > ph.tOut + 1.0) return;
@@ -5521,9 +5755,9 @@ function setupComposer() {
   }
 
   // Bloom – nur bei Nacht oder Regen
-  const bloomStrength = isNight && isRain ? 1.1 : isNight ? 1.2 : isRain ? 0.3 : 0;
+  const bloomStrength = isNight && isRain ? 0.45 : isNight ? 0.38 : isRain ? 0.3 : 0;
   if (bloomStrength > 0) {
-    const threshold = isNight ? 0.72 : 0.90;
+    const threshold = isNight ? 0.88 : 0.90;
     composer.addPass(new UnrealBloomPass(
       new THREE.Vector2(innerWidth, innerHeight), bloomStrength, 0.4, threshold
     ));
