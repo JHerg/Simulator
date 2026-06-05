@@ -257,6 +257,19 @@
       padding:4px 14px;font-size:14px;font-weight:bold;
       pointer-events:none;display:none;z-index:60;
     }
+    #wanted-hud{
+      position:fixed;bottom:88px;right:16px;
+      background:rgba(0,0,0,.78);border-radius:10px;
+      padding:5px 12px;font-size:22px;letter-spacing:3px;
+      display:none;z-index:60;pointer-events:none;
+      border:1px solid rgba(255,80,80,.4);
+    }
+    #escape-bar-wrap{
+      position:fixed;bottom:122px;right:16px;width:120px;
+      background:rgba(0,0,0,.6);border-radius:6px;overflow:hidden;
+      display:none;z-index:60;height:8px;
+    }
+    #escape-bar{height:8px;width:0%;background:linear-gradient(90deg,#44ff88,#00cc55);transition:width .2s;}
 
     /* ── Tempolimit-Schild ──────────────────────────────── */
     #limit-sign{
@@ -490,6 +503,8 @@
 <div id="info">🚗 Köln · Altbaumburgweg → RheinEnergie Stadion</div>
 <div id="flensburg-hud">📋 <span id="flen-pts">0</span>/8 Pkt.</div>
 <div id="freedrive-timer">🕹 <span id="fd-time">0:00</span></div>
+<div id="wanted-hud"></div>
+<div id="escape-bar-wrap"><div id="escape-bar"></div></div>
 <div id="toast"></div>
 <div id="blitz-flash"></div>
 <div id="speedo"><div class="v" id="spd">0</div><div class="u">km/h</div><div class="g" id="gear">N</div></div>
@@ -3644,6 +3659,11 @@ let _flensburg = 0;
 
 // ── Polizei-Verfolgung ────────────────────────────────────────────────────────
 let _policeCar = null, _policeSiren = null, _policeBlinkT = 0;
+let _policeCar2 = null, _policeSiren2 = null;
+let _wantedLevel = 0;
+let _policeEscapeTimer = 0;   // wie lange war Spieler > 280m entfernt?
+let _policeChaseT = 0;        // Gesamtdauer der Verfolgung
+let _policeRadioT = 0;        // Timer für Funk-Nachrichten
 let _kolschCollected = 0;
 
 // ── Tank ──────────────────────────────────────────────────────────────────────
@@ -3695,8 +3715,16 @@ function addFlensburg(pts, reason) {
 }
 
 // ── Polizei-Einsatzfahrzeug ───────────────────────────────────────────────────
-function spawnPolice() {
-  if (_policeCar) return;
+const _RADIO_MSGS = [
+  '📻 Leitstelle: Einheit 3-2, Verdächtiger in Sicht!',
+  '📻 Einheit 3-2: Wir sind dran — kein Entkommen!',
+  '📻 Leitstelle: Weitere Einheiten angefordert.',
+  '📻 Einheit 3-2: Fahrzeug läuft weiter — Verstärkung!',
+  '📻 Leitstelle: Alle Einheiten — Straßen sperren!',
+  '📻 Einheit 3-2: Verdächtiger versucht zu entkommen!',
+];
+
+function _buildPoliceMesh() {
   const g = new THREE.Group();
   const wMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.4 });
   const bMat = new THREE.MeshStandardMaterial({ color: 0x0033aa, metalness: 0.2, roughness: 0.5 });
@@ -3716,70 +3744,218 @@ function spawnPolice() {
   const lMat = new THREE.MeshBasicMaterial({ color: 0x2255ff });
   const lBar = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.16, 0.35), lMat);
   lBar.position.set(0, 1.79, -0.2); g.add(lBar);
+  return { g, lMat };
+}
 
+function _updateWantedHUD() {
+  const el = document.getElementById('wanted-hud');
+  const eb = document.getElementById('escape-bar-wrap');
+  if (_wantedLevel > 0) {
+    el.style.display = 'block';
+    el.textContent = '⭐'.repeat(_wantedLevel);
+  } else {
+    el.style.display = 'none';
+    if (eb) eb.style.display = 'none';
+  }
+}
+
+function spawnPolice() {
+  if (_policeCar) return;
+  const { g, lMat } = _buildPoliceMesh();
   const spawnX = car.x - Math.sin(car.heading) * 140;
   const spawnZ = car.z - Math.cos(car.heading) * 140;
   g.position.set(spawnX, 0, spawnZ);
   scene.add(g);
-
-  _policeCar = { mesh: g, lMat, x: spawnX, z: spawnZ, heading: car.heading, speed: 0, caught: false };
-  _policeBlinkT = 0;
-  _startPoliceSiren();
-  toast('🚔 Polizei! Einsatzfahrzeug folgt — bleiben Sie stehen!');
+  _policeCar = { mesh: g, lMat, x: spawnX, z: spawnZ, heading: car.heading,
+                 speed: 0, caught: false, surrenderWindow: true };
+  _policeBlinkT = 0; _policeChaseT = 0; _policeRadioT = 7;
+  _wantedLevel = 1; _updateWantedHUD();
+  _startPoliceSiren(false);
+  toast('🚔 Polizei! Einsatzfahrzeug folgt. Anhalten vermindert die Strafe!');
 }
 
-function _startPoliceSiren() {
+function _spawnPolice2() {
+  if (_policeCar2) return;
+  const angle = car.heading + Math.PI * 0.65;
+  const sx = car.x - Math.sin(angle) * 180;
+  const sz = car.z - Math.cos(angle) * 180;
+  const { g, lMat } = _buildPoliceMesh();
+  g.position.set(sx, 0, sz);
+  scene.add(g);
+  _policeCar2 = { mesh: g, lMat, x: sx, z: sz, heading: angle, speed: 0, caught: false };
+  _startPoliceSiren(true);
+  toast('🚔🚔 Verstärkung! Zweite Einheit im Anmarsch!');
+}
+
+function _startPoliceSiren(secondary) {
   if (!_actx) return;
-  const osc  = _actx.createOscillator();
+  const osc = _actx.createOscillator();
   const gain = _actx.createGain();
-  osc.type = 'sawtooth'; osc.frequency.value = 880;
-  gain.gain.value = 0.14;
+  osc.type = 'sawtooth';
+  osc.frequency.value = secondary ? 760 : 880;
+  gain.gain.value = secondary ? 0.09 : 0.14;
   osc.connect(gain); gain.connect(_actx.destination);
   osc.start();
+  const hi1 = secondary ? 760 : 880, lo1 = secondary ? 580 : 650;
   let hi = true;
   const iv = setInterval(() => {
-    if (!_policeCar) { clearInterval(iv); try { osc.stop(); } catch(e){} return; }
+    const alive = secondary ? _policeCar2 : _policeCar;
+    if (!alive) { clearInterval(iv); try { osc.stop(); } catch(e){} return; }
     hi = !hi;
-    osc.frequency.setTargetAtTime(hi ? 880 : 650, _actx.currentTime, 0.08);
-  }, 480);
-  _policeSiren = { osc, gain, iv };
+    osc.frequency.setTargetAtTime(hi ? hi1 : lo1, _actx.currentTime, 0.08);
+  }, secondary ? 380 : 480);
+  if (secondary) _policeSiren2 = { osc, gain, iv };
+  else           _policeSiren  = { osc, gain, iv };
+}
+
+function _stopSiren(s) {
+  if (!s) return;
+  clearInterval(s.iv);
+  try { s.osc.stop(); } catch(e){}
 }
 
 function stopPoliceSiren() {
-  if (!_policeSiren) return;
-  clearInterval(_policeSiren.iv);
-  try { _policeSiren.osc.stop(); } catch(e){}
-  _policeSiren = null;
+  _stopSiren(_policeSiren);  _policeSiren  = null;
+  _stopSiren(_policeSiren2); _policeSiren2 = null;
 }
 
-function updatePolice(dt) {
-  if (!_policeCar) return;
-  const pc = _policeCar;
-  _policeBlinkT += dt;
-  pc.lMat.color.setHex((_policeBlinkT % 0.45 < 0.22) ? 0x2255ff : 0xff2200);
-
-  if (pc.caught) return;
-  const dx = car.x - pc.x, dz = car.z - pc.z;
+function _movePoliceCar(pc, targetX, targetZ, dt, maxSpd) {
+  const dx = targetX - pc.x, dz = targetZ - pc.z;
   const dist = Math.hypot(dx, dz);
-
-  if (dist < 5 && Math.abs(car.speed) < 3) {
-    pc.caught = true;
-    stopPoliceSiren();
-    STATS.fines += 500;
-    toast('🚔 Gestellt! +500 € — Fahrerflucht wird zur Anzeige gebracht.');
-    setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 6000);
-    return;
-  }
-  const chaseSpd = Math.min(46, 30 + dist * 0.18);
-  pc.speed += (chaseSpd - pc.speed) * Math.min(1, dt * 2.5);
+  const spd = Math.min(maxSpd, 28 + dist * 0.18);
+  pc.speed += (spd - pc.speed) * Math.min(1, dt * 2.5);
   const th = Math.atan2(dx, dz);
   let diff = th - pc.heading;
   diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-  pc.heading += diff * Math.min(1, 2.8 * dt);
+  pc.heading += diff * Math.min(1, 3.0 * dt);
   pc.x += Math.sin(pc.heading) * pc.speed * dt;
   pc.z += Math.cos(pc.heading) * pc.speed * dt;
   pc.mesh.position.set(pc.x, 0, pc.z);
   pc.mesh.rotation.y = pc.heading + Math.PI;
+  return dist;
+}
+
+function updatePolice(dt) {
+  if (!_policeCar && !_policeCar2) return;
+
+  _policeBlinkT += dt;
+  const blueOn = (_policeBlinkT % 0.45 < 0.22);
+  if (_policeCar  && !_policeCar.caught)  _policeCar.lMat.color.setHex(blueOn ? 0x2255ff : 0xff2200);
+  if (_policeCar2 && !_policeCar2.caught) _policeCar2.lMat.color.setHex(!blueOn ? 0x2255ff : 0xff2200);
+
+  if (_policeCar && _policeCar.caught) {
+    // Caught car idles; clean up after 6s handled by setTimeout
+  }
+  if (_policeCar && !_policeCar.caught) {
+    const pc = _policeCar;
+    _policeChaseT += dt;
+
+    // ── Funk-Nachrichten ──
+    _policeRadioT += dt;
+    if (_policeRadioT >= 9) {
+      _policeRadioT = 0;
+      const idx = Math.floor(_policeChaseT / 9) % _RADIO_MSGS.length;
+      toast(_RADIO_MSGS[idx]);
+    }
+
+    // ── Fluchtbalken ──
+    const dist1 = Math.hypot(car.x - pc.x, car.z - pc.z);
+    const eb = document.getElementById('escape-bar-wrap');
+    const ef = document.getElementById('escape-bar');
+    if (dist1 > 80) {
+      if (eb) eb.style.display = 'block';
+      const pct = Math.min(100, (dist1 - 80) / 2.0);
+      if (ef) ef.style.width = pct + '%';
+    } else {
+      if (eb) eb.style.display = 'none';
+    }
+
+    // ── Freiwilliges Anhalten (Surrender-Fenster: erste 6s) ──
+    if (pc.surrenderWindow && _policeChaseT < 6 && dist1 < 25 && Math.abs(car.speed) < 2) {
+      pc.surrenderWindow = false; pc.caught = true;
+      _stopSiren(_policeSiren); _policeSiren = null;
+      STATS.fines += 200;
+      _wantedLevel = 0; _updateWantedHUD();
+      toast('✋ Kooperativ angehalten! Nur 200 € Strafe — Danke für Ihr Verhalten.');
+      setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 5000);
+      return;
+    }
+
+    // ── Verhaftung (normal) ──
+    if (dist1 < 5 && Math.abs(car.speed) < 3) {
+      pc.caught = true;
+      _stopSiren(_policeSiren); _policeSiren = null;
+      STATS.fines += 500; _wantedLevel = Math.max(0, _wantedLevel - 1); _updateWantedHUD();
+      toast('🚔 Gestellt! +500 € — Fahrerflucht zur Anzeige gebracht.');
+      setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 6000);
+      return;
+    }
+
+    // ── Intercept-KI: Spieler-Position 2s voraus berechnen ──
+    const predX = car.x + (car.vx || 0) * 2.2;
+    const predZ = car.z + (car.vz || 0) * 2.2;
+    _movePoliceCar(pc, predX, predZ, dt, 47);
+
+    // ── PIT-Manöver: wenn sehr nah hinter dem Spieler ──
+    if (dist1 < 7) {
+      const fwX = Math.sin(pc.heading), fwZ = Math.cos(pc.heading);
+      const dot = (car.x - pc.x) * fwX + (car.z - pc.z) * fwZ;
+      if (dot > 0) {
+        car.vx = (car.vx || 0) + (Math.random() - 0.5) * 2.4;
+        car.vz = (car.vz || 0) + (Math.random() - 0.5) * 2.4;
+        car.speed *= 0.82;
+      }
+    }
+
+    // ── Flucht: > 280m für 8 Sekunden ──
+    if (dist1 > 280) {
+      _policeEscapeTimer += dt;
+      if (_policeEscapeTimer >= 8) {
+        _policeEscapeTimer = 0;
+        _stopSiren(_policeSiren); _policeSiren = null;
+        scene.remove(pc.mesh); _policeCar = null;
+        _wantedLevel = Math.max(0, _wantedLevel - 1); _updateWantedHUD();
+        if (eb) eb.style.display = 'none';
+        toast('🏃 Entkommen! Die Fahndung läuft jedoch weiter...');
+      }
+    } else { _policeEscapeTimer = 0; }
+
+    // ── Eskalation: nach 25s → 2. Wagen spawnen (Wantedlevel 2) ──
+    if (!_policeCar2 && _policeChaseT > 25 && _wantedLevel < 2) {
+      _wantedLevel = 2; _updateWantedHUD();
+      _spawnPolice2();
+    }
+    // Wantedlevel 3 nach 55s
+    if (_policeChaseT > 55 && _wantedLevel < 3) {
+      _wantedLevel = 3; _updateWantedHUD();
+      toast('🚨 Fahndungsstufe 3 — alle verfügbaren Einheiten aktiv!');
+    }
+  }
+
+  // ── Zweiter Polizeiwagen ──
+  if (_policeCar2 && !_policeCar2.caught) {
+    const pc2 = _policeCar2;
+    const dist2 = Math.hypot(car.x - pc2.x, car.z - pc2.z);
+    if (dist2 < 5 && Math.abs(car.speed) < 3) {
+      pc2.caught = true;
+      _stopSiren(_policeSiren2); _policeSiren2 = null;
+      STATS.fines += 300;
+      toast('🚔 Von Einheit 2 gestellt! +300 € zusätzliche Strafe.');
+      setTimeout(() => { if (_policeCar2) { scene.remove(_policeCar2.mesh); _policeCar2 = null; } }, 6000);
+    } else {
+      // Zweiter Wagen versucht abzuschneiden: Ziel etwas seitlich vor dem Spieler
+      const side = Math.sin(car.heading + Math.PI * 0.35) * 12;
+      const sideZ = Math.cos(car.heading + Math.PI * 0.35) * 12;
+      const cutX = car.x + Math.sin(car.heading) * car.speed * 1.8 + side;
+      const cutZ = car.z + Math.cos(car.heading) * car.speed * 1.8 + sideZ;
+      _movePoliceCar(pc2, cutX, cutZ, dt, 44);
+      // Flucht 2. Wagen
+      if (dist2 > 320) {
+        scene.remove(pc2.mesh); _policeCar2 = null;
+        _stopSiren(_policeSiren2); _policeSiren2 = null;
+      }
+    }
+  }
 }
 
 function checkCollisions() {
@@ -4004,8 +4180,11 @@ function resetCar() {
   _flensburg = 0; _kolschCollected = 0;
   document.getElementById('flensburg-hud').style.display = 'none';
   document.getElementById('flen-pts').textContent = '0';
-  if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; }
+  if (_policeCar)  { scene.remove(_policeCar.mesh);  _policeCar  = null; }
+  if (_policeCar2) { scene.remove(_policeCar2.mesh); _policeCar2 = null; }
   stopPoliceSiren();
+  _wantedLevel = 0; _policeEscapeTimer = 0; _policeChaseT = 0; _policeRadioT = 0;
+  _updateWantedHUD();
   kolschItems.forEach(item => { if (item.collected) { item.collected = false; scene.add(item.mesh); } });
   fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
   document.getElementById('prog-fill').style.width = '0%';
@@ -4080,6 +4259,18 @@ function drawMinimap() {
   mmCtx.beginPath(); mmCtx.moveTo(0,-5.5); mmCtx.lineTo(-3.5,4); mmCtx.lineTo(3.5,4);
   mmCtx.closePath(); mmCtx.fill();
   mmCtx.restore();
+
+  // Polizei-Punkte (blinkend blau/rot)
+  const blinkBlue = Math.floor(performance.now() / 300) % 2 === 0;
+  [_policeCar, _policeCar2].forEach(pc => {
+    if (!pc || pc.caught) return;
+    const [px, py] = toMM(pc.x, pc.z);
+    mmCtx.beginPath(); mmCtx.arc(px, py, 4.5, 0, Math.PI * 2);
+    mmCtx.fillStyle = blinkBlue ? '#3377ff' : '#ff2200';
+    mmCtx.fill();
+    mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 0.8;
+    mmCtx.stroke();
+  });
 }
 
 // ── OSM-Gebäude: Hilfsfunktionen ─────────────────────────────────────────────
