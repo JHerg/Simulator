@@ -47,6 +47,21 @@
       opacity:0;pointer-events:none;z-index:9500;
       transition:opacity 0.06s ease-out;
     }
+    /* ── Tankanzeige ─────────────────────────────────── */
+    #fuel-gauge{
+      position:fixed;z-index:41;pointer-events:none;
+      display:flex;align-items:center;gap:6px;
+      bottom:14px;left:50%;transform:translateX(-50%);
+      background:rgba(0,0,0,.6);padding:5px 10px;border-radius:12px;
+    }
+    #fuel-icon{font-size:15px;}
+    #fuel-bar{width:120px;height:9px;background:rgba(255,255,255,.18);
+      border-radius:5px;overflow:hidden;}
+    #fuel-fill{height:100%;width:100%;border-radius:5px;
+      background:linear-gradient(90deg,#33cc55,#88dd44);transition:width .3s,background .3s;}
+    @media(pointer:coarse),(max-width:700px){
+      #fuel-gauge{bottom:auto;top:186px;left:14px;transform:none;}
+    }
 
     /* ── Tachometer ─────────────────────────────────── */
     #speedo{
@@ -114,6 +129,7 @@
     #br{bottom:20px;left:90px;width:68px;height:68px;}
     #bgas{bottom:20px;right:12px;width:88px;height:68px;background:rgba(0,120,0,.6);}
     #bbrk{bottom:20px;right:110px;width:68px;height:68px;background:rgba(160,0,0,.5);}
+    #bhorn{bottom:96px;left:90px;width:68px;height:54px;font-size:24px;background:rgba(200,150,0,.5);}
     /* ── Desktop: Speedo + Nav-Panel durch Cockpit-Canvas ersetzt ── */
     #speedo   { display:none; }
     #nav-panel{ display:none; }   /* Nav wird im Infotainment-Screen gezeigt */
@@ -580,6 +596,13 @@
   <div class="mbtn" id="br">▶</div>
   <div class="mbtn" id="bgas">⚡GAS</div>
   <div class="mbtn" id="bbrk">⛔</div>
+  <div class="mbtn" id="bhorn">📣</div>
+</div>
+
+<!-- Tankanzeige -->
+<div id="fuel-gauge">
+  <div id="fuel-icon">⛽</div>
+  <div id="fuel-bar"><div id="fuel-fill"></div></div>
 </div>
 
 <script>
@@ -2307,6 +2330,8 @@ const keys = {};
 window.addEventListener('keydown', e => { keys[e.code] = true; });
 window.addEventListener('keyup',   e => { keys[e.code] = false; });
 window.addEventListener('keydown', e => { if (e.code==='KeyR') resetCar(); });
+window.addEventListener('keydown', e => { if (e.code==='KeyH') hornStart(); });
+window.addEventListener('keyup',   e => { if (e.code==='KeyH') hornStop();  });
 
 // Web Audio API: start on first user gesture (browser autoplay policy)
 function _startAudioOnce() {
@@ -2336,6 +2361,19 @@ bindBtn('bl',   'left');
 bindBtn('br',   'right');
 bindBtn('bgas', 'gas');
 bindBtn('bbrk', 'brake');
+
+// Hupe-Button (eigene Logik statt touch-Flag)
+(function bindHorn() {
+  const el = document.getElementById('bhorn');
+  if (!el) return;
+  const on  = e => { hornStart(); el.classList.add('on');    e.preventDefault(); };
+  const off = e => { hornStop();  el.classList.remove('on');  e.preventDefault(); };
+  el.addEventListener('touchstart',  on,  { passive:false });
+  el.addEventListener('touchend',    off, { passive:false });
+  el.addEventListener('touchcancel', off, { passive:false });
+  el.addEventListener('mousedown',   on);
+  el.addEventListener('mouseup',     off);
+})();
 
 // Gamepad / Thrustmaster
 let pad = null;
@@ -2637,9 +2675,141 @@ function initAudio() {
     _engOscFilt.connect(_engOscGain);
     _engOscGain.connect(_actx.destination);
     _engOsc.start();
+
+    _initHorn();
+    _startAmbient();
   } catch(e) {
     console.warn('Web Audio:', e);
   }
+}
+
+// ── Hupe (Zwei-Ton-Akkord, klassisch ~ große Terz) ────────────────────────────
+let _hornOscA = null, _hornOscB = null, _hornGain = null, _hornOn = false;
+function _initHorn() {
+  if (!_actx || _hornGain) return;
+  _hornGain = _actx.createGain();
+  _hornGain.gain.value = 0;
+  const filt = _actx.createBiquadFilter();
+  filt.type = 'lowpass'; filt.frequency.value = 2200; filt.Q.value = 0.7;
+  _hornOscA = _actx.createOscillator(); _hornOscA.type = 'sawtooth'; _hornOscA.frequency.value = 440;
+  _hornOscB = _actx.createOscillator(); _hornOscB.type = 'sawtooth'; _hornOscB.frequency.value = 554; // gr. Terz
+  _hornOscA.connect(filt); _hornOscB.connect(filt);
+  filt.connect(_hornGain); _hornGain.connect(_actx.destination);
+  _hornOscA.start(); _hornOscB.start();
+}
+function hornStart() {
+  if (_hornOn) return;
+  _hornOn = true;
+  if (!_actx || _actx.state === 'suspended') return;
+  if (!_hornGain) _initHorn();
+  _hornGain.gain.setTargetAtTime(0.12, _actx.currentTime, 0.01);
+  // Fußgänger in der Nähe erschrecken
+  pedestrians.forEach(p => {
+    if (Math.hypot(p.mesh.position.x - car.x, p.mesh.position.z - car.z) < 22) {
+      if (!p.panicking) STATS.pedScared++;
+      p.panicking = true; p.panicEnd = performance.now() + 2600;
+    }
+  });
+}
+function hornStop() {
+  _hornOn = false;
+  if (_hornGain && _actx) _hornGain.gain.setTargetAtTime(0, _actx.currentTime, 0.04);
+}
+
+// ── Stadt-Ambiente: Vögel/Stadtrauschen (Tag) bzw. Grillen/Sirenen (Nacht) ────
+let _ambGain = null, _ambTimer = null;
+function _ambNoiseBuf(dur) {
+  const sr = _actx.sampleRate;
+  const b = _actx.createBuffer(1, Math.max(1, sr * dur), sr);
+  const c = b.getChannelData(0);
+  for (let i = 0; i < c.length; i++) c[i] = Math.random() * 2 - 1;
+  return b;
+}
+function _birdChirp() {
+  const t0 = _actx.currentTime;
+  const n = 2 + (Math.random() * 3 | 0);
+  for (let i = 0; i < n; i++) {
+    const t = t0 + i * (0.07 + Math.random() * 0.06);
+    const o = _actx.createOscillator(); o.type = 'sine';
+    const base = 2400 + Math.random() * 1800;
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.exponentialRampToValueAtTime(base * (1.3 + Math.random() * 0.5), t + 0.05);
+    const g = _actx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(g); g.connect(_ambGain);
+    o.start(t); o.stop(t + 0.12);
+  }
+}
+function _cricket() {
+  const t0 = _actx.currentTime;
+  for (let i = 0; i < 6; i++) {
+    const t = t0 + i * 0.035;
+    const o = _actx.createOscillator(); o.type = 'square'; o.frequency.value = 4600;
+    const g = _actx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.018, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
+    o.connect(g); g.connect(_ambGain);
+    o.start(t); o.stop(t + 0.025);
+  }
+}
+function _distantSiren() {
+  const t0 = _actx.currentTime;
+  const o = _actx.createOscillator(); o.type = 'sine';
+  const g = _actx.createGain(); g.gain.value = 0.0;
+  const filt = _actx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 900;
+  o.connect(filt); filt.connect(g); g.connect(_ambGain);
+  o.start(t0);
+  for (let i = 0; i < 4; i++) {
+    const t = t0 + i * 0.9;
+    o.frequency.setValueAtTime(620, t);
+    o.frequency.linearRampToValueAtTime(820, t + 0.45);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03, t + 0.1);
+    g.gain.linearRampToValueAtTime(0.0001, t + 0.85);
+  }
+  o.stop(t0 + 3.8);
+}
+function _churchBell() {
+  const t0 = _actx.currentTime;
+  const partials = [1, 2.0, 2.97, 4.07, 5.2];
+  partials.forEach((mult, i) => {
+    const o = _actx.createOscillator(); o.type = 'sine'; o.frequency.value = 311 * mult; // Es
+    const g = _actx.createGain();
+    const amp = 0.05 / (i + 1);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(amp, t0 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.6 - i * 0.3);
+    o.connect(g); g.connect(_ambGain);
+    o.start(t0); o.stop(t0 + 2.8);
+  });
+}
+function _startAmbient() {
+  if (!_actx || _ambGain) return;
+  _ambGain = _actx.createGain();
+  _ambGain.gain.value = 0.55;
+  _ambGain.connect(_actx.destination);
+  const isNight = cfg.time === 'night';
+  // leises Grundrauschen der Stadt
+  const hum = _actx.createBufferSource(); hum.buffer = _ambNoiseBuf(3); hum.loop = true;
+  const hp = _actx.createBiquadFilter(); hp.type = 'lowpass'; hp.frequency.value = isNight ? 260 : 420;
+  const hg = _actx.createGain(); hg.gain.value = isNight ? 0.010 : 0.018;
+  hum.connect(hp); hp.connect(hg); hg.connect(_ambGain); hum.start();
+  // Ereignis-Scheduler
+  let bellCount = 0;
+  _ambTimer = setInterval(() => {
+    if (footballActive || !_actx || _actx.state === 'suspended') return;
+    if (isNight) {
+      if (Math.random() < 0.6) _cricket();
+      if (Math.random() < 0.05) _distantSiren();
+    } else {
+      if (Math.random() < 0.5) _birdChirp();
+    }
+    if (Math.random() < 0.012 && bellCount < 4) { _churchBell(); bellCount++;
+      setTimeout(() => { bellCount = 0; }, 30000); }
+  }, 1400);
 }
 
 // ── Crash-Sound: realistischer Aufprall mit Nachklang ─────────────────────────
@@ -3069,6 +3239,58 @@ _buildBlitzer(-187, 260, 0);          // Ebernburgweg (Richtung Süd)
 _buildBlitzer(-620, 1009, Math.PI/2); // Parkgürtel (Richtung West)
 _buildBlitzer(-1073, 2180, 0);        // Innere Kanalstraße (Richtung Süd)
 
+// ── Tankstelle (Escher Str., westlich der Fahrbahn) ──────────────────────────
+let GAS_CX = -432, GAS_CZ = 720;      // Anhaltepunkt am Fahrbahnrand
+let _gasShown = false;
+function buildGasStation(bx, bz) {
+  const g = new THREE.Group();
+  // Vordach
+  const canMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(13, 0.5, 9), canMat);
+  canopy.position.y = 5.2; g.add(canopy);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(13.1, 0.7, 1.3),
+    new THREE.MeshLambertMaterial({ color: 0x009933 }));
+  stripe.position.set(0, 4.9, 4.5); g.add(stripe);
+  // Stützen
+  const pMat = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+  [[-5.5,-3.5],[5.5,-3.5],[-5.5,3.5],[5.5,3.5]].forEach(([px,pz]) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,5.2,8), pMat);
+    pole.position.set(px, 2.6, pz); g.add(pole);
+  });
+  // Zwei Zapfsäulen
+  const pumpMat = new THREE.MeshLambertMaterial({ color: 0x227744 });
+  [-2.2, 2.2].forEach(px => {
+    const pump = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.6), pumpMat);
+    pump.position.set(px, 0.9, 0); g.add(pump);
+    const disp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.05),
+      new THREE.MeshBasicMaterial({ color: 0x113322 }));
+    disp.position.set(px, 1.35, 0.33); g.add(disp);
+  });
+  // Leuchtschild „TANK“
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.1, 0.2),
+    new THREE.MeshBasicMaterial({ color: 0x00cc55 }));
+  sign.position.set(0, 7.2, 0); g.add(sign);
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,7,8), pMat);
+  post.position.set(0, 3.5, -4.2); g.add(post);
+  g.position.set(bx, 0, bz);
+  scene.add(g);
+}
+buildGasStation(-448, 720);
+
+function checkGasStation() {
+  if (footballActive) return;
+  const d = Math.hypot(car.x - GAS_CX, car.z - GAS_CZ);
+  if (d > 18) { _gasShown = false; return; }
+  if (d < 12 && Math.abs(car.speed) < 0.9 && fuel < 99 && !_gasShown) {
+    _gasShown = true;
+    const need = 100 - fuel;
+    const cost = Math.round(need * 1.85);          // ~1,85 €/Prozent
+    fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
+    STATS.fuelCost += cost;
+    toast('⛽ Vollgetankt! ' + cost + ' € — guten Weiterweg');
+  }
+}
+
 function initHeadlights() {
   // Left + right: wide cone – natürliche Helligkeit
   headlightL = new THREE.SpotLight(0xfff8e0, 5, 240, Math.PI / 6.5, 0.28);
@@ -3220,7 +3442,12 @@ const STATS = {
   redLights: 0,     // überfahrene rote Ampeln
   hitAndRun: 0,     // Fahrerflucht
   fines: 0,         // Bußgeld-Summe in Euro
+  fuelCost: 0,      // getankter Sprit in Euro
 };
+
+// ── Tank ──────────────────────────────────────────────────────────────────────
+let fuel = 100;                 // Tankfüllung in Prozent
+let _fuelEmpty = false, _lowFuelWarned = false;
 let _huPending = null;   // offener Unfall → Fahrerflucht-Risiko
 
 function checkHitAndRun() {
@@ -3340,6 +3567,15 @@ function updateCar(dt) {
   // KEIN Auto-Pilot – vollständig manuelles Fahren (Auto-Lenkung entfernt)
   // KEIN Auto-Gas – Geschwindigkeit bleibt wo Gas/Bremse sie lässt
 
+  // ── Spritverbrauch: Gas + Tempo zehren am Tank; leerer Tank = kein Gas mehr ──
+  if (throttle > 0 && fuel > 0) {
+    fuel = Math.max(0, fuel - (0.04 + Math.abs(car.speed) / MAX_SPD * 0.26) * throttle * dt);
+  }
+  if (fuel <= 0) {
+    throttle = 0;                                       // Motor aus → kein Vortrieb
+    if (!_fuelEmpty) { _fuelEmpty = true; toast('⛽ Tank leer! Motor aus — zur Tankstelle abrollen.'); }
+  }
+
   car._throttle = throttle;   // Gasstellung für Motorsound (Last) merken
 
   // Geschwindigkeit + Rückwärtsgang
@@ -3446,10 +3682,11 @@ function resetCar() {
   car.heading = Math.PI / 2;   // Nase zur Hecke (Osten)
   car.speed = 0; car.steer = 0; car.wpIdx = 1; car.homeMode = false;
   _homeJourneyDone = false; _homeParkShown = false;
-  // Statistik zurücksetzen
+  // Statistik & Tank zurücksetzen
   STATS.carsRammed = STATS.hardCrashes = STATS.pedScared = 0;
-  STATS.speedFlashes = STATS.redLights = STATS.hitAndRun = STATS.fines = 0;
+  STATS.speedFlashes = STATS.redLights = STATS.hitAndRun = STATS.fines = STATS.fuelCost = 0;
   _huPending = null;
+  fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
   document.getElementById('prog-fill').style.width = '0%';
   document.getElementById('street-lbl').textContent = WP[0].street;
   toast('🔄 Neustart – Hofeinfahrt Altbaumburgweg');
@@ -4177,6 +4414,7 @@ function showLegendPopup() {
   if (STATS.speedFlashes) driveRows.push(`📸 Geblitzt: <b>${STATS.speedFlashes}×</b>`);
   if (STATS.redLights)    driveRows.push(`🚦 Rote Ampeln überfahren: <b>${STATS.redLights}×</b>`);
   if (STATS.pedScared)    driveRows.push(`🚶 Fußgänger erschreckt: <b>${STATS.pedScared}</b>`);
+  if (STATS.fuelCost)     driveRows.push(`⛽ Getankt: <b>${STATS.fuelCost} €</b>`);
 
   // Fahr-Urteil je nach Bußgeld-Summe
   let verdict;
@@ -5980,6 +6218,7 @@ function loop(now) {
   checkParking();
   checkHomePark();
   checkOmaPark();
+  checkGasStation();
   updateNPCs(dt);
   updatePedestrians(dt);
   updateCamera();
@@ -6005,6 +6244,19 @@ function loop(now) {
   document.getElementById('spd').textContent =
     (car.speed < -0.2 ? '↩ ' : '') + Math.round(Math.abs(car.speed) * 3.6);
   document.getElementById('gear').textContent = currentGearLabel();
+
+  // ── Tankanzeige ───────────────────────────────────────────────────────────
+  const ff = document.getElementById('fuel-fill');
+  if (ff) {
+    ff.style.width = fuel.toFixed(0) + '%';
+    ff.style.background = fuel < 15 ? '#dd3333'
+      : fuel < 35 ? 'linear-gradient(90deg,#dd9933,#eecc44)'
+      : 'linear-gradient(90deg,#33cc55,#88dd44)';
+  }
+  if (fuel < 15 && !_lowFuelWarned && !_fuelEmpty) {
+    _lowFuelWarned = true; toast('⛽ Tank fast leer! Tankstelle ansteuern');
+  }
+  if (fuel > 25) _lowFuelWarned = false;
 
   // ── Rückspiegel: Rückkamera auf RenderTarget rendern ──────────────────────
   rearCam.position.set(car.x, 1.28, car.z);
