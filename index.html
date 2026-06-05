@@ -1560,9 +1560,14 @@ function initNPCs() {
 const NPC_LANE = 2.1;   // seitlicher Versatz → eigene Fahrspur (rechts der Mittellinie)
 
 function respawnNPC(npc) {
-  npc.crashed = false; npc.vx = 0; npc.vz = 0; npc.spin = 0;
+  npc.crashed = false; npc.vx = 0; npc.vz = 0; npc.spin = 0; npc.tilt = 0;
   npc.mesh.rotation.z = 0; npc.mesh.rotation.x = 0;
-  if (npc.reverse) {
+  if (npc.parked) {
+    // Geparktes Auto kehrt in seine Bucht zurück
+    npc.x = npc.homeX; npc.z = npc.homeZ; npc.heading = npc.homeHeading;
+    npc.mesh.position.set(npc.x, 0, npc.z);
+    npc.mesh.rotation.y = npc.heading + Math.PI;
+  } else if (npc.reverse) {
     npc.wpIdx = WP.length - 2;
     npc.x = WP[WP.length - 1].x; npc.z = WP[WP.length - 1].z;
     npc.heading = Math.atan2(WP[WP.length-2].x - WP[WP.length-1].x,
@@ -1575,18 +1580,25 @@ function respawnNPC(npc) {
 
 function updateNPCs(dt) {
   npcs.forEach(npc => {
-    // ── Crash-Zustand: weggeschleudertes Wrack ausrollen lassen ───────────────
+    // ── Crash-Zustand: weggeschleudertes/geschobenes Wrack ausrollen lassen ───
     if (npc.crashed) {
       npc.x += npc.vx * dt; npc.z += npc.vz * dt;
-      npc.vx *= 0.93; npc.vz *= 0.93;
-      npc.heading += npc.spin * dt; npc.spin *= 0.96;
+      npc.vx *= 0.92; npc.vz *= 0.92;
+      npc.heading += npc.spin * dt; npc.spin *= 0.95;
       npc.mesh.position.set(npc.x, 0, npc.z);
       npc.mesh.rotation.y = npc.heading + Math.PI;
       npc.mesh.rotation.z = npc.tilt || 0;
-      npc.crashTimer -= dt;
-      if (npc.crashTimer <= 0) respawnNPC(npc);   // nach einigen Sek. neu einsetzen
+      // Timer läuft erst runter, wenn das Wrack fast steht (sonst zählt es beim Schieben)
+      const restSpeed = Math.hypot(npc.vx, npc.vz);
+      if (restSpeed < 1.5) npc.crashTimer -= dt;
+      // Erst neu einsetzen, wenn ausgerollt UND Spieler weit genug weg
+      const farFromPlayer = Math.hypot(car.x - npc.x, car.z - npc.z) > 35;
+      if (npc.crashTimer <= 0 && restSpeed < 0.8 && farFromPlayer) respawnNPC(npc);
       return;
     }
+
+    // Geparktes Auto: steht still, bis es gerammt wird
+    if (npc.parked) return;
 
     const dir = npc.reverse ? -1 : 1;
     // Wegpunkt-Kette durchlaufen (vorwärts: ++ / Gegenverkehr: --)
@@ -2589,39 +2601,90 @@ function initAudio() {
   }
 }
 
-// ── Crash-Sound: Aufprall-Wumms + metallisches Scheppern (Tempo = Lautstärke) ──
+// ── Crash-Sound: realistischer Aufprall mit Nachklang ─────────────────────────
+//   1) tiefer Aufprall-Wumms (Bums)  2) Metall-Crunch (Knirschen)
+//   3) Glassplitter, leicht verzögert  4) nachklingende Trümmer/Klappern
 function playCrashSound(impact) {
   if (!_actx || _actx.state === 'suspended') return;
   const now = _actx.currentTime;
-  const vol = Math.min(1, impact / 30);   // 0..1 je nach Aufprallhärte
-
-  // 1) Tiefer Aufprall-Wumms (Noise durch Lowpass, schneller Abfall)
-  const dur = 0.5;
   const sr  = _actx.sampleRate;
-  const buf = _actx.createBuffer(1, sr * dur, sr);
-  const ch  = buf.getChannelData(0);
-  for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-  const src = _actx.createBufferSource(); src.buffer = buf;
-  const lp  = _actx.createBiquadFilter(); lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(900, now);
-  lp.frequency.exponentialRampToValueAtTime(120, now + dur);
-  const g = _actx.createGain();
-  g.gain.setValueAtTime(0.9 * vol + 0.1, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-  src.connect(lp); lp.connect(g); g.connect(_actx.destination);
-  src.start(now); src.stop(now + dur);
+  const vol = Math.min(1, impact / 28);   // 0..1 je nach Aufprallhärte
 
-  // 2) Metallisches Scheppern: zwei verstimmte Rechteck-Töne, kurzer Klang
-  [320, 540].forEach((f, k) => {
+  // Hilfsfunktion: Rauschpuffer beliebiger Länge
+  const noiseBuf = (dur) => {
+    const b = _actx.createBuffer(1, Math.max(1, sr * dur), sr);
+    const c = b.getChannelData(0);
+    for (let i = 0; i < c.length; i++) c[i] = Math.random() * 2 - 1;
+    return b;
+  };
+
+  // 1) Tiefer Aufprall-Wumms (Bass-Impuls)
+  {
+    const src = _actx.createBufferSource(); src.buffer = noiseBuf(0.45);
+    const lp  = _actx.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(700, now);
+    lp.frequency.exponentialRampToValueAtTime(90, now + 0.45);
+    const g = _actx.createGain();
+    g.gain.setValueAtTime(1.0 * vol + 0.12, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    src.connect(lp); lp.connect(g); g.connect(_actx.destination);
+    src.start(now); src.stop(now + 0.45);
+  }
+
+  // 2) Metall-Crunch: bandpassgefiltertes Rauschen, kratzig
+  {
+    const src = _actx.createBufferSource(); src.buffer = noiseBuf(0.28);
+    const bp  = _actx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(1800, now);
+    bp.frequency.exponentialRampToValueAtTime(700, now + 0.28);
+    bp.Q.value = 0.8;
+    const g = _actx.createGain();
+    g.gain.setValueAtTime(0.5 * vol, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    src.connect(bp); bp.connect(g); g.connect(_actx.destination);
+    src.start(now); src.stop(now + 0.28);
+  }
+
+  // 3) Glassplitter – heller Rausch-Burst, leicht verzögert (klingt "nach" dem Bums)
+  if (impact > 10) {
+    const t = now + 0.05;
+    const src = _actx.createBufferSource(); src.buffer = noiseBuf(0.35);
+    const hp  = _actx.createBiquadFilter(); hp.type = 'highpass';
+    hp.frequency.value = 4500;
+    const g = _actx.createGain();
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.32 * vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    src.connect(hp); hp.connect(g); g.connect(_actx.destination);
+    src.start(t); src.stop(t + 0.35);
+  }
+
+  // 4) Metallisches Scheppern: verstimmte Rechteck-Töne, fallend
+  [300, 520, 770].forEach((f, k) => {
     const o = _actx.createOscillator(); o.type = 'square';
-    o.frequency.setValueAtTime(f * (1 + Math.random()*0.1), now);
-    o.frequency.exponentialRampToValueAtTime(f * 0.6, now + 0.25);
+    o.frequency.setValueAtTime(f * (1 + Math.random() * 0.12), now + 0.01);
+    o.frequency.exponentialRampToValueAtTime(f * 0.55, now + 0.32);
     const og = _actx.createGain();
-    og.gain.setValueAtTime((0.18 - k*0.05) * vol, now + 0.01);
-    og.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    og.gain.setValueAtTime((0.16 - k * 0.04) * vol, now + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
     o.connect(og); og.connect(_actx.destination);
-    o.start(now); o.stop(now + 0.3);
+    o.start(now); o.stop(now + 0.34);
   });
+
+  // 5) Nachklang: ein paar zufällige Trümmer-Klacker über ~0.6 s
+  if (impact > 8) {
+    const ticks = 5;
+    for (let i = 0; i < ticks; i++) {
+      const t = now + 0.12 + Math.random() * 0.5;
+      const o = _actx.createOscillator(); o.type = 'triangle';
+      o.frequency.value = 600 + Math.random() * 2200;
+      const og = _actx.createGain();
+      og.gain.setValueAtTime(0.06 * vol, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      o.connect(og); og.connect(_actx.destination);
+      o.start(t); o.stop(t + 0.08);
+    }
+  }
 }
 
 function updateEngineSound() {
@@ -2954,35 +3017,49 @@ function checkCollisions() {
       _shakeAmt = Math.max(_shakeAmt, 0.06);
     }
   }
-  // NPCs (Radialabstand) – bei Tempo: RAMMEN → Crash
+  // NPCs & geparkte Autos – RAMMEN & VOR SICH HERSCHIEBEN (Impulsübertragung)
+  const R = 3.4;                                 // Kontaktradius
   for (const npc of npcs) {
-    if (npc.crashed) continue;                 // Wracks nicht erneut anstoßen
-    const d = Math.hypot(car.x-npc.x, car.z-npc.z);
-    if (d < 4 && d > 0.1) {
-      const impact = Math.abs(car.speed);
-      // Richtung vom Spieler weg zum NPC (so wird der NPC weggeschoben)
-      const pushAng = Math.atan2(npc.x-car.x, npc.z-car.z);
+    const dxp = car.x - npc.x, dzp = car.z - npc.z;
+    const d = Math.hypot(dxp, dzp);
+    if (d >= R || d < 0.001) continue;
+
+    const nx = dxp / d, nz = dzp / d;            // Normale vom NPC zum Spieler
+    const overlap = R - d;
+    // 1) Durchdringung auflösen → NPC wird physisch beiseite/vorwärts geschoben
+    npc.x -= nx * overlap;
+    npc.z -= nz * overlap;
+
+    // 2) Impuls: Anteil der Spielergeschwindigkeit, der in den NPC hineindrückt
+    const pvx = Math.sin(car.heading) * car.speed;
+    const pvz = Math.cos(car.heading) * car.speed;
+    const along = pvx * (-nx) + pvz * (-nz);     // >0 = Spieler fährt in den NPC
+    npc.vx = npc.vx || 0; npc.vz = npc.vz || 0;
+    if (along > 0) {
+      npc.vx += (-nx) * along * 0.92;
+      npc.vz += (-nz) * along * 0.92;
+    }
+
+    const impact = Math.abs(car.speed);
+    if (!npc.crashed) {
+      // Erstkontakt: in Physik-/Crash-Modus wechseln
+      npc.crashed = true;
+      npc.crashTimer = 8;
+      npc.spin = (Math.random() - 0.5) * (impact > 8 ? 4 : 1.2);
       if (impact > 8) {
-        // ── CRASH: NPC wird weggeschleudert ──────────────────────────────────
-        npc.crashed   = true;
-        npc.crashTimer = 6;
-        const knock = Math.min(impact, 42) * 0.95 + 6;
-        npc.vx = Math.sin(pushAng)*knock + Math.sin(car.heading)*car.speed*0.35;
-        npc.vz = Math.cos(pushAng)*knock + Math.cos(car.heading)*car.speed*0.35;
-        npc.spin = (Math.random()-0.5)*7;
-        npc.tilt = (Math.random()-0.5)*0.55;
-        car.speed *= 0.62;                       // Spieler behält Schwung (Ramm-Gefühl)
-        _shakeAmt = Math.max(_shakeAmt, 0.20);
+        npc.tilt = (Math.random() - 0.5) * 0.4;
         playCrashSound(impact);
+        _shakeAmt = Math.max(_shakeAmt, 0.18);
       } else {
-        // ── Sanfter Anstoß (langsam) ─────────────────────────────────────────
-        const ang = Math.atan2(car.x-npc.x, car.z-npc.z);
-        car.x += Math.sin(ang)*(4-d)*0.65;
-        car.z += Math.cos(ang)*(4-d)*0.65;
-        car.speed *= 0.4;
         _shakeAmt = Math.max(_shakeAmt, 0.05);
       }
+    } else {
+      npc.crashTimer = Math.max(npc.crashTimer, 2);  // beim Weiterschieben nicht respawnen
     }
+
+    // 3) Spieler verliert etwas Tempo, behält aber Schwung zum Schieben
+    car.speed *= (impact > 20 ? 0.80 : 0.90);
+    _shakeAmt = Math.max(_shakeAmt, 0.03);
   }
 }
 
@@ -3958,9 +4035,16 @@ function buildOmaStop() {
     const cc = p(22.5 + bay * 5, -15.5);
     const g = makeParkedCar(carCols[i]);
     g.position.set(cc.x, 0, cc.z);
-    g.rotation.y = -Math.PI / 2;   // Front Ost (eingefahren von der Zufahrt)
+    const rotY = -Math.PI / 2;      // Front Ost (eingefahren von der Zufahrt)
+    g.rotation.y = rotY;
     scene.add(g);
-    collidables.push({ x: cc.x, z: cc.z, hw: 2.2, hd: 1.2 });  // auto liegt quer: hw=länge/2
+    // Als schiebbares (geparktes) Auto registrieren – NICHT als feste Mauer.
+    // heading so, dass mesh.rotation.y = heading + PI dem Platzieren entspricht.
+    npcs.push({
+      mesh: g, x: cc.x, z: cc.z, heading: rotY - Math.PI,
+      speed: 0, wpIdx: 0, reverse: false, parked: true, crashed: false,
+      homeX: cc.x, homeZ: cc.z, homeHeading: rotY - Math.PI,
+    });
   });
 
   // ── P-Schild an der Einfahrt ──
