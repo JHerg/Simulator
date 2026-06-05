@@ -3248,6 +3248,10 @@ function buildOSMBuildings(elements, nodes) {
     const mIdx = Math.abs(Math.round(cx*5 + cz*9)) % matPairs.length;
     const mesh = new THREE.Mesh(geo, matPairs[mIdx]);
     mesh.position.y = 0;
+    // [OPT-3] echte Gebäude-Mitte (cx/cz) merken – die Position bleibt (0,0,0),
+    // weil die Weltkoordinaten in der Geometrie stecken. Fürs Distanz-Culling.
+    mesh.userData.cullX = cx;
+    mesh.userData.cullZ = cz;
     scene.add(mesh);
     osmBuildings.push(mesh);   // [OPT-3]
 
@@ -5208,8 +5212,8 @@ function loop(now) {
     const cutoff2 = cutoff * cutoff;
     for (let i = 0; i < osmBuildings.length; i++) {
       const b = osmBuildings[i];
-      const ddx = b.position.x - car.x;
-      const ddz = b.position.z - car.z;
+      const ddx = b.userData.cullX - car.x;   // [OPT-3] echte Gebäude-Mitte, nicht position(0,0,0)
+      const ddz = b.userData.cullZ - car.z;
       b.visible = (ddx*ddx + ddz*ddz) < cutoff2;
     }
   }
