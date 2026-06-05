@@ -2973,6 +2973,20 @@ function updateCamera() {
     cam.rotation.z += (Math.random()-.5) * _shakeAmt * 0.6;
     _shakeAmt *= 0.80;
   }
+
+  // ── [OPT-4] Speed- & Drift-Shake (dezent, Simulator-tauglich) ─────────────
+  {
+    const spdNorm = Math.min(1, Math.abs(car.speed) / MAX_SPD);
+    const fxS = Math.sin(car.heading), fzS = Math.cos(car.heading);
+    const slip = Math.abs((car.vx||0) * fzS - (car.vz||0) * fxS); // Quergeschwindigkeit
+    const shakeAmt = spdNorm * 0.012 + Math.min(0.05, slip * 0.01);
+    if (shakeAmt > 0.001) {
+      const ts = performance.now() * 0.05;
+      cam.position.x += Math.sin(ts * 1.7) * shakeAmt;
+      cam.position.y += Math.sin(ts * 2.3) * shakeAmt * 0.6;
+      cam.rotation.z += ((car.vx||0) * fzS - (car.vz||0) * fxS) * 0.0008; // leichtes Roll bei Drift
+    }
+  }
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────────
