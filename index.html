@@ -270,6 +270,25 @@
       display:none;z-index:60;height:8px;
     }
     #escape-bar{height:8px;width:0%;background:linear-gradient(90deg,#44ff88,#00cc55);transition:width .2s;}
+    #money-lbl{font-size:13px;font-weight:bold;color:#bbffaa;white-space:nowrap;}
+    #dmg-lbl{font-size:13px;font-weight:bold;color:#ccddcc;white-space:nowrap;display:none;}
+    #taxi-hud{
+      position:fixed;top:48px;left:50%;transform:translateX(-50%);
+      background:rgba(30,26,0,.82);color:#ffdd44;border-radius:10px;
+      padding:4px 14px;font-size:14px;font-weight:bold;
+      pointer-events:none;display:none;z-index:60;white-space:nowrap;
+    }
+    #cfg-exam,#cfg-timetrial{
+      padding:15px 42px;border-radius:14px;
+      font-size:18px;font-weight:bold;
+      color:#fff;border:none;cursor:pointer;
+      transition:transform .15s,box-shadow .15s;
+    }
+    #cfg-exam{background:linear-gradient(135deg,#555577,#8888bb);box-shadow:0 4px 22px rgba(100,100,200,.38);}
+    #cfg-exam:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(120,120,255,.5);}
+    #cfg-timetrial{background:linear-gradient(135deg,#883344,#cc5566);box-shadow:0 4px 22px rgba(200,60,100,.38);}
+    #cfg-timetrial:hover{transform:translateY(-2px);box-shadow:0 7px 28px rgba(255,80,120,.5);}
+    #bradio{bottom:96px;left:163px;width:68px;height:54px;font-size:24px;background:rgba(80,80,200,.45);}
 
     /* ── Tempolimit-Schild ──────────────────────────────── */
     #limit-sign{
@@ -493,6 +512,8 @@
     <button id="cfg-start">🚗 Fahrt starten</button>
     <button id="cfg-football">⚽ Zum Fußball</button>
     <button id="cfg-freedrive">🕹 Freies Fahren</button>
+    <button id="cfg-exam">📋 Fahrprüfung</button>
+    <button id="cfg-timetrial">⏱ Zeitfahren</button>
   </div>
 </div>
 
@@ -636,12 +657,18 @@
   <div class="mbtn" id="bgas">⚡GAS</div>
   <div class="mbtn" id="bbrk">⛔</div>
   <div class="mbtn" id="bhorn">📣</div>
+  <div class="mbtn" id="bradio">📻</div>
 </div>
+
+<!-- Taxi-Missions-HUD -->
+<div id="taxi-hud"></div>
 
 <!-- Tankanzeige -->
 <div id="fuel-gauge">
   <div id="fuel-icon">⛽</div>
   <div id="fuel-bar"><div id="fuel-fill"></div></div>
+  <div id="money-lbl">💶 500 €</div>
+  <div id="dmg-lbl">🔧 0%</div>
 </div>
 
 <script>
@@ -755,12 +782,40 @@ async function boot() {
       console.error(e);
     }
   });
+
+  // Fahrprüfung
+  document.getElementById('cfg-exam').addEventListener('click', () => {
+    cfgEl.style.display = 'none';
+    try {
+      _examMode = true;
+      startSimulator(getCfg());
+    } catch(e) {
+      bootError('Render-Fehler: ' + e.message);
+      document.getElementById('boot-screen').style.display = 'flex';
+      console.error(e);
+    }
+  });
+
+  // Zeitfahren
+  document.getElementById('cfg-timetrial').addEventListener('click', () => {
+    cfgEl.style.display = 'none';
+    try {
+      _timeTrialMode = true;
+      startSimulator(getCfg());
+    } catch(e) {
+      bootError('Render-Fehler: ' + e.message);
+      document.getElementById('boot-screen').style.display = 'flex';
+      console.error(e);
+    }
+  });
 }
 
 boot();
 
 let _startDirectFootball = false;
 let _freeDriveMode = false;
+let _examMode = false;
+let _timeTrialMode = false;
 
 function startSimulator(cfg) {
 cfg = cfg || { time:'day', weather:'clear' };
@@ -1956,8 +2011,211 @@ function updateKolsch(elapsed) {
       }
       toast(`🍺 Kölsch gesammelt! (${_kolschCollected}/5)` +
             (_kolschCollected === 5 ? ' — Prost! Alle gesammelt! 🏆' : ''));
+      if (_kolschCollected === 5) unlockAch('kolsch5');
     }
   });
+}
+
+// ── KVB-Straßenbahn: quert die Route, läutet, gewinnt jede Kollision ─────────
+let _tram = null;
+
+function buildTram() {
+  const ti = Math.floor(WP.length * 0.52);
+  const A = WP[ti], B = WP[Math.min(ti + 1, WP.length - 1)];
+  const dx = B.x - A.x, dz = B.z - A.z, len = Math.hypot(dx, dz) || 1;
+  const fx = dx / len, fz = dz / len;
+  const nx = -fz, nz = fx;                   // senkrecht zur Route = Schienenrichtung
+  const cx = A.x, cz = A.z;
+
+  // Schienen (zwei dunkle Streifen quer über die Straße)
+  const railMat = new THREE.MeshBasicMaterial({ color: 0x333338 });
+  [-0.75, 0.75].forEach(off => {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 480), railMat);
+    rail.position.set(cx + fx * off, 0.04, cz + fz * off);
+    rail.rotation.y = Math.atan2(nx, nz);
+    scene.add(rail);
+  });
+
+  // KVB-Bahn: weiß mit rotem Band
+  const g = new THREE.Group();
+  const wMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+  const rMat = new THREE.MeshLambertMaterial({ color: 0xcc1122 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.4, 18), wMat);
+  body.position.y = 1.6; g.add(body);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.54, 0.7, 18), rMat);
+  stripe.position.y = 0.85; g.add(stripe);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(2.56, 0.8, 16.6),
+    new THREE.MeshLambertMaterial({ color: 0x223344 }));
+  win.position.y = 2.1; g.add(win);
+  const panto = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, 1.6),
+    new THREE.MeshLambertMaterial({ color: 0x555555 }));
+  panto.position.set(0, 3.4, 0); g.add(panto);
+  scene.add(g);
+
+  _tram = { mesh: g, cx, cz, dirX: nx, dirZ: nz, perpX: fx, perpZ: fz,
+            s: -240, v: 11, heading: Math.atan2(nx, nz), bellT: 0 };
+  g.rotation.y = _tram.heading;
+}
+
+function _tramBell() {
+  if (!_actx || _actx.state === 'suspended') return;
+  const t = _actx.currentTime;
+  [0, 0.22].forEach(off => {
+    const o = _actx.createOscillator(), g = _actx.createGain();
+    o.type = 'sine'; o.frequency.value = 1320;
+    g.gain.setValueAtTime(0.14, t + off);
+    g.gain.exponentialRampToValueAtTime(0.001, t + off + 0.4);
+    o.connect(g); g.connect(_actx.destination);
+    o.start(t + off); o.stop(t + off + 0.45);
+  });
+}
+
+function updateTram(dt) {
+  if (!_tram) return;
+  const t = _tram;
+  t.s += t.v * dt;
+  if (t.s >  240) { t.s =  240; t.v = -Math.abs(t.v); }
+  if (t.s < -240) { t.s = -240; t.v =  Math.abs(t.v); }
+  const x = t.cx + t.dirX * t.s, z = t.cz + t.dirZ * t.s;
+  t.mesh.position.set(x, 0, z);
+
+  // Glocke wenn Bahn UND Spieler nahe der Kreuzung
+  const dPlayer = Math.hypot(car.x - t.cx, car.z - t.cz);
+  if (Math.abs(t.s) < 60 && dPlayer < 70 && performance.now() - t.bellT > 4000) {
+    t.bellT = performance.now();
+    _tramBell();
+  }
+
+  // Kollision: Spieler-Position relativ zur Bahn (along/side)
+  const relX = car.x - x, relZ = car.z - z;
+  const along = relX * t.dirX + relZ * t.dirZ;
+  const side  = relX * t.perpX + relZ * t.perpZ;
+  if (Math.abs(along) < 9.6 && Math.abs(side) < 2.6) {
+    const push = Math.sign(side || 1);
+    car.x = x + t.perpX * push * 3.4;
+    car.z = z + t.perpZ * push * 3.4;
+    car.speed *= -0.25;
+    _shakeAmt = Math.max(_shakeAmt, 0.3);
+    addDamage(35);
+    playCrashSound(14);
+    unlockAch('tram');
+    toast('🚋 RUMMS! Mit der KVB legt man sich nicht an!');
+  }
+}
+
+// ── Zufallsereignis: Baustelle (Pylonen sperren halbe Fahrbahn) ───────────────
+const _cones = [];
+
+function buildRoadworks() {
+  const i = Math.floor(WP.length * (0.25 + Math.random() * 0.4));
+  const A = WP[i], B = WP[Math.min(i + 1, WP.length - 1)];
+  const dx = B.x - A.x, dz = B.z - A.z, len = Math.hypot(dx, dz) || 1;
+  const fx = dx / len, fz = dz / len, nx = -dz / len, nz = dx / len;
+  const baseX = A.x + fx * len * 0.5, baseZ = A.z + fz * len * 0.5;
+  const coneMat = new THREE.MeshLambertMaterial({ color: 0xff6600 });
+  const bandMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  for (let k = 0; k < 6; k++) {
+    const g = new THREE.Group();
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.75, 8), coneMat);
+    cone.position.y = 0.38; g.add(cone);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.23, 0.14, 8), bandMat);
+    band.position.y = 0.42; g.add(band);
+    // Schräge: von Fahrbahnmitte zur rechten Seite wandernd
+    const gx = baseX + fx * k * 4 + nx * (3.2 - k * 0.5);
+    const gz = baseZ + fz * k * 4 + nz * (3.2 - k * 0.5);
+    g.position.set(gx, 0, gz);
+    scene.add(g);
+    _cones.push({ mesh: g, x: gx, z: gz, hit: false, warned: false });
+  }
+  // Blinkende Warnbake am Anfang der Sperrung
+  const beak = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.12),
+    new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+  beak.position.set(baseX + nx * 3.2, 0.6, baseZ + nz * 3.2);
+  scene.add(beak);
+  _cones._beacon = beak;
+}
+
+function updateCones(dt) {
+  if (_cones._beacon)
+    _cones._beacon.material.color.setHex(
+      Math.floor(performance.now() / 400) % 2 ? 0xffaa00 : 0x553300);
+  let warn = false;
+  _cones.forEach(c => {
+    if (c.hit) {
+      // umgekipptes Hütchen langsam flachlegen
+      c.mesh.rotation.x = Math.min(c.mesh.rotation.x + dt * 6, Math.PI / 2);
+      return;
+    }
+    const d = Math.hypot(car.x - c.x, car.z - c.z);
+    if (!c.warned && d < 80) { c.warned = true; warn = true; }
+    if (d < 2.2 && Math.abs(car.speed) > 1) {
+      c.hit = true;
+      car.speed *= 0.96;
+      _shakeAmt = Math.max(_shakeAmt, 0.03);
+      addDamage(0.8);
+      STATS.conesHit = (STATS.conesHit || 0) + 1;
+    }
+  });
+  if (warn) toast('🚧 Baustelle voraus — Spur wechseln!');
+}
+
+// ── Zufallsereignis: Krankenwagen rauscht mit Sirene vorbei ───────────────────
+let _ambu = null, _ambuNextT = 80 + Math.random() * 60;
+
+function updateAmbulance(dt) {
+  if (!_ambu) {
+    _ambuNextT -= dt;
+    if (_ambuNextT <= 0 && Math.abs(car.speed) > 3 && !footballActive) {
+      // Spawn 120 m hinter dem Spieler, gleiche Richtung
+      const g = new THREE.Group();
+      const wMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+      const bodyM = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.0, 5.2), wMat);
+      bodyM.position.y = 1.25; g.add(bodyM);
+      const cross1 = new THREE.Mesh(new THREE.BoxGeometry(2.14, 0.5, 1.4),
+        new THREE.MeshLambertMaterial({ color: 0xdd2222 }));
+      cross1.position.set(0, 1.45, 0); g.add(cross1);
+      const lite = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.18, 0.4),
+        new THREE.MeshBasicMaterial({ color: 0x2255ff }));
+      lite.position.set(0, 2.4, 1.6); g.add(lite);
+      const sx = car.x - Math.sin(car.heading) * 120;
+      const sz = car.z - Math.cos(car.heading) * 120;
+      g.position.set(sx, 0, sz);
+      g.rotation.y = car.heading + Math.PI;
+      scene.add(g);
+      // eigene schnelle Sirene
+      let siren = null;
+      if (_actx && _actx.state !== 'suspended') {
+        const osc = _actx.createOscillator(), gn = _actx.createGain();
+        osc.type = 'square'; osc.frequency.value = 990; gn.gain.value = 0.07;
+        osc.connect(gn); gn.connect(_actx.destination); osc.start();
+        let hi = true;
+        const iv = setInterval(() => {
+          if (!_ambu) { clearInterval(iv); try { osc.stop(); } catch(e){} return; }
+          hi = !hi;
+          osc.frequency.setTargetAtTime(hi ? 990 : 740, _actx.currentTime, 0.05);
+        }, 300);
+        siren = { osc, iv };
+      }
+      _ambu = { mesh: g, lite, x: sx, z: sz, heading: car.heading, siren, blink: 0 };
+      toast('🚑 Krankenwagen von hinten — Rettungsgasse bilden!');
+    }
+    return;
+  }
+  // fährt schnell auf Spieler-Kurs vorbei
+  const a = _ambu;
+  a.blink += dt;
+  a.lite.material.color.setHex(a.blink % 0.4 < 0.2 ? 0x2255ff : 0xffffff);
+  a.x += Math.sin(a.heading) * 26 * dt;
+  a.z += Math.cos(a.heading) * 26 * dt;
+  a.mesh.position.set(a.x, 0, a.z);
+  // Spieler weit hinter sich gelassen → despawn
+  const rel = (a.x - car.x) * Math.sin(car.heading) + (a.z - car.z) * Math.cos(car.heading);
+  if (rel > 260 || Math.hypot(a.x - car.x, a.z - car.z) > 420) {
+    if (a.siren) { clearInterval(a.siren.iv); try { a.siren.osc.stop(); } catch(e){} }
+    scene.remove(a.mesh);
+    _ambu = null;
+    _ambuNextT = 90 + Math.random() * 80;
+  }
 }
 
 // ── Cockpit ───────────────────────────────────────────────────────────────────
@@ -2538,6 +2796,7 @@ window.addEventListener('keyup',   e => { keys[e.code] = false; });
 window.addEventListener('keydown', e => { if (e.code==='KeyR') resetCar(); });
 window.addEventListener('keydown', e => { if (e.code==='KeyH') hornStart(); });
 window.addEventListener('keyup',   e => { if (e.code==='KeyH') hornStop();  });
+window.addEventListener('keydown', e => { if (e.code==='KeyM') radioToggle(); });
 
 // Web Audio API: start on first user gesture (browser autoplay policy)
 function _startAudioOnce() {
@@ -2579,6 +2838,15 @@ bindBtn('bbrk', 'brake');
   el.addEventListener('touchcancel', off, { passive:false });
   el.addEventListener('mousedown',   on);
   el.addEventListener('mouseup',     off);
+})();
+
+// Radio-Button (Sender weiterschalten per Tipp)
+(function bindRadio() {
+  const el = document.getElementById('bradio');
+  if (!el) return;
+  const tap = e => { radioToggle(); e.preventDefault(); };
+  el.addEventListener('touchstart', tap, { passive:false });
+  el.addEventListener('mousedown',  tap);
 })();
 
 // Gamepad / Thrustmaster
@@ -2917,10 +3185,120 @@ function hornStart() {
       p.panicking = true; p.panicEnd = performance.now() + 2600;
     }
   });
+  // NPCs in der Nähe hupen genervt zurück (leicht verzögert)
+  for (const npc of npcs) {
+    if (npc.crashed || npc.parked) continue;
+    if (Math.hypot(npc.x - car.x, npc.z - car.z) < 28) {
+      setTimeout(_npcHonk, 450 + Math.random() * 700);
+      break;
+    }
+  }
+}
+
+// ── NPC-Hupe (tieferer Zweiklang als der Spieler) ─────────────────────────────
+let _npcHonkT = 0;
+function _npcHonk() {
+  if (!_actx || _actx.state === 'suspended') return;
+  if (performance.now() - _npcHonkT < 3500) return;
+  _npcHonkT = performance.now();
+  const t = _actx.currentTime;
+  [330, 415].forEach(fr => {
+    const o = _actx.createOscillator(), g = _actx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = fr;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.07, t + 0.02);
+    g.gain.setValueAtTime(0.07, t + 0.32);
+    g.gain.linearRampToValueAtTime(0.0001, t + 0.4);
+    o.connect(g); g.connect(_actx.destination);
+    o.start(t); o.stop(t + 0.42);
+  });
 }
 function hornStop() {
   _hornOn = false;
   if (_hornGain && _actx) _hornGain.gain.setTargetAtTime(0, _actx.currentTime, 0.04);
+}
+
+// ── Autoradio (Taste M / 📻-Button): 3 generative Sender + Verkehrsfunk ───────
+let _radioSt = 0;            // 0=aus 1=Kölsche Welle 2=Beat FM 3=Klassik
+let _radioTimer = null, _radioGain = null, _radioStep = 0;
+let _trafficNewsT = 45;
+const _RADIO_NAMES = ['🔇 Radio aus', '📻 Kölsche Welle 107,1', '📻 Beat FM', '📻 WDR Klassik'];
+const _R_SCALE1 = [262, 294, 330, 392, 440, 523];          // C-Dur pentatonisch
+const _R_BASS2  = [110, 110, 131, 98, 110, 147, 131, 98];  // a-Moll Bassline
+const _R_ARP3   = [262, 330, 392, 523, 392, 330];          // C-Dur Arpeggio
+
+function _radioNote(freq, t, dur, type, vol) {
+  const o = _actx.createOscillator(), g = _actx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(_radioGain);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+
+function _radioTick() {
+  if (!_actx || _radioSt === 0) return;
+  const t = _actx.currentTime, s = _radioStep++;
+  if (_radioSt === 1) {
+    // Kölsche Welle: Oom-Pah-Bass + fröhliche Pentatonik-Melodie
+    if (s % 2 === 0) _radioNote(s % 4 === 0 ? 131 : 196, t, 0.18, 'triangle', 0.55);
+    if (Math.random() < 0.8) _radioNote(_R_SCALE1[Math.floor(Math.random() * 6)], t, 0.22, 'square', 0.15);
+  } else if (_radioSt === 2) {
+    // Beat FM: Four-on-the-floor-Kick + Sägezahn-Bassline
+    if (s % 2 === 0) {
+      const o = _actx.createOscillator(), g = _actx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(150, t);
+      o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+      g.gain.setValueAtTime(0.85, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.connect(g); g.connect(_radioGain);
+      o.start(t); o.stop(t + 0.2);
+    }
+    _radioNote(_R_BASS2[s % 8], t, 0.16, 'sawtooth', 0.2);
+  } else if (_radioSt === 3) {
+    // Klassik: getragenes Arpeggio mit Oberstimme
+    if (s % 4 === 0) _radioNote(_R_ARP3[Math.floor(s / 4) % 6], t, 1.6, 'sine', 0.4);
+    if (s % 8 === 4) _radioNote(_R_ARP3[Math.floor(s / 4) % 6] * 1.5, t, 1.2, 'triangle', 0.18);
+  }
+}
+
+function radioToggle() {
+  if (!_actx || _actx.state === 'suspended') return;
+  _radioSt = (_radioSt + 1) % 4;
+  toast(_RADIO_NAMES[_radioSt]);
+  if (_radioTimer) { clearInterval(_radioTimer); _radioTimer = null; }
+  if (_radioSt === 0) return;
+  if (!_radioGain) {
+    _radioGain = _actx.createGain();
+    _radioGain.gain.value = 0.06;
+    _radioGain.connect(_actx.destination);
+  }
+  _radioStep = 0;
+  const tempo = _radioSt === 2 ? 140 : _radioSt === 1 ? 104 : 70;
+  _radioTimer = setInterval(_radioTick, Math.round(60000 / tempo / 2));
+}
+
+// Verkehrsfunk: unterbricht die Musik mit Meldungen, die echte Spielzustände aufgreifen
+function updateRadioNews(dt) {
+  if (_radioSt === 0) return;
+  _trafficNewsT -= dt;
+  if (_trafficNewsT > 0) return;
+  _trafficNewsT = 75 + Math.random() * 40;
+  if (_actx && _actx.state !== 'suspended' && _radioGain) {
+    const t = _actx.currentTime;
+    [880, 1109, 1319].forEach((f, i) => _radioNote(f, t + i * 0.14, 0.18, 'sine', 0.5));
+  }
+  const msgs = [
+    '📻 Verkehrsfunk: Mobiler Blitzer auf dem Parkgürtel — Fuß vom Gas!',
+    '📻 Verkehrsfunk: Zähfließender Verkehr auf der Inneren Kanalstraße.',
+    '📻 Verkehrsfunk: Baustelle gemeldet — bitte rechtzeitig die Spur wechseln.',
+    '📻 Verkehrsfunk: Erhöhtes Fußgängeraufkommen an den Zebrastreifen.',
+    _wantedLevel > 0 ? '📻 EILMELDUNG: Polizei verfolgt einen Flüchtigen in Bilderstöckchen!' : null,
+    fuel < 30 ? '📻 Servicetipp: Günstig tanken heute an der Escher Str.!' : null,
+  ].filter(Boolean);
+  toast(msgs[Math.floor(Math.random() * msgs.length)]);
 }
 
 // ── Stadt-Ambiente: Vögel/Stadtrauschen (Tag) bzw. Grillen/Sirenen (Nacht) ────
@@ -3407,7 +3785,7 @@ function checkBlitzer(dt) {
     if (Math.hypot(car.x - b.x, car.z - b.z) < 9 && car.speed > 13.9) {
       b.cooldown = 25;
       const kmh = Math.round(car.speed * 3.6);
-      STATS.speedFlashes++; STATS.fines += 150;
+      STATS.speedFlashes++; STATS.fines += 150; spendMoney(150);
       _buildBlitzerFlash();
       _blitzSound();
       setTimeout(_blitzSound, 80);
@@ -3424,7 +3802,7 @@ function checkTrafficLights(dt) {
     if (!tl.userData.isRed) continue;
     if (Math.hypot(car.x - tl.position.x, car.z - tl.position.z) < 5) {
       _redLightCooldown = 18;
-      STATS.redLights++; STATS.fines += 200;
+      STATS.redLights++; STATS.fines += 200; spendMoney(200);
       toast('🚔 Rotlicht überfahren! Bußgeld 200 €');
       addFlensburg(2, 'Rotlichtverstoß');
       if (_actx && _actx.state !== 'suspended') {
@@ -3490,13 +3868,131 @@ function checkGasStation() {
   if (footballActive) return;
   const d = Math.hypot(car.x - GAS_CX, car.z - GAS_CZ);
   if (d > 18) { _gasShown = false; return; }
-  if (d < 12 && Math.abs(car.speed) < 0.9 && fuel < 99 && !_gasShown) {
+  if (d < 12 && Math.abs(car.speed) < 0.9 && (fuel < 99 || damage > 5) && !_gasShown) {
     _gasShown = true;
-    const need = 100 - fuel;
-    const cost = Math.round(need * 1.85);          // ~1,85 €/Prozent
-    fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
-    STATS.fuelCost += cost;
-    toast('⛽ Vollgetankt! ' + cost + ' € — guten Weiterweg');
+    let msg = [];
+    if (fuel < 99) {
+      const need = 100 - fuel;
+      const cost = Math.round(need * 1.85);        // ~1,85 €/Prozent
+      fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
+      STATS.fuelCost += cost; spendMoney(cost);
+      msg.push('⛽ Vollgetankt: ' + cost + ' €');
+    }
+    if (damage > 5) {
+      const repCost = Math.round(damage * 2.2);    // Werkstatt: 2,20 €/Schadensprozent
+      STATS.repairCost += repCost; spendMoney(repCost);
+      damage = 0; updateDamageHUD();
+      msg.push('🔧 Repariert: ' + repCost + ' €');
+    }
+    toast(msg.join(' · ') + ' — gute Weiterfahrt!');
+  }
+}
+
+// ── Taxi-Missionen: Fahrgäste einsammeln & gegen Zeit absetzen ────────────────
+let _taxi = null;            // { state:'pickup'|'ride', ... }
+let _taxiNextT = 22;
+let _taxiRides = 0;
+let _taxiPedMesh = null, _destMarker = null;
+
+function _nearestWPIdx() {
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < WP.length; i++) {
+    const d = Math.hypot(WP[i].x - car.x, WP[i].z - car.z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+
+function _makeBeacon(color) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.4, 1.4, 26, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3,
+                                  side: THREE.DoubleSide, depthWrite: false })
+  );
+  m.position.y = 13;
+  return m;
+}
+
+function _spawnTaxiPassenger() {
+  const cur = _nearestWPIdx();
+  let pi = cur + 4 + Math.floor(Math.random() * 5);
+  if (pi >= WP.length - 2) pi = Math.max(1, cur - (4 + Math.floor(Math.random() * 5)));
+  const wp = WP[pi];
+  const nxt = WP[Math.min(pi + 1, WP.length - 1)];
+  const dx = nxt.x - wp.x, dz = nxt.z - wp.z, len = Math.hypot(dx, dz) || 1;
+  const px = wp.x + (-dz / len) * 6, pz = wp.z + (dx / len) * 6;
+
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 0.95, 6),
+    new THREE.MeshLambertMaterial({ color: 0xddaa00 }));
+  body.position.y = 0.62; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6),
+    new THREE.MeshLambertMaterial({ color: 0xffcc99 }));
+  head.position.y = 1.35; g.add(head);
+  g.add(_makeBeacon(0xffdd00));
+  g.position.set(px, 0, pz);
+  scene.add(g);
+
+  _taxiPedMesh = g;
+  _taxi = { state: 'pickup', x: px, z: pz, pickIdx: pi };
+  toast('🚕 Fahrgast wartet — gelbe Lichtsäule voraus! (Anhalten zum Einsteigen)');
+}
+
+function _taxiAssignDest() {
+  const pi = _taxi.pickIdx;
+  let di = pi + 6 + Math.floor(Math.random() * 8);
+  if (di >= WP.length - 1) di = Math.max(1, pi - (6 + Math.floor(Math.random() * 8)));
+  const wp = WP[di];
+  const dist = Math.hypot(wp.x - car.x, wp.z - car.z);
+  _taxi.state = 'ride';
+  _taxi.destX = wp.x; _taxi.destZ = wp.z;
+  _taxi.timeLeft = Math.max(25, dist / 8 + 15);
+  _taxi.reward = Math.round(8 + dist * 0.025);
+  _destMarker = _makeBeacon(0x33ff77);
+  _destMarker.position.set(wp.x, 13, wp.z);
+  scene.add(_destMarker);
+  document.getElementById('taxi-hud').style.display = 'block';
+  toast(`🚕 Fahrgast an Bord! Ziel: ${wp.street} — ${_taxi.reward} € Lohn`);
+}
+
+function _endTaxi() {
+  if (_destMarker)  { scene.remove(_destMarker);  _destMarker  = null; }
+  if (_taxiPedMesh) { scene.remove(_taxiPedMesh); _taxiPedMesh = null; }
+  _taxi = null; _taxiNextT = 24 + Math.random() * 14;
+  document.getElementById('taxi-hud').style.display = 'none';
+}
+
+function updateTaxi(dt) {
+  if (footballActive || _examMode) return;
+  if (!_taxi) {
+    _taxiNextT -= dt;
+    if (_taxiNextT <= 0) _spawnTaxiPassenger();
+    return;
+  }
+  if (_taxi.state === 'pickup') {
+    const d = Math.hypot(car.x - _taxi.x, car.z - _taxi.z);
+    if (d < 7 && Math.abs(car.speed) < 1.2) {
+      scene.remove(_taxiPedMesh); _taxiPedMesh = null;
+      _taxiAssignDest();
+    }
+    return;
+  }
+  // Fahrt läuft
+  _taxi.timeLeft -= dt;
+  const d = Math.hypot(car.x - _taxi.destX, car.z - _taxi.destZ);
+  document.getElementById('taxi-hud').textContent =
+    `🚕 Ziel ${Math.round(d)} m · ⏱ ${Math.max(0, Math.ceil(_taxi.timeLeft))} s · ${_taxi.reward} €`;
+  if (d < 10 && Math.abs(car.speed) < 1.2) {
+    const bonus = _taxi.timeLeft > 10 ? Math.round(_taxi.reward * 0.4) : 0;
+    earnMoney(_taxi.reward + bonus);
+    STATS.taxiEarned += _taxi.reward + bonus;
+    _taxiRides++;
+    if (_taxiRides >= 3) unlockAch('taxi3');
+    toast(`✅ Fahrgast abgesetzt! +${_taxi.reward} €` + (bonus ? ` (+${bonus} € Trinkgeld!)` : ''));
+    _endTaxi();
+  } else if (_taxi.timeLeft <= 0) {
+    toast('⌛ Zu spät — der Fahrgast steigt entnervt aus. Kein Lohn.');
+    _endTaxi();
   }
 }
 
@@ -3642,6 +4138,117 @@ function updateRain(rd, dt) {
   rd.mesh.geometry.attributes.position.needsUpdate = true;
 }
 
+// ── Spielstand (localStorage: Kontostand, Erfolge, Bestzeiten) ────────────────
+const SAVE_KEY = 'koelnSim.save.v1';
+let SAVE = {};
+try { SAVE = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}') || {}; } catch(e) {}
+function persistSave() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch(e) {}
+}
+
+// ── Geldsystem ────────────────────────────────────────────────────────────────
+let money = (typeof SAVE.money === 'number') ? SAVE.money : 500;
+
+function updateMoneyHUD() {
+  const el = document.getElementById('money-lbl');
+  if (!el) return;
+  el.textContent = '💶 ' + Math.round(money) + ' €';
+  el.style.color = money < 0 ? '#ff7766' : money < 100 ? '#ffcc66' : '#bbffaa';
+}
+
+function spendMoney(amt) {
+  money -= amt;
+  updateMoneyHUD();
+  SAVE.money = Math.round(money); persistSave();
+  if (money < 0) setTimeout(() => toast('💸 Konto überzogen! Verdiene Geld mit Taxi-Fahrgästen 🚕'), 3200);
+}
+
+function earnMoney(amt) {
+  money += amt;
+  updateMoneyHUD();
+  SAVE.money = Math.round(money); persistSave();
+  if (money >= 1000) unlockAch('rich');
+}
+
+// ── Erfolge ───────────────────────────────────────────────────────────────────
+const ACH_DEFS = {
+  kolsch5: '🍺 Kölsch-König — alle 5 Kölsch in einer Fahrt',
+  escape:  '🏃 Entwischt — der Polizei entkommen',
+  clean:   '😇 Saubere Weste — Stadion ohne Bußgeld erreicht',
+  taxi3:   '🚕 Taxi-Profi — 3 Fahrgäste in einer Fahrt',
+  rich:    '💰 Kölscher Krösus — 1000 € auf dem Konto',
+  exam1:   '📋 Einser-Kandidat — Fahrprüfung mit Bestnote',
+  record:  '⏱ Rekordjäger — Zeitfahren-Bestzeit aufgestellt',
+  tram:    '🚋 KVB-Kontakt — von der Straßenbahn erwischt',
+};
+function unlockAch(id) {
+  SAVE.ach = SAVE.ach || {};
+  if (SAVE.ach[id]) return;
+  SAVE.ach[id] = true; persistSave();
+  setTimeout(() => toast('🏆 Erfolg freigeschaltet: ' + ACH_DEFS[id]), 1200);
+}
+
+// ── Schadensmodell ────────────────────────────────────────────────────────────
+let damage = 0;            // 0–100 %
+let _dmgSmokeT = 0;
+
+function updateDamageHUD() {
+  const el = document.getElementById('dmg-lbl');
+  if (!el) return;
+  if (damage < 5) { el.style.display = 'none'; return; }
+  el.style.display = 'inline-block';
+  el.textContent = '🔧 ' + Math.round(damage) + '%';
+  el.style.color = damage > 60 ? '#ff6655' : damage > 30 ? '#ffcc55' : '#ccddcc';
+}
+
+function addDamage(amt) {
+  const before = damage;
+  damage = Math.min(100, damage + amt);
+  updateDamageHUD();
+  if (before < 30 && damage >= 30) toast('🔧 Karosserieschaden — der Wagen zieht nach rechts!');
+  if (before < 60 && damage >= 60) toast('💨 Motorschaden! Leistung sinkt — ab zur Werkstatt (Tankstelle)!');
+}
+
+// Qualm aus der Motorhaube bei schwerem Schaden (kleiner Mesh-Pool)
+const _smokePool = [];
+function _initSmoke() {
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0 })
+    );
+    m.visible = false;
+    scene.add(m);
+    _smokePool.push({ mesh: m, life: 0, vy: 1 });
+  }
+}
+function updateSmoke(dt) {
+  if (damage > 55 && !footballActive) {
+    _dmgSmokeT -= dt;
+    if (_dmgSmokeT <= 0) {
+      _dmgSmokeT = Math.max(0.08, 0.35 - damage * 0.002);
+      const p = _smokePool.find(s => s.life <= 0);
+      if (p) {
+        p.life = 1.4;
+        p.vy = 1.2 + Math.random() * 0.8;
+        const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
+        p.mesh.position.set(car.x + fx * 1.9 + (Math.random()-0.5)*0.5, 0.95,
+                            car.z + fz * 1.9 + (Math.random()-0.5)*0.5);
+        p.mesh.scale.setScalar(1);
+        p.mesh.visible = true;
+      }
+    }
+  }
+  _smokePool.forEach(p => {
+    if (p.life <= 0) return;
+    p.life -= dt;
+    p.mesh.position.y += p.vy * dt;
+    p.mesh.scale.setScalar(1 + (1.4 - p.life) * 1.8);
+    p.mesh.material.opacity = Math.max(0, p.life / 1.4) * 0.55;
+    if (p.life <= 0) p.mesh.visible = false;
+  });
+}
+
 // ── Stadtverkehr-Statistik (Tagesbilanz am Ende der Heimfahrt) ────────────────
 const STATS = {
   carsRammed: 0,    // angefahrene/geschobene Autos
@@ -3652,6 +4259,8 @@ const STATS = {
   hitAndRun: 0,     // Fahrerflucht
   fines: 0,         // Bußgeld-Summe in Euro
   fuelCost: 0,      // getankter Sprit in Euro
+  taxiEarned: 0,    // Taxi-Verdienst in Euro
+  repairCost: 0,    // Werkstattkosten in Euro
 };
 
 // ── Flensburg Punkteregister ──────────────────────────────────────────────────
@@ -3675,7 +4284,7 @@ function checkHitAndRun() {
   if (!_huPending) return;
   const d = Math.hypot(car.x - _huPending.x, car.z - _huPending.z);
   const fled = () => {
-    STATS.hitAndRun++; STATS.fines += 1000; _huPending = null;
+    STATS.hitAndRun++; STATS.fines += 1000; spendMoney(1000); _huPending = null;
     toast('🚨 Fahrerflucht! +1000 € & Strafanzeige');
     addFlensburg(3, 'Fahrerflucht');
     spawnPolice();
@@ -3874,7 +4483,7 @@ function updatePolice(dt) {
     if (pc.surrenderWindow && _policeChaseT < 6 && dist1 < 25 && Math.abs(car.speed) < 2) {
       pc.surrenderWindow = false; pc.caught = true;
       _stopSiren(_policeSiren); _policeSiren = null;
-      STATS.fines += 200;
+      STATS.fines += 200; spendMoney(200);
       _wantedLevel = 0; _updateWantedHUD();
       toast('✋ Kooperativ angehalten! Nur 200 € Strafe — Danke für Ihr Verhalten.');
       setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 5000);
@@ -3885,7 +4494,8 @@ function updatePolice(dt) {
     if (dist1 < 5 && Math.abs(car.speed) < 3) {
       pc.caught = true;
       _stopSiren(_policeSiren); _policeSiren = null;
-      STATS.fines += 500; _wantedLevel = Math.max(0, _wantedLevel - 1); _updateWantedHUD();
+      STATS.fines += 500; spendMoney(500);
+      _wantedLevel = Math.max(0, _wantedLevel - 1); _updateWantedHUD();
       toast('🚔 Gestellt! +500 € — Fahrerflucht zur Anzeige gebracht.');
       setTimeout(() => { if (_policeCar) { scene.remove(_policeCar.mesh); _policeCar = null; } }, 6000);
       return;
@@ -3917,6 +4527,7 @@ function updatePolice(dt) {
         _wantedLevel = Math.max(0, _wantedLevel - 1); _updateWantedHUD();
         if (eb) eb.style.display = 'none';
         toast('🏃 Entkommen! Die Fahndung läuft jedoch weiter...');
+        unlockAch('escape');
       }
     } else { _policeEscapeTimer = 0; }
 
@@ -3939,7 +4550,7 @@ function updatePolice(dt) {
     if (dist2 < 5 && Math.abs(car.speed) < 3) {
       pc2.caught = true;
       _stopSiren(_policeSiren2); _policeSiren2 = null;
-      STATS.fines += 300;
+      STATS.fines += 300; spendMoney(300);
       toast('🚔 Von Einheit 2 gestellt! +300 € zusätzliche Strafe.');
       setTimeout(() => { if (_policeCar2) { scene.remove(_policeCar2.mesh); _policeCar2 = null; } }, 6000);
     } else {
@@ -3965,9 +4576,11 @@ function checkCollisions() {
     const dx = car.x-b.x, dz = car.z-b.z;
     if (Math.abs(dx) < b.hw && Math.abs(dz) < b.hd) {
       const ox = b.hw-Math.abs(dx), oz = b.hd-Math.abs(dz);
+      const v0 = Math.abs(car.speed);
       if (ox < oz) car.x += Math.sign(dx)*ox; else car.z += Math.sign(dz)*oz;
       car.speed *= 0.18;
       _shakeAmt = Math.max(_shakeAmt, 0.06);
+      if (v0 > 6) addDamage(Math.min(7, v0 * 0.3));
     }
   }
   // NPCs & geparkte Autos – RAMMEN & VOR SICH HERSCHIEBEN (Impulsübertragung)
@@ -4005,10 +4618,13 @@ function checkCollisions() {
         playCrashSound(impact);
         _shakeAmt = Math.max(_shakeAmt, 0.18);
         STATS.hardCrashes++;
+        addDamage(6 + impact * 0.35);
         // Harter Crash → Unfall mit Fahrerflucht-Risiko eröffnen
         _huPending = { x: car.x, z: car.z, t: performance.now() };
       } else {
         _shakeAmt = Math.max(_shakeAmt, 0.05);
+        addDamage(1.2);
+        _npcHonk();
       }
     } else {
       npc.crashTimer = Math.max(npc.crashTimer, 2);  // beim Weiterschieben nicht respawnen
@@ -4126,6 +4742,13 @@ function updateCar(dt) {
   car.vx += sxDir * slipInput;
   car.vz += szDir * slipInput;
 
+  // ── Schadensfolgen: Leistungsverlust + Zug nach rechts ──────────────────────
+  if (damage > 30) {
+    const maxNow = MAX_SPD * (1 - (damage - 30) * 0.004);   // bis ~−28 % bei 100 %
+    if (car.speed > maxNow) car.speed = maxNow;
+    car.heading += 0.014 * (damage / 100) * Math.min(1, absSp / 10) * dt;
+  }
+
   checkWaypoint();
   checkCollisions();
 }
@@ -4187,6 +4810,16 @@ function resetCar() {
   _updateWantedHUD();
   kolschItems.forEach(item => { if (item.collected) { item.collected = false; scene.add(item.mesh); } });
   fuel = 100; _fuelEmpty = false; _lowFuelWarned = false;
+  damage = 0; updateDamageHUD();
+  STATS.taxiEarned = STATS.repairCost = STATS.conesHit = 0;
+  if (_taxi) _endTaxi();
+  _taxiRides = 0; _taxiNextT = 22;
+  _cones.forEach(c => { c.hit = false; c.warned = false; c.mesh.rotation.x = 0; });
+  if (_examMode) _examInit();
+  if (_timeTrialMode && _tt) {
+    _tt.gates.forEach(g => { scene.add(g.mesh); g.mesh.material.color.setHex(0xffcc00); });
+    _tt.t = 0; _tt.ck = 0; _tt.started = false; _tt.finished = false; _tt.penalty = 0;
+  }
   document.getElementById('prog-fill').style.width = '0%';
   document.getElementById('street-lbl').textContent = WP[0].street;
   toast('🔄 Neustart – Hofeinfahrt Altbaumburgweg');
@@ -4271,6 +4904,16 @@ function drawMinimap() {
     mmCtx.strokeStyle = '#fff'; mmCtx.lineWidth = 0.8;
     mmCtx.stroke();
   });
+
+  // Taxi: Abholpunkt (gelb) bzw. Fahrtziel (grün)
+  if (_taxi) {
+    const tx = _taxi.state === 'pickup' ? _taxi.x : _taxi.destX;
+    const tz = _taxi.state === 'pickup' ? _taxi.z : _taxi.destZ;
+    const [px, py] = toMM(tx, tz);
+    mmCtx.beginPath(); mmCtx.arc(px, py, 4, 0, Math.PI * 2);
+    mmCtx.fillStyle = _taxi.state === 'pickup' ? '#ffdd33' : '#33ee77';
+    mmCtx.fill();
+  }
 }
 
 // ── OSM-Gebäude: Hilfsfunktionen ─────────────────────────────────────────────
@@ -4929,6 +5572,10 @@ function showLegendPopup() {
   if (STATS.fuelCost)     driveRows.push(`⛽ Getankt: <b>${STATS.fuelCost} €</b>`);
   if (_flensburg > 0)     driveRows.push(`📋 Flensburg-Punkte: <b>${_flensburg}/8</b>`);
   if (_kolschCollected > 0) driveRows.push(`🍺 Kölsch gesammelt: <b>${_kolschCollected}/5</b>`);
+  if (STATS.taxiEarned)   driveRows.push(`🚕 Taxi-Verdienst: <b>+${STATS.taxiEarned} €</b>`);
+  if (STATS.repairCost)   driveRows.push(`🔧 Werkstattkosten: <b>${STATS.repairCost} €</b>`);
+  if (STATS.conesHit)     driveRows.push(`🚧 Pylonen umgefahren: <b>${STATS.conesHit}</b>`);
+  driveRows.push(`💶 Kontostand: <b>${Math.round(money)} €</b>`);
 
   // Fahr-Urteil je nach Bußgeld-Summe
   let verdict;
@@ -4981,16 +5628,181 @@ function setupHomePark() {
 function checkParking() {
   if (footballActive) return;
   const d = Math.hypot(car.x - PARK_CX, car.z - PARK_CZ);
+  // Prüfungsmodus: Ankunft am Stadion beendet die Prüfung (kein Park-Popup)
+  if (_examMode) {
+    if (_exam && !_exam.done && d < 22 && Math.abs(car.speed) < 0.9) _finishExam();
+    return;
+  }
+  // Zeitfahren: Ziel wird in updateTimeTrial geprüft (kein Park-Popup)
+  if (_timeTrialMode) return;
   if (d > 38) _parkShown = false;  // Reset wenn Spieler weit weg
   if (d < 22 && Math.abs(car.speed) < 0.9 && !_parkShown) {
     if (!_parkTimer) _parkTimer = setTimeout(() => {
       _parkTimer = null;
-      if (Math.hypot(car.x - PARK_CX, car.z - PARK_CZ) < 22)
+      if (Math.hypot(car.x - PARK_CX, car.z - PARK_CZ) < 22) {
         document.getElementById('park-popup').style.display = 'flex';
+        if (STATS.fines === 0) unlockAch('clean');
+      }
     }, 1600);
   } else if (d >= 22 || Math.abs(car.speed) >= 0.9) {
     if (_parkTimer) { clearTimeout(_parkTimer); _parkTimer = null; }
   }
+}
+
+// ── Fahrprüfung: Prüfer bewertet die Fahrt zum Stadion ────────────────────────
+let _exam = null;
+
+function _examInit() {
+  _exam = {
+    minor: 0, major: 0, notes: [], done: false,
+    speedCd: 0,
+    snap: { red: 0, har: 0, ram: 0, fla: 0, ped: 0 },
+  };
+  setTimeout(() => toast('👨‍🏫 Prüfer: "Guten Tag! Fahren Sie bitte zum RheinEnergie Stadion. Ich beobachte alles."'), 1500);
+}
+
+function _examViolation(kind, label, sayIt) {
+  if (kind === 'major') { _exam.major++; _exam.notes.push('❌ ' + label); }
+  else                  { _exam.minor++; _exam.notes.push('⚠️ ' + label); }
+  if (sayIt) setTimeout(() => toast('👨‍🏫 Prüfer notiert: ' + label), 1800);
+}
+
+function updateExam(dt) {
+  if (!_exam || _exam.done) return;
+  // Tempokontrolle gegen das aktuelle Limit
+  _exam.speedCd -= dt;
+  const kmh = Math.abs(car.speed) * 3.6;
+  if (_exam.speedCd <= 0 && kmh > _curLimit * 1.5) {
+    _exam.speedCd = 8;
+    _examViolation('major', `Deutlich zu schnell (${Math.round(kmh)} statt ${_curLimit} km/h)`, true);
+  } else if (_exam.speedCd <= 0 && kmh > _curLimit * 1.2) {
+    _exam.speedCd = 8;
+    _examViolation('minor', `Etwas zu schnell (${Math.round(kmh)} km/h bei ${_curLimit})`, true);
+  }
+  // Ereigniszähler-Deltas aus STATS ableiten
+  const s = _exam.snap;
+  if (STATS.redLights   > s.red) { s.red = STATS.redLights;   _examViolation('major', 'Rote Ampel überfahren'); }
+  if (STATS.hitAndRun   > s.har) { s.har = STATS.hitAndRun;   _examViolation('major', 'Fahrerflucht!'); }
+  if (STATS.carsRammed  > s.ram) { s.ram = STATS.carsRammed;  _examViolation('major', 'Kollision mit anderem Fahrzeug'); }
+  if (STATS.speedFlashes> s.fla) { s.fla = STATS.speedFlashes; _examViolation('major', 'Geblitzt worden'); }
+  if (STATS.pedScared   > s.ped) { s.ped = STATS.pedScared;   _examViolation('minor', 'Fußgänger gefährdet'); }
+}
+
+function _finishExam() {
+  _exam.done = true;
+  const passed = _exam.major === 0;
+  let grade;
+  if      (_exam.major === 0 && _exam.minor <= 1) grade = 1;
+  else if (_exam.major === 0 && _exam.minor <= 3) grade = 2;
+  else if (_exam.major === 0)                     grade = 3;
+  else if (_exam.major === 1)                     grade = 5;
+  else                                            grade = 6;
+  if (grade === 1) unlockAch('exam1');
+
+  document.getElementById('legend-title').textContent =
+    passed ? '🎉 Fahrprüfung BESTANDEN!' : '😞 Fahrprüfung nicht bestanden';
+  document.getElementById('legend-text').innerHTML =
+    (passed
+      ? `👨‍🏫 Prüfer: "Glückwunsch! Eine ${grade === 1 ? 'tadellose' : 'ordentliche'} Fahrt. ` +
+        `Note: <b>${grade}</b>."`
+      : `👨‍🏫 Prüfer: "Es tut mir leid, das reicht nicht. Note: <b>${grade}</b>. ` +
+        `Üben Sie weiter und versuchen Sie es erneut."`) +
+    '<br><br>' +
+    (_exam.notes.length
+      ? '<b>Beanstandungen:</b><br>' + _exam.notes.slice(0, 10).join('<br>') +
+        (_exam.notes.length > 10 ? `<br>… und ${_exam.notes.length - 10} weitere` : '')
+      : '✅ Keine einzige Beanstandung — perfekt!');
+  document.getElementById('legend-stats').innerHTML =
+    `Schwere Fehler: <b>${_exam.major}</b> · Kleine Fehler: <b>${_exam.minor}</b>`;
+  document.getElementById('legend-close').textContent = passed ? '🎉 Juhu!' : '🔄 Okay';
+  document.getElementById('legend-popup').style.display = 'flex';
+}
+
+// ── Zeitfahren: Checkpoint-Ringe + Bestzeit in localStorage ──────────────────
+let _tt = null;
+
+function _fmtTime(s) {
+  const m = Math.floor(s / 60), sec = s - m * 60;
+  return m + ':' + (sec < 10 ? '0' : '') + sec.toFixed(1);
+}
+
+function buildTimeTrial() {
+  const gates = [];
+  for (let i = 5; i < WP.length - 1; i += 5) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(5, 0.35, 8, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffcc00 })
+    );
+    const nxt = WP[i + 1];
+    ring.position.set(WP[i].x, 5, WP[i].z);
+    ring.rotation.y = Math.atan2(nxt.x - WP[i].x, nxt.z - WP[i].z);
+    scene.add(ring);
+    gates.push({ mesh: ring, x: WP[i].x, z: WP[i].z });
+  }
+  _tt = { t: 0, ck: 0, gates, started: false, finished: false, penalty: 0, finesSnap: 0 };
+  const best = SAVE.bestTT;
+  setTimeout(() => toast(best
+    ? '⏱ Zeitfahren! Bestzeit: ' + _fmtTime(best) + ' — auf geht\'s!'
+    : '⏱ Zeitfahren! Durchfahre die gelben Ringe bis zum Stadion!'), 1200);
+}
+
+function updateTimeTrial(dt) {
+  if (!_tt || _tt.finished) return;
+  if (!_tt.started) {
+    if (Math.abs(car.speed) > 1) { _tt.started = true; _tt.finesSnap = STATS.fines; }
+    else return;
+  }
+  _tt.t += dt;
+  const tot = _tt.t + _tt.penalty;
+  const el = document.getElementById('freedrive-timer');
+  el.style.display = 'block';
+  document.getElementById('fd-time').textContent =
+    _fmtTime(tot) + ' · Tor ' + _tt.ck + '/' + _tt.gates.length;
+  // Bußgelder kosten Strafzeit
+  if (STATS.fines > _tt.finesSnap) {
+    _tt.penalty += 5; _tt.finesSnap = STATS.fines;
+    toast('⏱ +5 s Strafzeit!');
+  }
+  const g = _tt.gates[_tt.ck];
+  if (g) {
+    g.mesh.material.color.setHex(
+      Math.floor(performance.now() / 250) % 2 ? 0xffcc00 : 0xff6600);
+    if (Math.hypot(car.x - g.x, car.z - g.z) < 12) {
+      g.mesh.material.color.setHex(0x33ff66);
+      const m = g.mesh;
+      setTimeout(() => scene.remove(m), 1200);
+      _tt.ck++;
+      if (_actx && _actx.state !== 'suspended') {
+        const t = _actx.currentTime;
+        const o = _actx.createOscillator(), gn = _actx.createGain();
+        o.type = 'sine'; o.frequency.value = 1050;
+        gn.gain.setValueAtTime(0.14, t);
+        gn.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        o.connect(gn); gn.connect(_actx.destination);
+        o.start(t); o.stop(t + 0.24);
+      }
+    }
+  } else if (Math.hypot(car.x - PARK_CX, car.z - PARK_CZ) < 25) {
+    _finishTimeTrial(tot);
+  }
+}
+
+function _finishTimeTrial(tot) {
+  _tt.finished = true;
+  const best = SAVE.bestTT;
+  const isRecord = !best || tot < best;
+  if (isRecord) { SAVE.bestTT = Math.round(tot * 10) / 10; persistSave(); unlockAch('record'); }
+  document.getElementById('legend-title').textContent =
+    isRecord ? '🥇 NEUE BESTZEIT!' : '🏁 Zeitfahren beendet';
+  document.getElementById('legend-text').innerHTML =
+    `Deine Zeit: <b>${_fmtTime(tot)}</b>` +
+    (_tt.penalty ? ` (davon ${_tt.penalty} s Strafzeit)` : '') +
+    '<br>Bestzeit: <b>' + _fmtTime(SAVE.bestTT) + '</b>' +
+    (isRecord ? '<br><br>🎉 Die geht in die Ewigkeit ein — gespeichert!' : '');
+  document.getElementById('legend-stats').innerHTML =
+    `Tore: <b>${_tt.ck}/${_tt.gates.length}</b>`;
+  document.getElementById('legend-close').textContent = '✔ Weiter';
+  document.getElementById('legend-popup').style.display = 'flex';
 }
 
 // ── Oma-Stopp Schiefersburger Weg 54: Gebäude, Parkfläche, Einfahrt ───────────
@@ -6744,6 +7556,14 @@ function loop(now) {
   updateCrosswalkPeds(dt);
   updatePolice(dt);
   updateKolsch(elapsed);
+  updateTaxi(dt);
+  updateTram(dt);
+  updateCones(dt);
+  updateAmbulance(dt);
+  updateRadioNews(dt);
+  updateSmoke(dt);
+  if (_examMode) updateExam(dt);
+  if (_timeTrialMode) updateTimeTrial(dt);
   updateCamera();
   updateHeadlights();
   if (nightLightPool.length) updateNightLights();
@@ -6929,6 +7749,12 @@ buildZebraAndStopLines();
 buildPedestrians();
 buildCrosswalkPeds();
 buildKolschItems();
+buildTram();
+buildRoadworks();
+_initSmoke();
+updateMoneyHUD();
+if (_timeTrialMode) buildTimeTrial();
+if (_examMode) _examInit();
 setupParkingAndFootball();
 setupHomePark();
 setupOmaStop();
