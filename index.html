@@ -592,7 +592,8 @@ function updateSignals(t) {
 //  Verkehr – NPCs fahren das Raster entlang und halten bei Rot
 // ══════════════════════════════════════════════════════════════════════════
 // Start auf der langen Mittelachse, rund 130 m vor der nächsten Ampelkreuzung
-const START_X = XS[1] + LANE, START_Z = ZS[1] - 130;
+// Mittig im Netz starten, damit in alle Richtungen Stadt liegt
+const START_X = XS[(XS.length / 2) | 0] + LANE, START_Z = ZS[1] - 130;
 const car = { x: START_X, z: START_Z, heading: 0, speed: 0, steer: 0, vx: 0, vz: 0, damage: 0 };
 let _shake = 0;
 
@@ -614,30 +615,24 @@ function buildCarMesh(color) {
   const blk   = new THREE.MeshStandardMaterial({ color: 0x0b0b0d, roughness: 0.7, metalness: 0.2 });
   const gls   = new THREE.MeshStandardMaterial({ color: 0x13212e, roughness: 0.12, metalness: 0.1,
                                                  transparent: true, opacity: 0.8 });
-  const sill = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.42, 4.0), blk);
+  // Gleiche richtungsweisende Silhouette wie die NPC-Autos
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(1.70, 0.42, 4.00), blk);
   sill.position.y = 0.42; g.add(sill);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.6, 3.9), paint);
-  body.position.y = 0.82; g.add(body);
-  const hood = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.3, 1.1), paint);
-  hood.position.set(0, 1.0, 1.35); g.add(hood);
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.0), paint);
-  roof.position.set(0, 1.44, -0.35); g.add(roof);
-  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.62), gls);
-  ws.position.set(0, 1.49, 0.72); ws.rotation.x = -0.42; g.add(ws);
-  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.55), gls);
-  rw.position.set(0, 1.49, -1.4); rw.rotation.set(0.42, Math.PI, 0); g.add(rw);
-  [-1, 1].forEach(sx => {
-    const sw = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5), gls);
-    sw.position.set(sx * 0.81, 1.49, -0.35);
-    sw.rotation.y = sx * Math.PI / 2; g.add(sw);
-  });
-  [-0.6, 0.6].forEach(hx => {
-    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08),
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.55, 3.90), paint);
+  body.position.y = 0.80; g.add(body);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.60, 1.90), paint);
+  cab.position.set(0, 1.37, -0.55); g.add(cab);
+  const ws = new THREE.Mesh(new THREE.BoxGeometry(1.50, 0.52, 0.07), gls);
+  ws.position.set(0, 1.38, 0.36); ws.rotation.x = -0.38; g.add(ws);
+  const grill = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.20, 0.08), blk);
+  grill.position.set(0, 0.66, 1.94); g.add(grill);
+  [-0.62, 0.62].forEach(hx => {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.20, 0.09),
       new THREE.MeshBasicMaterial({ color: 0xfff6cc }));
-    hl.position.set(hx, 0.78, 1.97); g.add(hl);
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.18, 0.08),
-      new THREE.MeshBasicMaterial({ color: 0xcc1111 }));
-    tl.position.set(hx, 0.85, -1.97); g.add(tl);
+    hl.position.set(hx, 0.86, 1.95); g.add(hl);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.20, 0.09),
+      new THREE.MeshBasicMaterial({ color: 0xdd1111 }));
+    tl.position.set(hx, 0.90, -1.95); g.add(tl);
   });
   [[-0.9, 1.25], [0.9, 1.25], [-0.9, -1.25], [0.9, -1.25]].forEach(([rx, rz]) => {
     const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.24, 12), blk);
@@ -651,21 +646,28 @@ const NPC_COUNT = lowPerf ? 34 : isMobile ? 54 : 90;
 // Ein NPC-Auto besteht aus mehreren Bauteilen; jedes Bauteil wird über ALLE
 // Autos hinweg instanziert. Damit bleibt es bei sieben Draw-Calls, egal wie
 // viele Fahrzeuge unterwegs sind. Die Nase zeigt lokal nach +Z.
+// Die Silhouette muss die Fahrtrichtung auf einen Blick verraten: lange flache
+// Haube vorn, Kabine weit nach hinten gerueckt, dunkle Frontscheibe und Grill.
+// Eine fast symmetrische Karosserie liest sich sonst aus der Distanz falsch.
 const NPC_PART_DEFS = [
-  { geo: new THREE.BoxGeometry(1.82, 0.6, 3.9), paint: true,  offs: [[0, 0.82, 0]] },
-  { geo: new THREE.BoxGeometry(1.74, 0.3, 1.1), paint: true,  offs: [[0, 1.0, 1.35]] },
-  { geo: new THREE.BoxGeometry(1.6, 0.62, 2.0), paint: true,  offs: [[0, 1.44, -0.35]] },
-  { geo: new THREE.BoxGeometry(1.7, 0.42, 4.0), color: 0x0b0b0d, offs: [[0, 0.42, 0]] },
-  { geo: new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10), color: 0x0b0b0d, rotZ: Math.PI / 2,
+  { key:'sill', geo: new THREE.BoxGeometry(1.70, 0.42, 4.00), color: 0x0b0b0d, offs: [[0, 0.42, 0]] },
+  { key:'body', geo: new THREE.BoxGeometry(1.82, 0.55, 3.90), paint: true, offs: [[0, 0.80, 0]] },
+  { key:'cab', geo: new THREE.BoxGeometry(1.62, 0.60, 1.90), paint: true, offs: [[0, 1.37, -0.55]] },
+  { key:'glass', geo: new THREE.BoxGeometry(1.50, 0.52, 0.07), color: 0x101c26, rotX: -0.38,
+    offs: [[0, 1.38, 0.36]] },                       // geneigte Frontscheibe
+  { key:'grill', geo: new THREE.BoxGeometry(1.46, 0.20, 0.08), color: 0x0b0b0d,
+    offs: [[0, 0.66, 1.94]] },                       // Kuehlergrill
+  { key:'wheel', geo: new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10), color: 0x0b0b0d, rotZ: Math.PI / 2,
     offs: [[-0.9,0.34,1.25],[0.9,0.34,1.25],[-0.9,0.34,-1.25],[0.9,0.34,-1.25]] },
-  { geo: new THREE.BoxGeometry(0.34,0.18,0.08), color: 0xfff6cc, basic: true,
-    offs: [[-0.6,0.78,1.97],[0.6,0.78,1.97]] },      // Scheinwerfer vorn
-  { geo: new THREE.BoxGeometry(0.34,0.18,0.08), color: 0xcc1111, basic: true,
-    offs: [[-0.6,0.85,-1.97],[0.6,0.85,-1.97]] },    // Rücklichter hinten
+  { key:'head', geo: new THREE.BoxGeometry(0.44,0.20,0.09), color: 0xfff6cc, basic: true,
+    offs: [[-0.62,0.86,1.95],[0.62,0.86,1.95]] },    // Scheinwerfer vorn
+  { key:'tail', geo: new THREE.BoxGeometry(0.44,0.20,0.09), color: 0xdd1111, basic: true,
+    offs: [[-0.62,0.90,-1.95],[0.62,0.90,-1.95]] },  // Ruecklichter hinten
 ];
 
 const npcParts = NPC_PART_DEFS.map(d => {
   if (d.rotZ) d.geo.rotateZ(d.rotZ);               // Raddrehung fest einbacken
+  if (d.rotX) d.geo.rotateX(d.rotX);               // Scheibenneigung fest einbacken
   const mat = d.basic
     ? new THREE.MeshBasicMaterial({ color: d.color })
     : new THREE.MeshStandardMaterial({ color: d.color ?? 0xffffff,
@@ -674,7 +676,7 @@ const npcParts = NPC_PART_DEFS.map(d => {
   const inst = new THREE.InstancedMesh(d.geo, mat, NPC_COUNT * d.offs.length);
   inst.frustumCulled = false;                      // Instanzen decken die ganze Karte ab
   scene.add(inst);
-  return { inst, paint: !!d.paint, per: d.offs.length,
+  return { key: d.key, inst, paint: !!d.paint, per: d.offs.length,
            local: d.offs.map(([x,y,z]) => new THREE.Matrix4().makeTranslation(x,y,z)) };
 });
 
@@ -851,10 +853,12 @@ function spawnChaser(role, idx) {
   scene.add(g);
 
   // Immer innerhalb der Fahrbahn aufstellen (Häuserzeile beginnt bei ±21 m),
-  // sonst starten äußere Wagen direkt in einer Hauswand.
+  // sonst starten äußere Wagen direkt in einer Hauswand. Bezug ist die Straße,
+  // auf der der Spieler gerade steht – nicht ein fester Index.
+  const roadX = XS.reduce((b, x) => Math.abs(x - car.x) < Math.abs(b - car.x) ? x : b, XS[0]);
   const a = {
     mesh: g, lightMat, role, from, to,
-    x: XS[1] + (idx % 2 === 0 ? -3.4 : 3.4),
+    x: roadX + (idx % 2 === 0 ? -3.4 : 3.4),
     z: car.z + (role === 'police' ? -(58 + idx * 30) : 95),
     heading: 0, speed: 12, pushX: 0, pushZ: 0, damage: 0, blink: 0,
   };
@@ -964,8 +968,10 @@ function ramChasers() {
     car.x += nx * ov * 0.5; car.z += nz * ov * 0.5;
     a.x -= nx * ov * 0.5;   a.z -= nz * ov * 0.5;
 
-    // Anteil der Spielergeschwindigkeit, der in den Gegner hineindrückt
-    const pvx = Math.sin(car.heading) * car.speed, pvz = Math.cos(car.heading) * car.speed;
+    // Anteil der Spielergeschwindigkeit, der in den Gegner hineindrückt.
+    // Maßgeblich ist der echte Geschwindigkeitsvektor, nicht nur die Längsachse –
+    // sonst überträgt ein seitliches Eindriften überhaupt keine Wucht.
+    const pvx = car.vx || 0, pvz = car.vz || 0;
     const intoFoe = -(pvx * nx + pvz * nz);
     if (intoFoe > 0) {
       a.pushX -= nx * intoFoe * 0.85;
@@ -973,7 +979,9 @@ function ramChasers() {
       if (intoFoe > 8) a.damage += (intoFoe - 8) * 0.32;
     }
     // …und umgekehrt der Anteil des Gegners, der in den Spieler drückt
-    const avx = Math.sin(a.heading) * a.speed, avz = Math.cos(a.heading) * a.speed;
+    // (inklusive Schub aus einem vorherigen Rempler)
+    const avx = Math.sin(a.heading) * a.speed + a.pushX;
+    const avz = Math.cos(a.heading) * a.speed + a.pushZ;
     const intoMe = avx * nx + avz * nz;
     if (intoMe > 0) {
       car.vx += nx * intoMe * 0.6;               // wirkt im nächsten Frame als Querdrift
