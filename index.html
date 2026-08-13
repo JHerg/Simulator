@@ -18,15 +18,29 @@
     color:#dfe9f2;text-align:center;padding:20px;
   }
   #menu h1{font-size:34px;font-weight:700;letter-spacing:.04em;}
-  #menu p{font-size:15px;color:#7f95a8;max-width:420px;line-height:1.6;}
-  #btn-start{
-    padding:16px 52px;border:none;border-radius:14px;cursor:pointer;
+  #menu p{font-size:15px;color:#7f95a8;max-width:440px;line-height:1.6;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+  .grp{display:flex;flex-direction:column;gap:9px;align-items:center;}
+  .lbl{font-size:12px;letter-spacing:.18em;color:#6d8296;text-transform:uppercase;}
+  .big{
+    padding:16px 46px;border:none;border-radius:14px;cursor:pointer;
     font-size:19px;font-weight:700;color:#fff;
     background:linear-gradient(135deg,#0044cc,#0090ff);
     box-shadow:0 5px 24px rgba(0,110,255,.45);
     transition:transform .15s,box-shadow .15s;
   }
-  #btn-start:hover{transform:translateY(-2px);box-shadow:0 9px 30px rgba(0,140,255,.6);}
+  .big:hover{transform:translateY(-2px);box-shadow:0 9px 30px rgba(0,140,255,.6);}
+  .big.alt{background:linear-gradient(135deg,#a01530,#e0413f);
+           box-shadow:0 5px 24px rgba(220,60,60,.45);}
+  .big.alt:hover{box-shadow:0 9px 30px rgba(255,90,80,.6);}
+  .opt{
+    padding:10px 20px;border-radius:11px;cursor:pointer;font-size:15px;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.18);color:#b9cbdb;
+    transition:background .12s,border-color .12s,color .12s;
+  }
+  .opt:hover{background:rgba(255,255,255,.14);}
+  .opt.sel{background:rgba(0,120,255,.5);border-color:rgba(120,190,255,.9);color:#fff;}
+  #role-hint{font-size:14px;color:#9db3c6;max-width:430px;line-height:1.55;min-height:44px;}
   #keys{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
   .key{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
        border-radius:8px;padding:7px 13px;font-size:13px;color:#9fb3c6;}
@@ -553,7 +567,8 @@ function updateCar(dt) {
   const sFactor = absSp < 0.5 ? 0 : (1 - 0.42 * absSp / MAX_SPD);
   const rev     = car.speed < -0.1 ? -1 : 1;
   car.steer += (steerIn - car.steer) * 6 * dt;
-  car.heading += car.steer * STEER_SPD * sFactor * rev * dt;
+  // Bildschirm-rechts entspricht Welt −X, daher verringert Rechtslenken den Winkel
+  car.heading -= car.steer * STEER_SPD * sFactor * rev * dt;
 
   // Längs-/Querzerlegung → Grip-Modell
   const fx = Math.sin(car.heading), fz = Math.cos(car.heading);
