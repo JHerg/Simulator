@@ -295,8 +295,8 @@ addEventListener('resize', () => {
 // ══════════════════════════════════════════════════════════════════════════
 //  Straßennetz (namenlos): 3 lange Nord-Süd-Straßen × 7 Querstraßen
 // ══════════════════════════════════════════════════════════════════════════
-const XS = [-320, 0, 320];                                       // Nord-Süd-Straßen
-const ZS = Array.from({ length: 9 }, (_, i) => i * 260);         // Querstraßen alle 260 m
+const XS = [-640, -320, 0, 320, 640];                            // Nord-Süd-Straßen
+const ZS = Array.from({ length: 13 }, (_, i) => i * 260);        // Querstraßen alle 260 m
 const ROAD_W  = 14;            // Fahrbahnbreite
 const HALF_W  = ROAD_W / 2;
 const LANE    = 3.5;           // Spurversatz von der Mittellinie
@@ -397,25 +397,29 @@ function buildScenery() {
   let seed = 20250813;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) & 0x7fffffff; return seed / 0x7fffffff; };
 
+  // Auf schwachen Geräten dünner bebauen – die Kulisse ist der teuerste Posten
+  const H_STEP = lowPerf ? 58 : isMobile ? 44 : 34;
+  const T_STEP = lowPerf ? 46 : isMobile ? 34 : 24;
+
   const houses = [], trees = [];
   // Bebauung entlang der Nord-Süd-Achsen (Querstraßen bleiben frei)
   XS.forEach(cx => {
-    for (let z = Z_MIN + 18; z < Z_MAX; z += 34) {
+    for (let z = Z_MIN + 18; z < Z_MAX; z += H_STEP) {
       if (ZS.some(cz => Math.abs(z - cz) < HALF_W + 12)) continue;
       [-1, 1].forEach(s => houses.push({ x: cx + s * 21, z }));
     }
-    for (let z = Z_MIN + 9; z < Z_MAX; z += 24) {
+    for (let z = Z_MIN + 9; z < Z_MAX; z += T_STEP) {
       if (ZS.some(cz => Math.abs(z - cz) < HALF_W + 9)) continue;
       [-1, 1].forEach(s => trees.push({ x: cx + s * 11.5, z }));
     }
   });
   // Bebauung entlang der Querstraßen
   ZS.forEach(cz => {
-    for (let x = X_MIN + 18; x < X_MAX; x += 34) {
+    for (let x = X_MIN + 18; x < X_MAX; x += H_STEP) {
       if (XS.some(cx => Math.abs(x - cx) < HALF_W + 12)) continue;
       [-1, 1].forEach(s => houses.push({ x, z: cz + s * 21 }));
     }
-    for (let x = X_MIN + 9; x < X_MAX; x += 24) {
+    for (let x = X_MIN + 9; x < X_MAX; x += T_STEP) {
       if (XS.some(cx => Math.abs(x - cx) < HALF_W + 9)) continue;
       [-1, 1].forEach(s => trees.push({ x, z: cz + s * 11.5 }));
     }
@@ -448,6 +452,7 @@ function buildScenery() {
     addObstacle({ x: h.x, z: h.z, hw: w / 2, hd: dp / 2 });
   });
   bodyInst.instanceMatrix.needsUpdate = roofInst.instanceMatrix.needsUpdate = true;
+  bodyInst.frustumCulled = roofInst.frustumCulled = false;
   scene.add(bodyInst, roofInst);
 
   // ── Bäume: Stamm + Krone ──
@@ -472,6 +477,7 @@ function buildScenery() {
     addObstacle({ x: t.x, z: t.z, r: 0.7 });
   });
   trunkInst.instanceMatrix.needsUpdate = crownInst.instanceMatrix.needsUpdate = true;
+  trunkInst.frustumCulled = crownInst.frustumCulled = false;
   scene.add(trunkInst, crownInst);
 }
 
@@ -508,36 +514,11 @@ if (MODE === 'chase') buildScenery();
 //  Ampeln – an jeder Kreuzung vier Stück, je Zufahrt eine
 // ══════════════════════════════════════════════════════════════════════════
 const RED = 0, YEL = 1, GRN = 2;
-const bulbOn  = [0xff2a17, 0xffb300, 0x28d94a].map(c => new THREE.MeshBasicMaterial({ color: c }));
-const bulbOff = new THREE.MeshBasicMaterial({ color: 0x14171a });
-
-const poleGeo = new THREE.CylinderGeometry(0.09, 0.11, 5.2, 6);
-const caseGeo = new THREE.BoxGeometry(0.46, 1.5, 0.3);
-const lensGeo = new THREE.CircleGeometry(0.14, 10);
-const darkMat = new THREE.MeshLambertMaterial({ color: 0x1c1f22 });
+const BULB_ON  = [0xff2a17, 0xffb300, 0x28d94a].map(c => new THREE.Color(c));
+const BULB_OFF = new THREE.Color(0x14171a);
 
 const grid = [];            // grid[xi][zi] → gemeinsames Kreuzungsobjekt
-const signals = [];         // { bulbs[3], axisNS, inter, last }
-
-function makeSignal(x, z, faceY, inter, axisNS) {
-  const g = new THREE.Group();
-  const pole = new THREE.Mesh(poleGeo, darkMat);
-  pole.position.y = 2.6; g.add(pole);
-  const box = new THREE.Mesh(caseGeo, darkMat);
-  box.position.y = 5.3; g.add(box);
-
-  const bulbs = [0.52, 0, -0.52].map(yo => {
-    const b = new THREE.Mesh(lensGeo, bulbOff);
-    b.position.set(0, 5.3 + yo, 0.16);
-    g.add(b);
-    return b;
-  });
-
-  g.position.set(x, 0, z);
-  g.rotation.y = faceY;
-  scene.add(g);
-  signals.push({ bulbs, axisNS, inter, last: -1 });
-}
+const signals = [];         // { x, z, a, inter, axisNS, last }
 
 XS.forEach((x, xi) => {
   grid[xi] = [];
@@ -546,12 +527,44 @@ XS.forEach((x, xi) => {
     grid[xi][zi] = inter;
     const O = HALF_W + 2;   // seitlicher Versatz an den Fahrbahnrand
     const B = HALF_W + 3;   // Abstand vor der Kreuzung
-    makeSignal(x + O, z - B,  Math.PI,      inter, true);   // für Fahrt Richtung +z
-    makeSignal(x - O, z + B,  0,            inter, true);   // für Fahrt Richtung −z
-    makeSignal(x - B, z - O, -Math.PI / 2,  inter, false);  // für Fahrt Richtung +x
-    makeSignal(x + B, z + O,  Math.PI / 2,  inter, false);  // für Fahrt Richtung −x
+    // Jede Ampel steht rechts der Zufahrt und blickt dem Fahrer entgegen
+    signals.push({ x: x + O, z: z - B, a:  Math.PI,     inter, axisNS: true,  last: -1 });
+    signals.push({ x: x - O, z: z + B, a:  0,           inter, axisNS: true,  last: -1 });
+    signals.push({ x: x - B, z: z - O, a: -Math.PI / 2, inter, axisNS: false, last: -1 });
+    signals.push({ x: x + B, z: z + O, a:  Math.PI / 2, inter, axisNS: false, last: -1 });
   });
 });
+
+// Masten, Gehäuse und Lampen als InstancedMesh: drei Draw-Calls statt gut 1300
+// Einzel-Meshes. Die Lampenfarbe läuft über instanceColor.
+const nSig = signals.length;
+const darkMat  = new THREE.MeshLambertMaterial({ color: 0x1c1f22 });
+const poleInst = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09,0.11,5.2,6), darkMat, nSig);
+const caseInst = new THREE.InstancedMesh(new THREE.BoxGeometry(0.46,1.5,0.3), darkMat, nSig);
+const bulbInst = new THREE.InstancedMesh(new THREE.CircleGeometry(0.14,10),
+                   new THREE.MeshBasicMaterial(), nSig * 3);
+{
+  const d = new THREE.Object3D();
+  signals.forEach((s, i) => {
+    d.scale.set(1,1,1);
+    d.position.set(s.x, 2.6, s.z); d.rotation.set(0, 0, 0);
+    d.updateMatrix(); poleInst.setMatrixAt(i, d.matrix);
+    d.position.set(s.x, 5.3, s.z); d.rotation.set(0, s.a, 0);
+    d.updateMatrix(); caseInst.setMatrixAt(i, d.matrix);
+    // Lampen sitzen leicht vor dem Gehäuse, in Blickrichtung des Fahrers
+    const ox = Math.sin(s.a) * 0.16, oz = Math.cos(s.a) * 0.16;
+    [0.52, 0, -0.52].forEach((yo, k) => {
+      d.position.set(s.x + ox, 5.3 + yo, s.z + oz);
+      d.updateMatrix(); bulbInst.setMatrixAt(i * 3 + k, d.matrix);
+      bulbInst.setColorAt(i * 3 + k, BULB_OFF);
+    });
+  });
+  poleInst.instanceMatrix.needsUpdate = true;
+  caseInst.instanceMatrix.needsUpdate = true;
+  bulbInst.instanceMatrix.needsUpdate = true;
+  poleInst.frustumCulled = caseInst.frustumCulled = bulbInst.frustumCulled = false;
+  scene.add(poleInst, caseInst, bulbInst);
+}
 
 // 28-Sekunden-Zyklus: NS 12 s grün, 2 s gelb → EW 12 s grün, 2 s gelb
 function phaseState(inter, axisNS, t) {
@@ -563,14 +576,16 @@ function phaseState(inter, axisNS, t) {
 }
 
 function updateSignals(t) {
-  for (const s of signals) {
+  let dirty = false;
+  for (let i = 0; i < nSig; i++) {
+    const s = signals[i];
     const st = phaseState(s.inter, s.axisNS, t);
-    if (st === s.last) continue;      // Material nur bei Wechsel tauschen
-    s.last = st;
-    s.bulbs[0].material = st === RED ? bulbOn[0] : bulbOff;
-    s.bulbs[1].material = st === YEL ? bulbOn[1] : bulbOff;
-    s.bulbs[2].material = st === GRN ? bulbOn[2] : bulbOff;
+    if (st === s.last) continue;      // Farben nur beim Phasenwechsel schreiben
+    s.last = st; dirty = true;
+    for (let k = 0; k < 3; k++)
+      bulbInst.setColorAt(i * 3 + k, k === st ? BULB_ON[k] : BULB_OFF);
   }
+  if (dirty) bulbInst.instanceColor.needsUpdate = true;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -631,27 +646,77 @@ function buildCarMesh(color) {
   return g;
 }
 
+const NPC_COUNT = lowPerf ? 34 : isMobile ? 54 : 90;
+
+// Ein NPC-Auto besteht aus mehreren Bauteilen; jedes Bauteil wird über ALLE
+// Autos hinweg instanziert. Damit bleibt es bei sieben Draw-Calls, egal wie
+// viele Fahrzeuge unterwegs sind. Die Nase zeigt lokal nach +Z.
+const NPC_PART_DEFS = [
+  { geo: new THREE.BoxGeometry(1.82, 0.6, 3.9), paint: true,  offs: [[0, 0.82, 0]] },
+  { geo: new THREE.BoxGeometry(1.74, 0.3, 1.1), paint: true,  offs: [[0, 1.0, 1.35]] },
+  { geo: new THREE.BoxGeometry(1.6, 0.62, 2.0), paint: true,  offs: [[0, 1.44, -0.35]] },
+  { geo: new THREE.BoxGeometry(1.7, 0.42, 4.0), color: 0x0b0b0d, offs: [[0, 0.42, 0]] },
+  { geo: new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10), color: 0x0b0b0d, rotZ: Math.PI / 2,
+    offs: [[-0.9,0.34,1.25],[0.9,0.34,1.25],[-0.9,0.34,-1.25],[0.9,0.34,-1.25]] },
+  { geo: new THREE.BoxGeometry(0.34,0.18,0.08), color: 0xfff6cc, basic: true,
+    offs: [[-0.6,0.78,1.97],[0.6,0.78,1.97]] },      // Scheinwerfer vorn
+  { geo: new THREE.BoxGeometry(0.34,0.18,0.08), color: 0xcc1111, basic: true,
+    offs: [[-0.6,0.85,-1.97],[0.6,0.85,-1.97]] },    // Rücklichter hinten
+];
+
+const npcParts = NPC_PART_DEFS.map(d => {
+  if (d.rotZ) d.geo.rotateZ(d.rotZ);               // Raddrehung fest einbacken
+  const mat = d.basic
+    ? new THREE.MeshBasicMaterial({ color: d.color })
+    : new THREE.MeshStandardMaterial({ color: d.color ?? 0xffffff,
+                                       metalness: d.paint ? 0.32 : 0.2,
+                                       roughness: d.paint ? 0.42 : 0.7 });
+  const inst = new THREE.InstancedMesh(d.geo, mat, NPC_COUNT * d.offs.length);
+  inst.frustumCulled = false;                      // Instanzen decken die ganze Karte ab
+  scene.add(inst);
+  return { inst, paint: !!d.paint, per: d.offs.length,
+           local: d.offs.map(([x,y,z]) => new THREE.Matrix4().makeTranslation(x,y,z)) };
+});
+
 const npcs = [];
 function spawnNPC(color) {
+  const i = npcs.length;
   const xi = Math.floor(Math.random() * XS.length);
   const zi = Math.floor(Math.random() * ZS.length);
   const from = nodeAt(xi, zi);
   const opts = neighbours(xi, zi);
   const [nxi, nzi] = opts[Math.floor(Math.random() * opts.length)];
   const to = nodeAt(nxi, nzi);
-  const mesh = buildCarMesh(color);
-  scene.add(mesh);
   const heading = Math.atan2(to.x - from.x, to.z - from.z);
   const r = laneRight(heading);
-  // Irgendwo auf der Strecke starten (nicht alle auf den Kreuzungen)
-  const f = 0.1 + Math.random() * 0.75;
-  const npc = {
-    mesh, from, to, heading,
+  const f = 0.1 + Math.random() * 0.75;   // irgendwo auf der Strecke, nicht auf der Kreuzung
+  npcs.push({
+    from, to, heading,
     x: from.x + (to.x - from.x) * f + r.x * LANE,
     z: from.z + (to.z - from.z) * f + r.z * LANE,
     speed: 8 + Math.random() * 4, maxSpeed: 11 + Math.random() * 5,
-  };
-  npcs.push(npc);
+  });
+  // Lackfarbe einmalig setzen
+  const col = new THREE.Color(color);
+  for (const p of npcParts)
+    if (p.paint) for (let k = 0; k < p.per; k++) p.inst.setColorAt(i * p.per + k, col);
+}
+
+// Alle Bauteil-Matrizen aus Position und Kurs der Autos neu aufbauen
+const _npcQ = new THREE.Quaternion(), _npcV = new THREE.Vector3();
+const _npcS = new THREE.Vector3(1,1,1), _npcM = new THREE.Matrix4(), _npcO = new THREE.Matrix4();
+const _UP = new THREE.Vector3(0,1,0);
+function syncNPCMeshes() {
+  for (let i = 0; i < npcs.length; i++) {
+    const n = npcs[i];
+    _npcQ.setFromAxisAngle(_UP, n.heading);        // +Z-Nase → Fahrtrichtung
+    _npcV.set(n.x, 0, n.z);
+    _npcM.compose(_npcV, _npcQ, _npcS);
+    for (const p of npcParts)
+      for (let k = 0; k < p.per; k++)
+        p.inst.setMatrixAt(i * p.per + k, _npcO.multiplyMatrices(_npcM, p.local[k]));
+  }
+  for (const p of npcParts) p.inst.instanceMatrix.needsUpdate = true;
 }
 
 function laneRight(h) { return { x: Math.cos(h), z: -Math.sin(h) }; }
@@ -680,7 +745,6 @@ function recycleNPC(npc) {
   npc.speed = 8 + Math.random() * 4;
 }
 
-const NPC_COUNT = lowPerf ? 22 : isMobile ? 30 : 46;
 for (let i = 0; i < NPC_COUNT; i++) spawnNPC(NPC_COLORS[i % NPC_COLORS.length]);
 npcs.forEach(recycleNPC);   // gleich zu Beginn rund um den Startpunkt verteilen
 
@@ -741,9 +805,8 @@ function updateNPCs(dt, t) {
 
     npc.x += fx * npc.speed * dt;
     npc.z += fz * npc.speed * dt;
-    npc.mesh.position.set(npc.x, 0, npc.z);
-    npc.mesh.rotation.y = npc.heading + Math.PI;
   }
+  syncNPCMeshes();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -884,7 +947,7 @@ function updateChasers(dt) {
     }
 
     a.mesh.position.set(a.x, 0, a.z);
-    a.mesh.rotation.y = a.heading + Math.PI;
+    a.mesh.rotation.y = a.heading;   // Karosserie zeigt lokal nach +Z
   }
 }
 
