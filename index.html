@@ -78,6 +78,37 @@
   #t-r{left:96px;bottom:20px;width:72px;height:72px;}
   #t-g{right:14px;bottom:20px;width:92px;height:72px;background:rgba(0,150,60,.4);}
   #t-b{right:118px;bottom:20px;width:72px;height:72px;background:rgba(170,30,30,.4);}
+
+  /* ── Verfolgungsjagd-HUD ───────────────────────────── */
+  #chase-hud{
+    position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:44;
+    background:rgba(0,0,0,.68);border-radius:12px;padding:8px 18px;
+    color:#fff;text-align:center;display:none;min-width:270px;pointer-events:none;
+  }
+  #ch-l1{font-size:14px;font-weight:700;letter-spacing:.03em;}
+  #ch-bar-wrap{height:9px;background:rgba(255,255,255,.16);border-radius:5px;
+               overflow:hidden;margin:7px 0 5px;}
+  #ch-bar{height:100%;width:0%;border-radius:5px;
+          background:linear-gradient(90deg,#ffb020,#ff3a2a);transition:width .18s;}
+  #ch-l2{font-size:12px;color:#a9bccd;}
+
+  /* ── Ergebnis ──────────────────────────────────────── */
+  #result{
+    position:fixed;inset:0;z-index:120;display:none;
+    background:rgba(3,7,12,.82);align-items:center;justify-content:center;
+  }
+  #result-box{
+    background:linear-gradient(160deg,#12202e,#0a1119);
+    border:1px solid rgba(255,255,255,.12);border-radius:18px;
+    padding:34px 44px;text-align:center;color:#e6eef5;max-width:460px;
+  }
+  #result-title{font-size:27px;font-weight:700;margin-bottom:12px;}
+  #result-sub{font-size:15px;color:#a3b7c8;line-height:1.6;margin-bottom:22px;}
+  #result-again{
+    padding:13px 34px;border:none;border-radius:12px;cursor:pointer;
+    font-size:16px;font-weight:700;color:#fff;
+    background:linear-gradient(135deg,#0044cc,#0090ff);
+  }
 </style>
 </head>
 <body>
@@ -86,8 +117,39 @@
 
 <div id="menu" style="display:none">
   <h1>🚗 Fahrsimulator</h1>
-  <p>Freies Fahren auf einem offenen Straßennetz mit Ampeln und Verkehr.</p>
-  <button id="btn-start">🕹 Freie Fahrt</button>
+
+  <div id="m-mode" class="grp">
+    <p>Wähle deinen Modus.</p>
+    <div class="row">
+      <button class="big"     data-mode="free">🕹 Freie Fahrt</button>
+      <button class="big alt" data-mode="chase">🚨 Verfolgungsjagd</button>
+    </div>
+  </div>
+
+  <div id="m-chase" style="display:none">
+    <div class="grp" style="margin-bottom:20px">
+      <div class="lbl">Deine Rolle</div>
+      <div class="row">
+        <button class="opt sel" data-role="police">👮 Polizei</button>
+        <button class="opt"     data-role="thief">🕶 Dieb</button>
+      </div>
+    </div>
+    <div class="grp" style="margin-bottom:16px">
+      <div class="lbl">Schwierigkeit</div>
+      <div class="row">
+        <button class="opt"     data-diff="0">😊 Leicht</button>
+        <button class="opt sel" data-diff="1">🙂 Mittel</button>
+        <button class="opt"     data-diff="2">😤 Schwer</button>
+        <button class="opt"     data-diff="3">💀 Extrem</button>
+      </div>
+    </div>
+    <div id="role-hint"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="big alt" id="chase-go">🚨 Jagd starten</button>
+      <button class="opt" id="chase-back">← Zurück</button>
+    </div>
+  </div>
+
   <div id="keys">
     <div class="key"><b>W</b> Gas</div>
     <div class="key"><b>S</b> Bremse / Rückwärts</div>
@@ -104,6 +166,20 @@
   <div id="spd">0</div>
   <div id="unit">KM/H</div>
   <div id="gear">N</div>
+</div>
+
+<div id="chase-hud">
+  <div id="ch-l1"></div>
+  <div id="ch-bar-wrap"><div id="ch-bar"></div></div>
+  <div id="ch-l2"></div>
+</div>
+
+<div id="result">
+  <div id="result-box">
+    <div id="result-title"></div>
+    <div id="result-sub"></div>
+    <button id="result-again">🔄 Nochmal</button>
+  </div>
 </div>
 
 <div id="touch">
@@ -127,12 +203,63 @@ import * as THREE from 'three';
 
 document.getElementById('boot').style.display = 'none';
 document.getElementById('menu').style.display = 'flex';
-document.getElementById('btn-start').addEventListener('click', () => {
-  document.getElementById('menu').style.display = 'none';
-  start();
-});
 
-function start() {
+// Schwierigkeitsstufen der Verfolgungsjagd
+const DIFFS = [
+  { name:'Leicht', aiSpeed:27, aggr:0.55, cops:1, time:200, needDmg: 60 },
+  { name:'Mittel', aiSpeed:33, aggr:0.80, cops:2, time:170, needDmg: 80 },
+  { name:'Schwer', aiSpeed:39, aggr:1.05, cops:3, time:145, needDmg:100 },
+  { name:'Extrem', aiSpeed:45, aggr:1.35, cops:4, time:120, needDmg:125 },
+];
+
+let selRole = 'police', selDiff = 1;
+
+const hintEl = document.getElementById('role-hint');
+function refreshHint() {
+  const d = DIFFS[selDiff];
+  hintEl.innerHTML = selRole === 'police'
+    ? `Ramme den flüchtenden Dieb gegen <b>Häuser und Bäume</b>, bis sein Wagen ` +
+      `fahruntüchtig ist.<br>Du hast <b>${d.time} s</b> — sein Wrack-Wert liegt bei <b>${d.needDmg}</b>.`
+    : `Schüttle <b>${d.cops} Streifenwagen</b> ab und überstehe <b>${d.time} s</b>.<br>` +
+      `Wird dein Wagen in die Kulisse gerammt und zerstört, ist die Jagd vorbei.`;
+}
+refreshHint();
+
+document.querySelectorAll('#menu [data-mode]').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.mode === 'free') {
+      document.getElementById('menu').style.display = 'none';
+      start({ mode: 'free' });
+    } else {
+      document.getElementById('m-mode').style.display = 'none';
+      document.getElementById('m-chase').style.display = 'block';
+    }
+  });
+});
+document.getElementById('chase-back').addEventListener('click', () => {
+  document.getElementById('m-chase').style.display = 'none';
+  document.getElementById('m-mode').style.display = 'flex';
+});
+document.querySelectorAll('#menu [data-role]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#menu [data-role]').forEach(o => o.classList.remove('sel'));
+    b.classList.add('sel'); selRole = b.dataset.role; refreshHint();
+  });
+});
+document.querySelectorAll('#menu [data-diff]').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#menu [data-diff]').forEach(o => o.classList.remove('sel'));
+    b.classList.add('sel'); selDiff = +b.dataset.diff; refreshHint();
+  });
+});
+document.getElementById('chase-go').addEventListener('click', () => {
+  document.getElementById('menu').style.display = 'none';
+  start({ mode: 'chase', role: selRole, diff: DIFFS[selDiff], diffName: DIFFS[selDiff].name });
+});
+document.getElementById('result-again').addEventListener('click', () => location.reload());
+
+function start(OPT) {
+const MODE = OPT.mode, ROLE = OPT.role, CFG = OPT.diff;
 
 // ══════════════════════════════════════════════════════════════════════════
 //  Grundgerüst
@@ -238,6 +365,146 @@ ZS.forEach(z => {
 })();
 
 // ══════════════════════════════════════════════════════════════════════════
+//  Kulisse für die Verfolgungsjagd: Häuser & Bäume (feste Hindernisse)
+//  Alles über InstancedMesh → nur vier Draw-Calls trotz tausender Objekte.
+//  Kollisionsdaten liegen zusätzlich in einem Raster-Index für schnelle Abfrage.
+// ══════════════════════════════════════════════════════════════════════════
+const obstacles = [];
+const OB_CELL = 64;
+const obGrid = new Map();
+const obKey = (x, z) => Math.floor(x / OB_CELL) + ',' + Math.floor(z / OB_CELL);
+
+function addObstacle(o) {
+  obstacles.push(o);
+  const k = obKey(o.x, o.z);
+  if (!obGrid.has(k)) obGrid.set(k, []);
+  obGrid.get(k).push(o);
+}
+function nearbyObstacles(x, z, out) {
+  out.length = 0;
+  const cx = Math.floor(x / OB_CELL), cz = Math.floor(z / OB_CELL);
+  for (let i = -1; i <= 1; i++)
+    for (let j = -1; j <= 1; j++) {
+      const arr = obGrid.get((cx + i) + ',' + (cz + j));
+      if (arr) for (const o of arr) out.push(o);
+    }
+  return out;
+}
+
+function buildScenery() {
+  const HOUSE_COLS = [0xc9b79a, 0xb8a088, 0xd6c4a8, 0xa8917c, 0xc0a58c, 0x9d8a76];
+  const ROOF_COLS  = [0x7d3b2e, 0x5f4436, 0x8a4634, 0x4a4a52];
+  let seed = 20250813;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) & 0x7fffffff; return seed / 0x7fffffff; };
+
+  const houses = [], trees = [];
+  // Bebauung entlang der Nord-Süd-Achsen (Querstraßen bleiben frei)
+  XS.forEach(cx => {
+    for (let z = Z_MIN + 18; z < Z_MAX; z += 34) {
+      if (ZS.some(cz => Math.abs(z - cz) < HALF_W + 12)) continue;
+      [-1, 1].forEach(s => houses.push({ x: cx + s * 21, z }));
+    }
+    for (let z = Z_MIN + 9; z < Z_MAX; z += 24) {
+      if (ZS.some(cz => Math.abs(z - cz) < HALF_W + 9)) continue;
+      [-1, 1].forEach(s => trees.push({ x: cx + s * 11.5, z }));
+    }
+  });
+  // Bebauung entlang der Querstraßen
+  ZS.forEach(cz => {
+    for (let x = X_MIN + 18; x < X_MAX; x += 34) {
+      if (XS.some(cx => Math.abs(x - cx) < HALF_W + 12)) continue;
+      [-1, 1].forEach(s => houses.push({ x, z: cz + s * 21 }));
+    }
+    for (let x = X_MIN + 9; x < X_MAX; x += 24) {
+      if (XS.some(cx => Math.abs(x - cx) < HALF_W + 9)) continue;
+      [-1, 1].forEach(s => trees.push({ x, z: cz + s * 11.5 }));
+    }
+  });
+
+  // ── Häuser: Körper + Dach ──
+  const bodyInst = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshLambertMaterial(), houses.length);
+  const roofInst = new THREE.InstancedMesh(
+    new THREE.ConeGeometry(1, 1, 4),
+    new THREE.MeshLambertMaterial(), houses.length);
+  const d = new THREE.Object3D(), col = new THREE.Color();
+
+  houses.forEach((h, i) => {
+    const w = 11 + rnd() * 6, dp = 10 + rnd() * 5, ht = 7 + rnd() * 7;
+    d.position.set(h.x, ht / 2, h.z);
+    d.rotation.set(0, 0, 0);
+    d.scale.set(w, ht, dp);
+    d.updateMatrix(); bodyInst.setMatrixAt(i, d.matrix);
+    bodyInst.setColorAt(i, col.setHex(HOUSE_COLS[(rnd() * HOUSE_COLS.length) | 0]));
+
+    const rh = 2.4 + rnd() * 1.8;
+    d.position.set(h.x, ht + rh / 2, h.z);
+    d.rotation.set(0, Math.PI / 4, 0);            // Vierkant-Dach auf den Baukörper drehen
+    d.scale.set(w * 0.78, rh, dp * 0.78);
+    d.updateMatrix(); roofInst.setMatrixAt(i, d.matrix);
+    roofInst.setColorAt(i, col.setHex(ROOF_COLS[(rnd() * ROOF_COLS.length) | 0]));
+
+    addObstacle({ x: h.x, z: h.z, hw: w / 2, hd: dp / 2 });
+  });
+  bodyInst.instanceMatrix.needsUpdate = roofInst.instanceMatrix.needsUpdate = true;
+  scene.add(bodyInst, roofInst);
+
+  // ── Bäume: Stamm + Krone ──
+  const trunkInst = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.19, 0.26, 1, 6),
+    new THREE.MeshLambertMaterial({ color: 0x5a4028 }), trees.length);
+  const crownInst = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(1, 7, 6),
+    new THREE.MeshLambertMaterial(), trees.length);
+  const GREENS = [0x2f6b2a, 0x3c7c33, 0x275a25, 0x46873a];
+
+  trees.forEach((t, i) => {
+    const th = 3.4 + rnd() * 2.4, cr = 1.7 + rnd() * 1.1;
+    d.rotation.set(0, 0, 0);
+    d.position.set(t.x, th / 2, t.z); d.scale.set(1, th, 1);
+    d.updateMatrix(); trunkInst.setMatrixAt(i, d.matrix);
+
+    d.position.set(t.x, th + cr * 0.55, t.z); d.scale.set(cr, cr * 1.15, cr);
+    d.updateMatrix(); crownInst.setMatrixAt(i, d.matrix);
+    crownInst.setColorAt(i, col.setHex(GREENS[(rnd() * GREENS.length) | 0]));
+
+    addObstacle({ x: t.x, z: t.z, r: 0.7 });
+  });
+  trunkInst.instanceMatrix.needsUpdate = crownInst.instanceMatrix.needsUpdate = true;
+  scene.add(trunkInst, crownInst);
+}
+
+// Prüft ein Fahrzeug gegen die Kulisse. Rückgabe: Aufprallhärte (0 = kein Treffer).
+const _obScratch = [];
+function hitObstacles(e, halfW) {
+  let impact = 0;
+  for (const o of nearbyObstacles(e.x, e.z, _obScratch)) {
+    if (o.r !== undefined) {
+      const dx = e.x - o.x, dz = e.z - o.z;
+      const dd = Math.hypot(dx, dz), R = o.r + halfW;
+      if (dd < R && dd > 0.001) {
+        e.x = o.x + dx / dd * R; e.z = o.z + dz / dd * R;
+        impact = Math.max(impact, Math.abs(e.speed));
+        e.speed *= 0.45;
+      }
+    } else {
+      const dx = e.x - o.x, dz = e.z - o.z;
+      const ex = o.hw + halfW, ez = o.hd + halfW;
+      if (Math.abs(dx) < ex && Math.abs(dz) < ez) {
+        const ox = ex - Math.abs(dx), oz = ez - Math.abs(dz);
+        if (ox < oz) e.x += Math.sign(dx || 1) * ox; else e.z += Math.sign(dz || 1) * oz;
+        impact = Math.max(impact, Math.abs(e.speed));
+        e.speed *= 0.3;
+      }
+    }
+  }
+  return impact;
+}
+
+if (MODE === 'chase') buildScenery();
+
+// ══════════════════════════════════════════════════════════════════════════
 //  Ampeln – an jeder Kreuzung vier Stück, je Zufahrt eine
 // ══════════════════════════════════════════════════════════════════════════
 const RED = 0, YEL = 1, GRN = 2;
@@ -311,7 +578,8 @@ function updateSignals(t) {
 // ══════════════════════════════════════════════════════════════════════════
 // Start auf der langen Mittelachse, rund 130 m vor der nächsten Ampelkreuzung
 const START_X = XS[1] + LANE, START_Z = ZS[1] - 130;
-const car = { x: START_X, z: START_Z, heading: 0, speed: 0, steer: 0, vx: 0, vz: 0 };
+const car = { x: START_X, z: START_Z, heading: 0, speed: 0, steer: 0, vx: 0, vz: 0, damage: 0 };
+let _shake = 0;
 
 const nodeAt = (xi, zi) => grid[xi][zi];
 function neighbours(xi, zi) {
@@ -479,6 +747,250 @@ function updateNPCs(dt, t) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+//  Verfolgungsjagd: Gegnerfahrzeuge, Ramm-Physik, Sieg/Niederlage
+// ══════════════════════════════════════════════════════════════════════════
+const chasers = [];
+let chaseTime = MODE === 'chase' ? CFG.time : 0;
+let chaseOver = false, chaseIntroT = 2.5;
+
+function makeBeacon(color) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.5, 1.5, 30, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.26,
+                                  side: THREE.DoubleSide, depthWrite: false })
+  );
+  m.position.y = 15;
+  return m;
+}
+
+// Blaulicht-Balken fürs Polizeiauto
+function addLightBar(g) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0x2255ff });
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.17, 0.34), mat);
+  bar.position.set(0, 1.82, -0.2);
+  g.add(bar);
+  return mat;
+}
+
+function spawnChaser(role, idx) {
+  // Gegner startet auf der Route, ein Stück vom Spieler entfernt
+  const zi = Math.min(ZS.length - 1, Math.max(0, 1 + idx));
+  const from = nodeAt(1, zi), to = nodeAt(1, Math.min(ZS.length - 1, zi + 1));
+  const g = buildCarMesh(role === 'police' ? 0xf2f2f2 : 0x1b1b20);
+  if (role === 'police') {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.18, 3.9),
+      new THREE.MeshStandardMaterial({ color: 0x0033aa }));
+    stripe.position.y = 1.02; g.add(stripe);
+  }
+  const lightMat = role === 'police' ? addLightBar(g) : null;
+  const beacon = makeBeacon(role === 'police' ? 0x3377ff : 0xff3322);
+  g.add(beacon);
+  scene.add(g);
+
+  // Immer innerhalb der Fahrbahn aufstellen (Häuserzeile beginnt bei ±21 m),
+  // sonst starten äußere Wagen direkt in einer Hauswand.
+  const a = {
+    mesh: g, lightMat, role, from, to,
+    x: XS[1] + (idx % 2 === 0 ? -3.4 : 3.4),
+    z: car.z + (role === 'police' ? -(58 + idx * 30) : 95),
+    heading: 0, speed: 12, pushX: 0, pushZ: 0, damage: 0, blink: 0,
+  };
+  chasers.push(a);
+  return a;
+}
+
+function aiPickNode(a) {
+  const opts = neighbours(a.to.xi, a.to.zi)
+    .filter(([xi, zi]) => !(xi === a.from.xi && zi === a.from.zi));
+  const pool = opts.length ? opts : neighbours(a.to.xi, a.to.zi);
+  let best = pool[0], bestScore = -Infinity;
+  for (const [xi, zi] of pool) {
+    const n = nodeAt(xi, zi);
+    const d = Math.hypot(n.x - car.x, n.z - car.z);
+    // Polizei will zum Spieler, der Dieb möglichst weit weg
+    const score = (a.role === 'police' ? -d : d) + Math.random() * 40;
+    if (score > bestScore) { bestScore = score; best = [xi, zi]; }
+  }
+  a.from = a.to;
+  a.to = nodeAt(best[0], best[1]);
+}
+
+// Grobe Ausweichlenkung: liegt ~13 m voraus ein Hindernis, zur freien Seite ziehen.
+// Ohne das pflügt die KI im Direktverfolgungs-Modus quer durch die Häuserzeile.
+const _avoidScratch = [];
+function avoidBias(a) {
+  const fx = Math.sin(a.heading), fz = Math.cos(a.heading);
+  const px = a.x + fx * 13, pz = a.z + fz * 13;
+  for (const o of nearbyObstacles(px, pz, _avoidScratch)) {
+    const dx = px - o.x, dz = pz - o.z;
+    const ex = (o.r !== undefined ? o.r : o.hw) + 3.2;
+    const ez = (o.r !== undefined ? o.r : o.hd) + 3.2;
+    if (Math.abs(dx) < ex && Math.abs(dz) < ez) {
+      const rx = Math.cos(a.heading), rz = -Math.sin(a.heading);   // Rechts-Vektor
+      return (dx * rx + dz * rz) > 0 ? 1.7 : -1.7;
+    }
+  }
+  return 0;
+}
+
+function updateChasers(dt) {
+  for (const a of chasers) {
+    if (a.lightMat && !a.wrecked) {
+      a.blink += dt;
+      a.lightMat.color.setHex(a.blink % 0.44 < 0.22 ? 0x2255ff : 0xff2200);
+    }
+    if (chaseOver || a.wrecked) continue;
+
+    const dPlayer = Math.hypot(car.x - a.x, car.z - a.z);
+
+    // Zielpunkt: nah dran direkt aufs Auto (Rammkurs), sonst dem Straßennetz folgen
+    let tx, tz;
+    if (a.role === 'police' && dPlayer < 18 + CFG.aggr * 14) {
+      tx = car.x + (car.vx || 0) * 0.55;
+      tz = car.z + (car.vz || 0) * 0.55;
+    } else {
+      const r = laneRight(a.heading);
+      tx = a.to.x + r.x * LANE; tz = a.to.z + r.z * LANE;
+      if (Math.hypot(tx - a.x, tz - a.z) < 14) { aiPickNode(a); continue; }
+    }
+
+    let diff = Math.atan2(tx - a.x, tz - a.z) - a.heading;
+    diff = ((diff + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    // Aggressivere Stufen lenken schärfer nach; Hindernisse verbiegen den Kurs
+    a.heading += diff * Math.min(1, (2.4 + CFG.aggr * 1.2) * dt) + avoidBias(a) * dt;
+
+    // Während des Countdowns stehen lassen. Das Tempo bleibt bewusst unter dem
+    // Maximum des Spielers (52,8 m/s) — sonst wäre Entkommen unmöglich.
+    const want = chaseIntroT > 0 ? 0 : CFG.aiSpeed;
+    a.speed += (want - a.speed) * Math.min(1, 2.2 * dt);
+
+    a.x += Math.sin(a.heading) * a.speed * dt + a.pushX * dt;
+    a.z += Math.cos(a.heading) * a.speed * dt + a.pushZ * dt;
+    a.pushX *= 0.88; a.pushZ *= 0.88;
+
+    // Kulisse: Aufprall kostet Substanz — genau darauf zielt die Jagd ab
+    const imp = hitObstacles(a, 1.7);
+    if (imp > 6) {
+      // Der Dieb soll an der Kulisse zerbrechen – das ist das Ziel der Polizei.
+      // Streifenwagen stecken Streifschüsse dagegen weg, sonst zerlegen sie sich selbst.
+      a.damage += (imp - 6) * (a.role === 'thief' ? 1.9 : 0.4);
+      _shake = Math.max(_shake, dPlayer < 45 ? 0.10 : 0);
+    }
+    // Auch Verfolger können schrottgefahren werden → Gegenwehr für den Dieb
+    if (a.role === 'police' && a.damage >= 110 && !a.wrecked) {
+      a.wrecked = true; a.speed = 0; a.pushX = a.pushZ = 0;
+      if (a.lightMat) a.lightMat.color.setHex(0x332222);
+      toastChase('🚓 Ein Streifenwagen ist ausgefallen!');
+    }
+
+    a.mesh.position.set(a.x, 0, a.z);
+    a.mesh.rotation.y = a.heading + Math.PI;
+  }
+}
+
+// Rammen — beidseitig: wer mit Wucht hineinfährt, schiebt den anderen weg.
+// Nur so kann die Polizei den Spieler in eine Hauswand drängen (und umgekehrt).
+function ramChasers() {
+  for (const a of chasers) {
+    if (a.wrecked) continue;
+    const dx = car.x - a.x, dz = car.z - a.z;
+    const d = Math.hypot(dx, dz);
+    if (d >= 3.7 || d < 0.001) continue;
+    const nx = dx / d, nz = dz / d;              // Normale: vom Gegner zum Spieler
+    const ov = 3.7 - d;
+    car.x += nx * ov * 0.5; car.z += nz * ov * 0.5;
+    a.x -= nx * ov * 0.5;   a.z -= nz * ov * 0.5;
+
+    // Anteil der Spielergeschwindigkeit, der in den Gegner hineindrückt
+    const pvx = Math.sin(car.heading) * car.speed, pvz = Math.cos(car.heading) * car.speed;
+    const intoFoe = -(pvx * nx + pvz * nz);
+    if (intoFoe > 0) {
+      a.pushX -= nx * intoFoe * 0.85;
+      a.pushZ -= nz * intoFoe * 0.85;
+      if (intoFoe > 8) a.damage += (intoFoe - 8) * 0.32;
+    }
+    // …und umgekehrt der Anteil des Gegners, der in den Spieler drückt
+    const avx = Math.sin(a.heading) * a.speed, avz = Math.cos(a.heading) * a.speed;
+    const intoMe = avx * nx + avz * nz;
+    if (intoMe > 0) {
+      car.vx += nx * intoMe * 0.6;               // wirkt im nächsten Frame als Querdrift
+      car.vz += nz * intoMe * 0.6;
+      if (intoMe > 10) car.damage = Math.min(100, car.damage + (intoMe - 10) * 0.20);
+    }
+    a.speed *= 0.88; car.speed *= 0.9;
+    if (Math.max(intoFoe, intoMe) > 8) _shake = Math.max(_shake, 0.15);
+  }
+}
+
+let _toastT = 0;
+function toastChase(msg) {
+  const el = document.getElementById('ch-l2');
+  if (el) { el.textContent = msg; _toastT = 2.2; }
+}
+
+function endChase(won, msg) {
+  chaseOver = true;
+  document.getElementById('result-title').textContent = won ? '🏆 Gewonnen!' : '💥 Verloren';
+  document.getElementById('result-title').style.color = won ? '#7ee08a' : '#ff7f6e';
+  document.getElementById('result-sub').innerHTML = msg;
+  document.getElementById('result').style.display = 'flex';
+}
+
+function updateChase(dt) {
+  if (MODE !== 'chase' || chaseOver) return;
+  const hud = document.getElementById('chase-hud');
+  hud.style.display = 'block';
+
+  if (chaseIntroT > 0) {
+    chaseIntroT -= dt;
+    document.getElementById('ch-l1').textContent =
+      ROLE === 'police' ? '👮 Bereitmachen…' : '🕶 Bereitmachen…';
+    document.getElementById('ch-l2').textContent =
+      'Start in ' + Math.ceil(chaseIntroT) + ' …';
+    return;
+  }
+
+  chaseTime -= dt;
+  const target = chasers[0];
+
+  if (ROLE === 'police') {
+    const pct = Math.min(100, target.damage / CFG.needDmg * 100);
+    document.getElementById('ch-bar').style.width = pct + '%';
+    document.getElementById('ch-l1').textContent =
+      `👮 Dieb stoppen — Schaden ${Math.round(pct)} %`;
+    document.getElementById('ch-l2').textContent =
+      `⏱ ${Math.max(0, Math.ceil(chaseTime))} s · Abstand ${Math.round(Math.hypot(car.x-target.x, car.z-target.z))} m`;
+    if (target.damage >= CFG.needDmg)
+      endChase(true, 'Der Wagen des Diebes ist fahruntüchtig — <b>festgenommen!</b>');
+    else if (car.damage >= 100)
+      endChase(false, 'Dein Streifenwagen ist Schrott. Die Verfolgung ist beendet.');
+    else if (chaseTime <= 0)
+      endChase(false, 'Die Zeit ist abgelaufen — der Dieb ist entkommen.');
+  } else {
+    const pct = Math.min(100, car.damage);
+    document.getElementById('ch-bar').style.width = pct + '%';
+    let near = Infinity, alive = 0;
+    for (const a of chasers) {
+      if (a.wrecked) continue;
+      alive++;
+      near = Math.min(near, Math.hypot(car.x - a.x, car.z - a.z));
+    }
+    document.getElementById('ch-l1').textContent =
+      `🕶 Durchhalten — dein Schaden ${Math.round(pct)} %`;
+    if (_toastT > 0) _toastT -= dt;
+    else document.getElementById('ch-l2').textContent =
+      `⏱ ${Math.max(0, Math.ceil(chaseTime))} s · ${alive} Streifenwagen` +
+      (alive ? ` · nächster ${Math.round(near)} m` : '');
+    if (car.damage >= 100)
+      endChase(false, 'Dein Wagen wurde in die Kulisse gerammt und ist Schrott.');
+    else if (alive === 0)
+      endChase(true, 'Alle Streifenwagen ausgefallen — <b>du bist frei!</b>');
+    else if (chaseTime <= 0)
+      endChase(true, 'Du hast die Polizei abgeschüttelt — <b>entkommen!</b>');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  Spielerauto
 // ══════════════════════════════════════════════════════════════════════════
 const MAX_SPD = 52.8, MAX_REV = 6, ACCEL = 7.2, BRAKE = 16, DRAG = 1.6;
@@ -540,6 +1052,7 @@ const touch = { left: false, right: false, gas: false, brake: false };
 function resetCar() {
   car.x = START_X; car.z = START_Z;
   car.heading = 0; car.speed = 0; car.steer = 0; car.vx = 0; car.vz = 0;
+  if (MODE !== 'chase') car.damage = 0;   // in der Jagd bleibt der Schaden bestehen
 }
 
 function updateCar(dt) {
@@ -588,6 +1101,14 @@ function updateCar(dt) {
   car.vz += sz * slip;
 
   collideWithNPCs();
+
+  // Kulisse & Gegner nur im Jagd-Modus
+  if (MODE === 'chase') {
+    const imp = hitObstacles(car, 1.7);
+    // Der rammende Wagen steckt Treffer besser weg als der Gerammte
+    if (imp > 5) { car.damage = Math.min(100, car.damage + (imp - 5) * 1.1); _shake = Math.max(_shake, 0.2); }
+    ramChasers();
+  }
   wheelPivot.rotation.z = -car.steer * 0.9;
 }
 
@@ -660,6 +1181,12 @@ function gearLabel() {
 // ══════════════════════════════════════════════════════════════════════════
 //  Hauptschleife
 // ══════════════════════════════════════════════════════════════════════════
+// Gegner aufstellen: als Polizei jagst du einen Dieb, als Dieb mehrere Streifenwagen
+if (MODE === 'chase') {
+  if (ROLE === 'police') spawnChaser('thief', 0);
+  else for (let i = 0; i < CFG.cops; i++) spawnChaser('police', i);
+}
+
 const clock = new THREE.Clock();
 const spdEl = document.getElementById('spd');
 const gearEl = document.getElementById('gear');
@@ -669,13 +1196,19 @@ function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t  = clock.getElapsedTime();
 
-  updateCar(dt);
+  if (!chaseOver) updateCar(dt);
   updateSignals(t);
   updateNPCs(dt, t);
+  if (MODE === 'chase') { updateChasers(dt); updateChase(dt); }
   updateEngine();
 
   cam.position.set(car.x, 1.28, car.z);
   cam.rotation.set(0, car.heading + Math.PI, car.steer * 0.022);
+  if (_shake > 0.001) {          // Rütteln nach Aufprall
+    cam.rotation.x += (Math.random() - 0.5) * _shake;
+    cam.rotation.z += (Math.random() - 0.5) * _shake * 0.6;
+    _shake *= 0.86;
+  }
 
   spdEl.textContent  = Math.round(Math.abs(car.speed) * 3.6);
   gearEl.textContent = gearLabel();
