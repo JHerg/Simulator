@@ -262,6 +262,7 @@
       <div class="resnorm" id="r-norm">–</div>
       <div class="verdict ok" id="r-verdict">Qualifiziert</div>
     </div>
+    <table id="r-rank"></table>
     <div class="row">
       <button class="btn ghost" id="r-help">❔ Erklärung</button>
       <button class="btn ghost" id="r-retry">🔄 Nochmal</button>
@@ -355,6 +356,46 @@ const LAENDER = ['🇩🇪 Deutschland','🇦🇹 Österreich','🇨🇭 Schweiz
   '🇯🇵 Japan','🇰🇷 Südkorea','🇦🇺 Australien','🇰🇪 Kenia','🇿🇦 Südafrika'];
 
 const S = { name:'', land:'', diff:0, queue:[], idx:0, results:[] };
+
+/* ══════════════════════════════════════════════════════════════
+   Teilnehmerfeld: fünf Gegnerinnen und Gegner mit Namen, Nation
+   und einem vorab ausgewürfelten Ergebnis. Bei Rennen wird daraus
+   eine Zielzeit, damit sie sichtbar mitlaufen statt nur am Ende
+   in einer Liste aufzutauchen.
+   ══════════════════════════════════════════════════════════════ */
+const VORNAMEN = ['Luca','Noah','Emil','Jonas','Finn','Leon','Timo','Nico','Ravi','Kai',
+  'Mila','Lena','Sara','Nora','Emma','Ida','Zoe','Alina','Yuki','Anouk','Mats','Elias'];
+const NACHNAMEN = ['Berger','Falk','Weiss','Kern','Haas','Brandt','Lorenz','Sommer',
+  'Novak','Silva','Rossi','Dubois','Kovac','Larsen','Meier','Okafor','Tanaka','Moreno'];
+
+const FIELD_N = 5;   // Gegner; mit dir zusammen ein Feld von sechs
+
+function buildField(key){
+  const d = DISCIPLINES[key], norm = d.norms[S.diff];
+  const spread = [0.10, 0.085, 0.07, 0.055][S.diff];
+  const pool = LAENDER.filter(l => l !== S.land);
+  const used = new Set();
+  const field = [];
+  for (let i = 0; i < FIELD_N; i++){
+    // Auch Vornamen eindeutig halten – die Zwischenstandsliste zeigt nur diesen
+    let vn, nn, guard = 0;
+    do { vn = VORNAMEN[(Math.random()*VORNAMEN.length)|0]; }
+    while (used.has(vn) && ++guard < 40);
+    used.add(vn);
+    nn = NACHNAMEN[(Math.random()*NACHNAMEN.length)|0];
+    const nm = vn + ' ' + nn;
+    // Feld liegt im Mittel knapp auf Normhöhe – etwa die Hälfte qualifiziert sich
+    const off = (Math.random()*2 - 1) * spread - 0.015;
+    const val = d.lower ? norm * (1 - off) : norm * (1 + off);
+    field.push({
+      name: nm,
+      land: pool[(Math.random()*pool.length)|0],
+      val: d.lower ? Math.max(val, norm*0.80) : Math.max(val, norm*0.55),
+      you: false,
+    });
+  }
+  return field;
+}
 
 /* ── Bildschirmwechsel ───────────────────────────────────────── */
 function show(id){
@@ -520,7 +561,10 @@ function startDiscipline(key){
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
         px:0, gate:0, gates:[], missed:0,
-        cd: 3.0 };
+        cd: 3.0, field: buildField(key) };
+  // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
+  if (d.phases.includes('mash') || d.phases.includes('slalom'))
+    G.field.forEach(f => f.finishT = f.val);
   document.getElementById('hud-disc').textContent = d.icon + ' ' + d.name;
   document.getElementById('hud-who').textContent = S.land + ' · ' + S.name;
   document.getElementById('hud-norm').textContent = d.norms[S.diff] + ' ' + d.unit;
@@ -681,21 +725,29 @@ function nextPhase(){
   setPadLabels();
 }
 
+function fmt(d, v){
+  return d.unit === 's' ? v.toFixed(2) : (d.unit === 'kg' ? String(Math.round(v)) : v.toFixed(1));
+}
+
 function finish(val){
   G.done = true;
   const d = G.d, norm = d.norms[S.diff];
   const ok = d.lower ? val <= norm : val >= norm;
-  // Medaillenstufen jenseits der Norm
-  const marg = d.lower ? (norm - val) / norm : (val - norm) / norm;
-  let medal = '—', mname = 'Keine Medaille';
-  if (ok){
-    if (marg >= 0.10){ medal='🥇'; mname='Gold'; }
-    else if (marg >= 0.05){ medal='🥈'; mname='Silber'; }
-    else { medal='🥉'; mname='Bronze'; }
-  }
-  const shown = d.unit === 's' ? val.toFixed(2) : (d.unit==='kg' ? Math.round(val) : val.toFixed(1));
-  S.results[S.idx] = { key:G.key, name:d.name, icon:d.icon, val, shown, unit:d.unit,
-                       norm, ok, medal, mname, falseStart:G.falseStart };
+
+  // Dich ins Feld einsortieren – die Medaille kommt jetzt aus dem Platz,
+  // nicht mehr aus dem Abstand zur Norm. Die Norm entscheidet nur noch
+  // über die Qualifikation.
+  const rank = G.field.concat([{ name:S.name, land:S.land, val, you:true }])
+    .sort((a,b) => d.lower ? a.val - b.val : b.val - a.val);
+  rank.forEach((r,i) => { r.pos = i+1; r.shown = fmt(d, r.val); });
+  const place = rank.find(r => r.you).pos;
+
+  const MEDALS = { 1:['🥇','Gold'], 2:['🥈','Silber'], 3:['🥉','Bronze'] };
+  const [medal, mname] = MEDALS[place] || ['—','Keine Medaille'];
+
+  S.results[S.idx] = { key:G.key, name:d.name, icon:d.icon, val, shown:fmt(d,val),
+                       unit:d.unit, norm, ok, medal, mname, place, rank,
+                       falseStart:G.falseStart };
   showResult();
 }
 
@@ -721,47 +773,98 @@ function drawReact(){
   ctx.beginPath(); ctx.arc(W/2, H/2 - 20, 62, 0, Math.PI*2); ctx.fill();
 }
 
+// Streckenanteil eines Gegners zum Zeitpunkt t (leichter Anlauf am Start)
+function aiProgress(f, t){
+  if (!f.finishT || f.finishT <= 0) return 0;
+  return Math.min(1, Math.pow(Math.max(0, t) / f.finishT, 1.07));
+}
+
 function drawRace(){
   const d = G.d;
   bg(G.key==='swim' ? '#0a2b46' : '#132038', '#070d18');
-  // Tribüne: gefüllte Ränge statt leerer Fläche über der Bahn
-  for (let r = 0; r < 5; r++){
-    const y = H*0.10 + r*20, shade = 26 + r*9;
+  // Tribüne
+  for (let r = 0; r < 4; r++){
+    const y = 8 + r*15, shade = 26 + r*9;
     ctx.fillStyle = `rgb(${shade+16},${shade+22},${shade+34})`;
-    ctx.fillRect(0, y, W, 17);
+    ctx.fillRect(0, y, W, 13);
     for (let i = 0; i < 46; i++){
       const seed = (r*97 + i*31) % 7;
       if (seed > 3) continue;
       ctx.fillStyle = ['#d9556a','#5b8fd9','#e0b64a','#57b98a'][seed];
-      ctx.fillRect(6 + i*16.4 + (r%2)*7, y+3, 8, 11);
+      ctx.fillRect(6 + i*16.4 + (r%2)*7, y+2, 7, 9);
     }
   }
-  ctx.fillStyle = 'rgba(7,13,24,.55)'; ctx.fillRect(0, H*0.10, W, 5);
-  // Bahn
-  ctx.fillStyle = G.key==='swim' ? '#12507e' : G.key==='bike' ? '#3a2a2a' : '#7a4530';
-  ctx.fillRect(0, H*0.52, W, H*0.30);
-  ctx.strokeStyle='rgba(255,255,255,.32)'; ctx.lineWidth=2; ctx.setLineDash([16,14]);
-  ctx.beginPath(); ctx.moveTo(0,H*0.67); ctx.lineTo(W,H*0.67); ctx.stroke(); ctx.setLineDash([]);
-  // Athlet
-  const prog = G.dist / d.dist;
-  const x = 50 + prog * (W-120);
-  ctx.font = '46px serif'; ctx.textAlign='center';
-  const bob = Math.sin(G.t*14) * (G.v/d.vMax) * 6;
-  ctx.fillText(d.icon, x, H*0.66 + bob);
+
+  // ── Sechs Bahnen: du und das Feld nebeneinander ──
+  const all = G.field.concat([{ you:true, name:S.name, land:S.land }]);
+  const top = 78, laneH = (H - top - 58) / all.length;
+  const x0 = 46, x1 = W - 58;
+
+  all.forEach((f, i) => {
+    const y = top + i*laneH;
+    ctx.fillStyle = f.you ? 'rgba(255,215,94,.13)'
+      : (G.key==='swim' ? '#0e4166' : G.key==='bike' ? '#332525' : '#63381f');
+    ctx.fillRect(0, y, W, laneH - 3);
+    if (f.you){ ctx.strokeStyle='rgba(255,215,94,.5)'; ctx.lineWidth=1.5;
+                ctx.strokeRect(0.5, y+0.5, W-1, laneH-4); }
+
+    const prog = f.you ? (G.dist / d.dist) : aiProgress(f, G.t);
+    const px = x0 + prog * (x1 - x0);
+    const cy = y + laneH*0.52;
+    // Läufer
+    ctx.font = (f.you ? 27 : 22) + 'px serif'; ctx.textAlign='center';
+    const bob = f.you ? Math.sin(G.t*14) * (G.v/d.vMax) * 4 : Math.sin(G.t*11 + i) * 2.5;
+    ctx.fillText(d.icon, px, cy + 8 + bob);
+    // Nation links am Bahnrand
+    ctx.textAlign='left'; ctx.font='600 11px Segoe UI,Arial';
+    ctx.fillStyle = f.you ? '#ffd75e' : 'rgba(255,255,255,.45)';
+    // Flaggen-Emoji besteht aus zwei Zeichen – nicht per slice zerschneiden
+    ctx.fillText((f.land||'').split(' ')[0] + (f.you ? ' DU' : ''), 5, cy + 4);
+  });
+
   // Ziellinie
-  ctx.fillStyle='#fff'; ctx.fillRect(W-66, H*0.52, 4, H*0.30);
-  // Tempoanzeige
-  ctx.textAlign='left'; ctx.fillStyle='#9fb6cf'; ctx.font='600 15px Segoe UI,Arial';
-  ctx.fillText('Strecke ' + G.dist.toFixed(0) + ' / ' + d.dist + ' m', 22, 34);
-  ctx.fillText('Tempo ' + (G.v*3.6).toFixed(1) + ' km/h', 22, 58);
-  ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 82);
+  ctx.fillStyle='#fff';
+  for (let s=0; s<Math.ceil((H-top-58)/9); s++)
+    ctx.fillRect(x1, top + s*9, 4, s%2 ? 5 : 4);
+
+  // Kopfzeile
+  ctx.textAlign='left'; ctx.fillStyle='#9fb6cf'; ctx.font='600 14px Segoe UI,Arial';
+  ctx.fillText(G.dist.toFixed(0) + ' / ' + d.dist + ' m', 12, 72);
+  ctx.textAlign='center';
+  ctx.fillText((G.v*3.6).toFixed(1) + ' km/h', W/2, 72);
+  // Aktueller Platz
+  const ahead = G.field.filter(f => aiProgress(f, G.t) > G.dist/d.dist).length;
+  ctx.textAlign='right'; ctx.fillStyle='#ffd75e'; ctx.font='700 14px Segoe UI,Arial';
+  ctx.fillText('Platz ' + (ahead+1) + ' / ' + all.length + ' · ' + G.t.toFixed(2) + ' s', W-12, 72);
+
   // Taktbalken
   const rr = Math.min(1, G.rate / d.cadence);
-  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-46, W-44, 14);
+  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
   ctx.fillStyle = rr > 0.85 ? '#39e08f' : rr > 0.5 ? '#ffd75e' : '#ff8a5a';
-  ctx.fillRect(22, H-46, (W-44)*rr, 14);
-  ctx.fillStyle='#8ea3bd'; ctx.font='12px Segoe UI,Arial';
-  ctx.fillText('TAKT', 22, H-54);
+  ctx.fillRect(22, H-38, (W-44)*rr, 13);
+  ctx.textAlign='left'; ctx.fillStyle='#8ea3bd'; ctx.font='11px Segoe UI,Arial';
+  ctx.fillText('TAKT', 22, H-44);
+}
+
+// Zwischenstand am rechten Rand: zeigt, was die Gegner erreicht haben
+function drawStandings(entries, title){
+  const bw = 196, bx = W - bw - 12, by = 58;
+  ctx.fillStyle = 'rgba(4,10,20,.72)';
+  ctx.fillRect(bx, by, bw, 26 + entries.length*22);
+  ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 1;
+  ctx.strokeRect(bx+.5, by+.5, bw-1, 25 + entries.length*22);
+  ctx.textAlign='left'; ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
+  ctx.fillText(title, bx+10, by+17);
+  entries.forEach((e,i) => {
+    const y = by + 38 + i*22;
+    ctx.font = (e.you?'700 ':'') + '12px Segoe UI,Arial';
+    ctx.fillStyle = e.you ? '#ffd75e' : '#c2d2e4';
+    ctx.fillText((i+1) + '. ' + (e.land||'').split(' ')[0] + ' ' +
+                 (e.name||'').split(' ')[0].slice(0,9), bx+10, y);
+    ctx.textAlign='right';
+    ctx.fillText(e.txt, bx+bw-10, y);
+    ctx.textAlign='left';
+  });
 }
 
 function drawBar(){
@@ -791,6 +894,13 @@ function drawBar(){
                W/2, by + 82);
   ctx.font='40px serif'; ctx.fillText(G.d.icon, W/2, by - 86);
   ctx.textAlign='left';
+
+  // Gegner: ihre Weiten bzw. Gewichte stehen schon fest und sind sichtbar
+  const list = G.field.map(f => ({ ...f, txt: fmt(G.d, f.val) + ' ' + G.d.unit }))
+    .concat([{ you:true, name:S.name, land:S.land, val:G.bestVal,
+               txt: G.bestVal ? fmt(G.d, G.bestVal) + ' ' + G.d.unit : '–' }])
+    .sort((a,b) => G.d.lower ? a.val - b.val : b.val - a.val);
+  drawStandings(list, 'ZWISCHENSTAND');
 }
 
 function drawSlalom(){
@@ -822,19 +932,40 @@ function drawSlalom(){
   ctx.fillText('Tor ' + Math.min(G.gate+1, G.gates.length) + ' / ' + G.gates.length, 22, 30);
   ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 52);
   if (G.missed) { ctx.fillStyle='#c0392b'; ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 74); }
+
+  // Wer ist wie weit? Gegner fahren dieselbe Strecke parallel
+  const myProg = G.gate / G.gates.length;
+  const list = G.field.map(f => ({ ...f, p: aiProgress(f, G.t) }))
+    .concat([{ you:true, name:S.name, land:S.land, p: myProg }])
+    .sort((a,b) => b.p - a.p)
+    .map(e => ({ ...e, txt: Math.round(e.p*100) + '%' }));
+  drawStandings(list, 'STRECKE');
 }
 
 /* ── Ergebnis ────────────────────────────────────────────────── */
 function showResult(){
   const r = S.results[S.idx], d = DISCIPLINES[r.key];
   document.getElementById('r-title').textContent = r.icon + ' ' + r.name;
-  document.getElementById('r-medal').textContent = r.ok ? r.medal : '😔';
+  document.getElementById('r-medal').textContent = r.place <= 3 ? r.medal : '🏃';
   document.getElementById('r-val').textContent = r.shown + ' ' + r.unit;
   document.getElementById('r-norm').textContent =
-    'Qualifikationsnorm: ' + r.norm + ' ' + r.unit + ' · ' + DIFFS[S.diff].name;
+    'Platz ' + r.place + ' von ' + r.rank.length +
+    ' · Norm ' + r.norm + ' ' + r.unit + ' · ' + DIFFS[S.diff].name;
   const v = document.getElementById('r-verdict');
   v.className = 'verdict ' + (r.ok ? 'ok' : 'no');
-  v.textContent = r.ok ? '✓ Qualifiziert – ' + r.mname : '✗ Norm verfehlt';
+  v.textContent = (r.ok ? '✓ Qualifiziert' : '✗ Norm verfehlt') +
+                  (r.place <= 3 ? ' · ' + r.medal + ' ' + r.mname : '');
+
+  // Vollstaendige Ergebnisliste – wer war wie schnell bzw. wie weit
+  const md = {1:'🥇',2:'🥈',3:'🥉'};
+  document.getElementById('r-rank').innerHTML =
+    '<tr><th>Pl.</th><th>Name</th><th class="r">Ergebnis</th><th class="r"></th></tr>' +
+    r.rank.map(e =>
+      `<tr${e.you ? ' style="background:rgba(255,215,94,.1)"' : ''}>` +
+      `<td>${e.pos}</td>` +
+      `<td>${e.land} ${e.you ? '<b>' + e.name + '</b>' : e.name}</td>` +
+      `<td class="r">${e.shown} ${r.unit}</td>` +
+      `<td class="r">${md[e.pos] || ''}</td></tr>`).join('');
   document.getElementById('r-next').textContent =
     (S.idx + 1 < S.queue.length) ? 'Nächste Disziplin →' : 'Zur Wertung →';
   show('s-result');
@@ -852,7 +983,7 @@ function showSummary(){
     if (r.medal==='🥇') g++; else if (r.medal==='🥈') s++; else if (r.medal==='🥉') b++;
     rows += `<tr><td>${r.icon} ${r.name}</td><td class="r">${r.shown} ${r.unit}</td>` +
             `<td class="r" style="color:#7f92aa">${r.norm} ${r.unit}</td>` +
-            `<td class="r">${r.ok ? r.medal + ' ' + r.mname : '—'}</td></tr>`;
+            `<td class="r">${r.place <= 3 ? r.medal + ' Platz ' + r.place : 'Platz ' + r.place}</td></tr>`;
   });
   document.getElementById('sum-table').innerHTML = rows;
   const tot = g+s+b;
