@@ -594,7 +594,8 @@ function showBrief(key){
     'Stufe <b style="color:#fff">' + DIFFS[S.diff].name + '</b> · ' +
     'Qualifikationsnorm <b style="color:#fff">' + d.norms[S.diff] + ' ' + d.unit + '</b>' +
     (S.queue.length > 1 ? ' · Disziplin ' + (S.idx+1) + ' von ' + S.queue.length : '') +
-    (S.stage === 'final' ? ' · <b style="color:#ffd75e">Nur die Besten – jetzt zählt es</b>' : '');
+    (S.stage === 'final'
+      ? '<br><b style="color:#ffd75e">Finale: stärkeres Feld und schärfere Bedingungen</b>' : '');
   document.getElementById('b-steps').innerHTML =
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
@@ -605,7 +606,7 @@ function showBrief(key){
     keys.push('<span>Tasten: <kbd>A</kbd> <kbd>D</kbd></span>');
   if (has('gear','runup','declare','lift','hurdle'))
     keys.push('<span>Aktion: <kbd>W</kbd></span>');
-  if (has('react','bar2'))
+  if (has('react'))
     keys.push('<span>Start/Stopp: <kbd>Leertaste</kbd></span>');
   keys.push('<span>Touch: die großen Flächen unten</span>');
   document.getElementById('b-keys').innerHTML = keys.join('');
@@ -644,6 +645,7 @@ function startDiscipline(key){
   setPadLabels();
   if (d.startW){ G.weight = d.startW; G.minDecl = d.minW; }
   if (d.hCount) for (let i=0;i<d.hCount;i++) G.hurdles.push(d.hFirst + i*d.hGap);
+  if (d.runway) G.runway = d.runway * FIN(1, 0.80);
   show('s-play');
   lastT = performance.now();
   cancelAnimationFrame(raf);
@@ -685,8 +687,6 @@ function setPadLabels(){
   else if (p === 'lift'){ pads.className='onlyshift';
     document.getElementById('padS').textContent='🏋️ STOPP';
     hint.textContent='Zeiger in der grünen Zone stoppen. (W)'; }
-  else if (p === 'bar2'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
-    hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
 }
 
 function loop(now){
@@ -738,7 +738,7 @@ function update(dt){
     // Ein einziger Druck erledigt beides: er wirft ab UND seine Lage auf dem
     // Winkelbalken bestimmt den Abflugwinkel. Spaet werfen bringt Tempo,
     // kostet aber die freie Wahl des Moments.
-    const spd = [1.05, 1.30, 1.55, 1.85][S.diff];
+    const spd = dScale([1.05, 1.30, 1.55, 1.85]);        // Winkelbalken
     G.barX += G.barDir * spd * dt;
     if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
     if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
@@ -765,7 +765,9 @@ function update(dt){
     if (IN.shift > 0){
       IN.shift = 0;
       const speedF = Math.min(1, G.v / d.runV);
-      const acc = 1 - Math.abs(G.barX - 0.5) * 2;
+      // Im Finale zaehlt jede Abweichung vom Mittelpunkt staerker – so deckt
+      // sich die Wertung mit der schmaleren gezeichneten Zone.
+      const acc = Math.pow(1 - Math.abs(G.barX - 0.5) * 2, FIN(1, 2.2));
       const val = Math.round((26 + speedF * 52) * (0.60 + acc * 0.40) * 10) / 10;
       G.bestVal = Math.max(G.bestVal, val);
       big.textContent = val.toFixed(1) + ' m';
@@ -774,7 +776,7 @@ function update(dt){
       done();
       return;
     }
-    if (G.runX >= d.runway){                 // Uebertreten
+    if (G.runX >= G.runway){                 // Uebertreten
       G.foulMsg = 1.2;
       big.textContent = 'ÜBERTRETEN!'; big.style.color = 'var(--red)';
       setTimeout(()=>{ if (big) big.textContent = ''; }, 1000);
@@ -795,7 +797,7 @@ function update(dt){
     if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; strokes++; }
     IN.tapL = IN.tapR = IN.tapAny = 0;
     G.v += d.kick * eff * strokes;
-    G.v = Math.max(0, G.v - d.drag * G.v * dt);
+    G.v = Math.max(0, G.v - d.drag * FIN(1, 1.16) * G.v * dt);     // Finale: zaeher
     if (IN.shift > 0){
       IN.shift = 0;
       if (G.gear < gs.length - 1){       // Tempo bleibt, Frequenz faellt
@@ -816,7 +818,7 @@ function update(dt){
   if (G.phase === 'dive'){
     // Unter Wasser schneller, aber die Luft laeuft ab. Einzige Entscheidung:
     // wann tauche ich auf? Zu spaet und der Einbruch frisst den Vorsprung.
-    G.air = Math.max(0, G.air - dt / d.airSec);
+    G.air = Math.max(0, G.air - dt / (d.airSec * FIN(1, 0.82)));   // Finale: weniger Luft
     G.v += (d.diveV - G.v) * Math.min(1, dt * 2.6);
     G.dist += G.v * dt;
     if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT + (G.reactT||0)); return; }
@@ -867,7 +869,8 @@ function update(dt){
         G.hMsg = 'Fehlsprung'; G.hMsgT = 0.7;
       } else {
         G.fly = 0.32;
-        if (gap >= 1.3 && gap <= 2.7){ G.clean++;   G.hMsg = 'sauber'; }
+        const lo = FIN(1.3, 1.55), hi = FIN(2.7, 2.40);   // Finale: engeres Fenster
+        if (gap >= lo && gap <= hi){ G.clean++;   G.hMsg = 'sauber'; }
         else if (gap >= 0.5)         { G.touched++; G.pendPen = 0.85; G.pendRate = 0.86;
                                        G.hMsg = 'gestreift'; }
         else                         { G.hit++;     G.pendPen = 0.55; G.pendRate = 0.62;
@@ -898,7 +901,8 @@ function update(dt){
     IN.tapL = IN.tapR = IN.tapAny = 0;
     G.freq  = Math.max(0, G.freq  - dt * (0.12 + G.freq  * 0.15));
     G.power = Math.max(0, G.power - dt * (0.10 + G.power * 0.13));
-    G.stam  = Math.max(0, G.stam  - dt * (0.020 + G.power * G.power * 0.095));
+    G.stam  = Math.max(0, G.stam  - dt * (0.020 + G.power * G.power * 0.095)
+                                        * FIN(1, 1.28));   // Finale zehrt mehr
     if (G.stam <= 0 && !G.burned){
       G.burned = true;
       big.textContent = 'ÜBERSÄUERT!'; big.style.color = 'var(--red)';
@@ -934,8 +938,8 @@ function update(dt){
   if (G.phase === 'duel'){
     // Das Zeitfenster zum Parieren ist (1 - Entscheidungsschwelle) / Tempo.
     // Bei 0.65 als Schwelle bleiben 0.47 / 0.33 / 0.24 / 0.18 Sekunden.
-    const spd    = [0.75, 1.05, 1.45, 1.95][S.diff];   // wie schnell die Klinge ausfaehrt
-    const feintP = [0.35, 0.45, 0.58, 0.66][S.diff];   // Anteil Finten
+    const spd    = dScale([0.75, 1.05, 1.45, 1.95]);   // wie schnell die Klinge ausfaehrt
+    const feintP = dScale([0.35, 0.45, 0.58, 0.66]);   // Anteil Finten
     if (G.fMsgT > 0) G.fMsgT -= dt;
 
     const punkt = (mir, txt) => {
@@ -1008,7 +1012,7 @@ function update(dt){
   }
 
   if (G.phase === 'lift'){
-    const spd = [1.05, 1.35, 1.7, 2.1][S.diff];
+    const spd = dScale([1.05, 1.35, 1.7, 2.1]);
     G.barX += G.barDir * spd * dt;
     if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
     if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
@@ -1030,34 +1034,19 @@ function update(dt){
     return;
   }
 
-  if (G.phase === 'bar2'){
-    const spd = [1.05, 1.35, 1.7, 2.1][S.diff];
-    G.barX += G.barDir * spd * dt;
-    if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
-    if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
-    if (IN.tapAny > 0){
-      IN.tapAny = 0; IN.tapL = IN.tapR = 0;
-      const acc = 1 - Math.abs(G.barX - 0.5) * 2;       // 1 = perfekt mittig
-      if (G.phase === 'bar2' && G.angle === null){
-        G.angle = acc; G.barX = 0; G.barDir = 1;        // zweite Stufe: Kraft
-        big.textContent = 'Winkel ' + Math.round(acc*100) + '%';
-        big.style.color = 'var(--gold)';
-        setTimeout(()=>{ if(big) big.textContent=''; }, 700);
-      } else {
-        const val = (G.phase === 'lift')
-          ? liftValue(acc)
-          : throwValue(G.angle, acc);
-        G.bestVal = Math.max(G.bestVal, val);
-        G.angle = null; G.barX = 0; G.barDir = 1;
-        if (G.att >= (d.attempts||3)) finish(G.bestVal);
-        else { G.att++; big.textContent = 'Versuch ' + G.att; big.style.color='#cfe0f2';
-               setTimeout(()=>{ if(big) big.textContent=''; }, 800); }
-      }
-    }
-    return;
-  }
 
 }
+
+// Im Finale liegt die Schwierigkeit zwischen der gewaehlten Stufe und der
+// naechsten. Bei Weltklasse wird der letzte Stufenabstand fortgeschrieben.
+function dScale(arr){
+  const i = S.diff;
+  if (S.stage !== 'final') return arr[i];
+  const step = (i < arr.length - 1) ? arr[i+1] - arr[i] : arr[i] - arr[i-1];
+  return arr[i] + step * 0.6;
+}
+// Im Finale zusaetzlich zugespitzte Werte
+const FIN = (normal, final) => S.stage === 'final' ? final : normal;
 
 // Gueltige Zone schrumpft mit dem angesagten Gewicht und der Schwierigkeit
 function liftZone(w){
@@ -1066,17 +1055,7 @@ function liftZone(w){
   // Steil abfallend: beim Maximum bleibt kaum ein Fenster, sonst waere es
   // immer richtig, einfach das Hoechstgewicht anzusagen.
   return Math.max(0.010, (0.26 * Math.pow(1 - f, 1.3) + 0.012)
-                         * [1.15, 1.0, 0.87, 0.75][S.diff]);
-}
-
-function throwValue(angleAcc, powerAcc){
-  // Bestwert bei gutem Winkel UND voller Kraft
-  const base = 30 + powerAcc * 58;
-  return Math.round((base * (0.6 + angleAcc * 0.4)) * 10) / 10;
-}
-function liftValue(acc){
-  const base = [70, 95, 118, 138][S.diff];
-  return Math.round(base + acc * 62);
+                         * dScale([1.15, 1.0, 0.87, 0.75]));
 }
 
 function nextPhase(){
@@ -1256,8 +1235,9 @@ function drawRace(){
     ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx, H-38, bw, 13);
     // Grüner Absprungbereich: 1,3 bis 2,7 m vor der Hürde (Skala 0..6 m)
     const mAt = m => bx + bw * (1 - m/6);
+    const zLo = FIN(1.3, 1.55), zHi = FIN(2.7, 2.40);
     ctx.fillStyle='rgba(57,224,143,.55)';
-    ctx.fillRect(mAt(2.7), H-38, mAt(1.3)-mAt(2.7), 13);
+    ctx.fillRect(mAt(zHi), H-38, mAt(zLo)-mAt(zHi), 13);
     ctx.fillStyle='rgba(255,215,94,.25)';
     ctx.fillRect(mAt(5.0), H-38, mAt(2.7)-mAt(5.0), 13);
     if (hz !== undefined){
@@ -1396,14 +1376,14 @@ function drawRunup(){
   ctx.textAlign='center'; ctx.fillStyle='#9fb6cf'; ctx.font='600 11px Segoe UI,Arial';
   ctx.fillText('ABWURFLINIE', x1, gy-16);
   // Werfer
-  const px = x0 + (G.runX / d.runway) * (x1 - x0);
+  const px = x0 + (G.runX / G.runway) * (x1 - x0);
   ctx.font='34px serif';
   ctx.fillText('🏃', px, gy - 4 + Math.sin(G.t*16)*(G.v/d.runV)*3);
 
   // Winkelbalken
   const bw = W-290, bx = 40, by = H*0.82;
   ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 26);
-  const zw = [0.22,0.17,0.13,0.10][S.diff];
+  const zw = dScale([0.22,0.17,0.13,0.10]);
   ctx.fillStyle='rgba(255,215,94,.30)'; ctx.fillRect(bx + bw*(0.5-zw), by, bw*zw*2, 26);
   ctx.fillStyle='rgba(57,224,143,.55)'; ctx.fillRect(bx + bw*(0.5-zw*0.42), by, bw*zw*0.84, 26);
   ctx.fillStyle='#fff'; ctx.fillRect(bx + bw*G.barX - 3, by-8, 6, 42);
@@ -1414,7 +1394,7 @@ function drawRunup(){
   ctx.fillStyle='#9fb6cf'; ctx.font='600 14px Segoe UI,Arial';
   ctx.fillText('Versuch ' + G.att + ' / ' + d.attempts, 20, 32);
   ctx.fillText('Tempo ' + G.v.toFixed(1) + ' m/s', 20, 54);
-  const restM = Math.max(0, d.runway - G.runX);
+  const restM = Math.max(0, G.runway - G.runX);
   ctx.fillStyle = restM < 6 ? '#ff6a5a' : '#9fb6cf';
   ctx.fillText('noch ' + restM.toFixed(1) + ' m bis zur Linie', 20, 76);
 
@@ -1431,7 +1411,7 @@ function drawBar(){
   const bw = W-120, bx = 60, by = H/2 + 20;
   ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 34);
   // Zonen
-  const zw = G.phase === 'lift' ? liftZone(G.weight) : [0.22,0.17,0.13,0.10][S.diff];
+  const zw = liftZone(G.weight);
   ctx.fillStyle='rgba(255,215,94,.24)';
   ctx.fillRect(bx + bw*(0.5-zw*1.6), by, bw*zw*3.2, 34);
   ctx.fillStyle='rgba(57,224,143,.62)';
