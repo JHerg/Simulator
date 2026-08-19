@@ -378,11 +378,16 @@ const DISCIPLINES = {
 
   pong:   { name:'Tischtennis', icon:'🏓', unit:'Pkt', lower:false,
             phases:['pong'], toWin:21, cap:25,
+            // Echte Tischmasse in Metern
+            tab:{ len:2.74, halfW:0.7625, netZ:1.37, netH:0.1525 },
+            padZ:-0.22, oppZ:2.96, padHW:0.115, padV:2.9,
+            hitV:5.2, hitRange:1.8, steer:0.62, flug:0.45, lift:1.75, chargeT:0.80,
+            oppPow:0.55,
             norms:[30, 44, 54, 62],
-            short:'Ballwechsel bis 21',
-            how:[['🏓','Der Ball kommt auf eine <b>Seite</b> – drücke genau diese Seite, wenn der Zeiger im Trefferfenster ist.'],
-                 ['🎯','Je <b>mittiger</b> dein Timing, desto härter der Rückschlag und desto mehr Druck für den Gegner.'],
-                 ['💥','Kommt der Ball <b>hoch</b>, kannst du <b>schmettern</b> – fast sicherer Punkt, aber das Fenster ist eng. Ohne hohen Ball ist es ein Fehlschlag.'],
+            short:'Schläger führen, Ball treffen',
+            how:[['🏓','Den Schläger mit <b>links und rechts</b> führen. Berührt er den Ball, wird zurückgeschlagen.'],
+                 ['🎯','<b>Wo</b> du den Ball auf dem Blatt triffst, lenkt ihn: Mitte geht geradeaus, Rand zieht zur Seite.'],
+                 ['💥','Hältst du die <b>Kraft-Taste</b>, lädst du auf und schlägst härter. Zu viel Kraft und der Ball fliegt <b>über die Grundlinie hinaus</b>.'],
                  ['🏁','Satz bis <b>21 Punkte</b>, zwei Punkte Vorsprung nötig, gedeckelt bei 25. Ein Sieg zählt extra.']] },
 
   fence:  { name:'Fechten', icon:'🤺', unit:'Pkt', lower:false,
@@ -548,7 +553,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0 };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0, power:false };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -557,12 +562,13 @@ function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
 addEventListener('keydown', e => {
   if (e.repeat) return;
   // Hochschalten bewusst NICHT auf die Leertaste – die tritt sonst mit
-  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; flash('padS'); e.preventDefault(); }
+  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; IN.power = true; flash('padS'); e.preventDefault(); }
   if (e.code==='ArrowDown'||e.code==='KeyS') { IN.down++; flash('padD'); e.preventDefault(); }
   if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
 });
 addEventListener('keyup', e => {
+  if (e.code==='ArrowUp'||e.code==='KeyW') IN.power = false;
   if (e.code==='ArrowLeft'||e.code==='KeyA') IN.left = false;
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') IN.right = false;
 });
@@ -577,7 +583,7 @@ function bindPad(id, down, up){
   el.addEventListener('mouseup',    u);
   el.addEventListener('mouseleave', u);
 }
-bindPad('padS', ()=>{ IN.shift++; }, ()=>{});
+bindPad('padS', ()=>{ IN.shift++; IN.power = true; }, ()=>{ IN.power = false; });
 bindPad('padD', ()=>{ IN.down++; }, ()=>{});
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
@@ -641,8 +647,9 @@ function startDiscipline(key){
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, angle:null,
         cd: 3.0, raceT: 0,
-        pScore:[0,0], pState:'pause', pPause:1.0, pT:0, pDur:1, pSide:1,
-        pHigh:false, pQual:0, pMsg:'', pMsgT:0, pRally:0, pServe:true,
+        pScore:[0,0], pState:'pause', pPause:1.2, server:0, rally:0,
+        b:{x:0,y:0.3,z:1.4,vx:0,vy:0,vz:0}, pad:0, opp:0, charge:0,
+        lastHit:null, bounces:0, bounceSide:0, pMsg:'', pMsgT:0,
         fScore:[0,0], fState:'idle', fIdle:1.1, fExt:0, fFeint:false,
         fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
         field: buildField(key) };
@@ -690,8 +697,8 @@ function setPadLabels(){
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
   else if (p === 'pong'){ pads.className='withshift'; L.style.display='';
     L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
-    document.getElementById('padS').textContent='🏓 SCHMETTERN';
-    hint.textContent='Seite des Balls treffen (A/D). Bei hohem Ball schmettern (W).'; }
+    document.getElementById('padS').textContent='💥 KRAFT (halten)';
+    hint.textContent='Schläger mit A und D führen. W gedrückt halten lädt Kraft auf – aber nicht zu viel!'; }
   else if (p === 'duel'){ pads.className=''; L.style.display='';
     L.textContent='🛡 PARIEREN'; R.textContent='⚔️ ANGREIFEN';
     hint.textContent='Echte Attacke parieren (A), Finte bestrafen (D). Nichts tun ist gegen Finten sicher.'; }
@@ -723,7 +730,7 @@ function update(dt){
   // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen.
   // Satz-Disziplinen brauchen laenger und werden nach Punktestand gewertet -
   // sonst endete ein Spiel beim Stand von 14:17 mit null Punkten.
-  const capT = d.toWin ? 240 : 90;
+  const capT = d.toWin ? 360 : 90;   // ein Satz bis 21 darf lange dauern
   if (G.phase !== 'react' && G.t > capT){
     if (d.toWin)      finish(satzWert(d));
     else if (d.lower) finish(G.raceT);
@@ -955,68 +962,134 @@ function update(dt){
   }
 
   if (G.phase === 'pong'){
-    const win  = dScale([0.14, 0.11, 0.090, 0.075]);   // halbe Breite des Fensters
-    const base = dScale([1.05, 0.90, 0.78, 0.68]);     // Grundflugzeit
-    const eBas = dScale([0.06, 0.048, 0.038, 0.030]);  // Grundfehler des Gegners
-    const eFak = dScale([0.55, 0.44, 0.36, 0.29]);     // wie stark Druck wirkt
-    const HIT  = 0.88;                                  // idealer Treffpunkt
+    // Echte Flugbahn: Ball mit Schwerkraft, Schlaeger faehrt seitlich mit.
+    // Getroffen wird durch Beruehrung - der Treffpunkt auf dem Blatt lenkt.
+    const B = G.b, T = d.tab;
     if (G.pMsgT > 0) G.pMsgT -= dt;
 
+    // Wer hat den Fehler gemacht? Ohne vorherigen Schlag ist es ein
+    // Aufschlagfehler - sonst waere ein verpatzter Aufschlag ein Punkt fuer
+    // den Aufschlaeger selbst.
+    const fehler = () => G.lastHit === 'you' ? false
+                       : G.lastHit === 'opp' ? true
+                       : G.server !== 0;
     const punkt = (mir, txt) => {
       G.pScore[mir ? 0 : 1]++;
-      G.pMsg = txt; G.pMsgT = 1.0;
-      G.pState = 'pause'; G.pPause = 0.9; G.pRally = 0;
-      const a = G.pScore[0], b = G.pScore[1];
-      const fertig = (a >= d.toWin || b >= d.toWin) && Math.abs(a-b) >= 2
-                     || a >= d.cap || b >= d.cap;
-      if (fertig) finish(satzWert(d));
+      G.pMsg = txt; G.pMsgT = 1.4;
+      G.pState = 'pause'; G.pPause = 0.9;
+      const a2 = G.pScore[0], b2 = G.pScore[1];
+      if (((a2 >= d.toWin || b2 >= d.toWin) && Math.abs(a2-b2) >= 2) || a2 >= d.cap || b2 >= d.cap)
+        finish(satzWert(d));
     };
 
+    // ── Schlaeger steuern ──
+    const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
+    G.pad = Math.max(-T.halfW - 0.22, Math.min(T.halfW + 0.22, G.pad + steer * d.padV * dt));
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    // Kraft aufladen, solange gehalten wird
+    G.charge = IN.power ? Math.min(1, G.charge + dt / d.chargeT)
+                        : Math.max(0, G.charge - dt * 2.2);
+
     if (G.pState === 'pause'){
-      IN.tapL = IN.tapR = IN.tapAny = IN.shift = 0;
       G.pPause -= dt;
       if (G.pPause <= 0){
-        G.pState = 'fly'; G.pT = 0;
-        G.pSide  = Math.random() < 0.5 ? -1 : 1;
-        G.pDur   = base * (0.95 + Math.random() * 0.15);
-        G.pHigh  = false;
+        // Aufschlag: Ball wird vor dem Aufschlaeger hochgeworfen
+        const meiner = G.server === 0;
+        G.pState = 'rally'; G.lastHit = null; G.bounces = 0; G.bounceSide = 0;
+        if (meiner){
+          // Ball wird hochgeworfen und kommt zum Schlaeger zurueck
+          B.x = G.pad; B.y = 0.50; B.z = d.padZ + 0.35;
+          B.vx = 0; B.vy = 1.2; B.vz = -0.9;
+          G.pMsg = 'Dein Aufschlag'; G.pMsgT = 1.2;
+        } else {
+          B.x = G.opp * 0.5; B.y = 0.34; B.z = d.oppZ - 0.10;
+          B.vx = (Math.random()-0.5) * 0.5; B.vy = 1.4; B.vz = -5.2;
+          G.lastHit = 'opp'; G.pMsg = 'Aufschlag Gegner'; G.pMsgT = 1.2;
+        }
       }
       return;
     }
 
-    // Ball fliegt auf dich zu
-    G.pT += dt / G.pDur;
-    const links = IN.tapL > 0, rechts = IN.tapR > 0, schmetter = IN.shift > 0;
-    IN.tapL = IN.tapR = IN.tapAny = IN.shift = 0;
+    // ── Ballflug ──
+    const zAlt = B.z;
+    B.vy -= 9.81 * dt;
+    B.x += B.vx * dt; B.y += B.vy * dt; B.z += B.vz * dt;
 
-    if (G.pT >= 1.0){ punkt(false, 'Ball durchgelassen'); return; }
+    // Netz
+    if ((zAlt - T.netZ) * (B.z - T.netZ) < 0 && B.y < T.netH){
+      punkt(fehler(), 'Netz'); return;
+    }
 
-    if (links || rechts || schmetter){
-      const abw = Math.abs(G.pT - HIT);
-      const seiteOk = schmetter ? true : ((links ? -1 : 1) === G.pSide);
-      const fenster = schmetter ? win * 0.55 : win;
-
-      if (schmetter && !G.pHigh){ punkt(false, 'Fehlschlag – kein hoher Ball'); return; }
-      if (!seiteOk)            { punkt(false, 'Falsche Seite');                return; }
-      if (abw > fenster)       { punkt(false, abw > 0 && G.pT < HIT ? 'Zu früh' : 'Zu spät'); return; }
-
-      // Treffer: Qualitaet bestimmt den Druck auf den Gegner
-      const qual = 1 - abw / fenster;
-      G.pQual = qual; G.pRally++;
-      const druck = schmetter ? 0.55 + qual * 0.45 : qual;
-      const fehlChance = schmetter ? 0.80 + qual * 0.15 : eBas + druck * eFak;
-
-      if (Math.random() < fehlChance){
-        punkt(true, schmetter ? 'Schmetterball!' : qual > 0.75 ? 'Starker Ball!' : 'Punkt für dich');
+    // Aufsprung auf der Platte
+    if (B.y <= 0 && B.vy < 0){
+      const drauf = Math.abs(B.x) <= T.halfW && B.z >= 0 && B.z <= T.len;
+      if (drauf){
+        B.y = 0; B.vy = -B.vy * 0.72; B.vx *= 0.96; B.vz *= 0.96;
+        G.bounces++;
+        G.bounceSide = B.z > T.netZ ? 1 : -1;
+        if (G.lastHit === 'you' && G.bounceSide < 0){ punkt(false, 'Eigene Hälfte'); return; }
+        if (G.lastHit === 'opp' && G.bounceSide > 0 && G.bounces > 1){ /* normal */ }
+      } else {
+        // Hinter der Grundlinie aufgekommen heisst: mit zu viel Kraft geschlagen
+        const zuHart = B.z > T.len;
+        punkt(fehler(), zuHart ? (G.lastHit === 'you' ? 'Zu hart – aus!' : 'Gegner zu hart')
+                               : 'Daneben');
         return;
       }
-      // Gegner bringt ihn zurueck: schwacher Schlag kommt schnell zurueck
-      G.pState = 'fly'; G.pT = 0;
-      G.pSide  = Math.random() < 0.5 ? -1 : 1;
-      G.pDur   = base * (1.22 - druck * 0.42) * (0.95 + Math.random() * 0.12);
-      G.pHigh  = druck > 0.72 && Math.random() < 0.38;   // Vorlage zum Schmettern
-      G.pMsg = ''; 
-      return;
+    }
+
+    // Ueber die Grundlinie hinaus: zu hart geschlagen
+    if (B.z > T.len + 0.35 && G.bounceSide <= 0){ punkt(false, 'Zu hart – aus!'); return; }
+    if (B.z < -0.9){ punkt(false, 'Nicht erreicht'); return; }
+    if (Math.abs(B.x) > T.halfW + 1.1){ punkt(fehler(), 'Seitlich aus'); return; }
+
+    // ── Dein Schlaeger: Beruehrung schlaegt zurueck ──
+    if (B.vz <= 0 && zAlt > d.padZ && B.z <= d.padZ){
+      if (Math.abs(B.x - G.pad) <= d.padHW && B.y < 0.75){
+        const treff = (B.x - G.pad) / d.padHW;        // -1 .. 1 auf dem Blatt
+        const kraft = d.hitV + G.charge * d.hitRange;
+        B.vz =  kraft;
+        const zielX = Math.max(-T.halfW*0.92, Math.min(T.halfW*0.92, B.x + treff * d.steer));
+        B.vx =  (zielX - B.x) / d.flug;
+        B.vy =  d.lift;
+        B.z  =  d.padZ + 0.01;
+        G.lastHit = 'you'; G.bounces = 0; G.bounceSide = 0;
+        G.rally++;
+        G.pMsg = G.charge > 0.72 ? 'Harter Schlag!' : ''; G.pMsgT = G.charge > 0.72 ? 0.7 : 0;
+        G.charge = 0;
+      }
+    }
+    if (B.vz < 0 && B.z < d.padZ - 0.05){ punkt(false, 'Nicht erreicht'); return; }
+
+    // ── Gegner ──
+    const oppV     = dScale([1.5, 1.80, 2.10, 2.45]);
+    const oppErr   = dScale([0.12, 0.090, 0.070, 0.055]);
+    const oppReach = dScale([1.8, 2.00, 2.20, 2.45]);
+    const ziel = B.vz > 0 ? B.x + B.vx * 0.25 : 0;
+    const dx = Math.max(-1, Math.min(1, (ziel - G.opp) * 3));
+    G.opp += dx * oppV * dt;
+    G.opp = Math.max(-T.halfW - 0.2, Math.min(T.halfW + 0.2, G.opp));
+
+    if (B.vz > 0 && zAlt < d.oppZ && B.z >= d.oppZ){
+      if (G.bounceSide <= 0){
+        punkt(fehler(), G.lastHit === 'you' ? 'Zu hart – aus!' : 'Gegner zu hart');
+        return;
+      }
+      // Je weiter er laufen muss und je haerter der Ball, desto eher patzt er.
+      // Ohne das enden Ballwechsel nur durch Zufall und laufen ewig.
+      const weg   = Math.abs(B.x - G.opp) / d.padHW;
+      const tempo = Math.max(0, (Math.abs(B.vz) - d.hitV) / d.hitRange);
+      const fehl  = oppErr + Math.max(0, weg - 1.0) * 0.26 + tempo * 0.22;
+      if (weg > oppReach){ punkt(true, 'Gegner: nicht erreicht'); return; }
+      if (Math.random() < fehl){ punkt(true, 'Gegner: Fehler'); return; }
+      const treff = Math.max(-1, Math.min(1, (B.x - G.opp) / d.padHW));
+      B.vz = -(d.hitV + Math.random() * d.hitRange * d.oppPow);
+      const zielO = Math.max(-T.halfW*0.92, Math.min(T.halfW*0.92,
+                      B.x - treff * d.steer * 0.9 + (Math.random()-0.5) * 0.30));
+      B.vx = (zielO - B.x) / d.flug;
+      B.vy = d.lift;
+      B.z  = d.oppZ - 0.01;
+      G.lastHit = 'opp'; G.bounces = 0; G.bounceSide = 0;
     }
     return;
   }
@@ -1390,65 +1463,120 @@ function drawStandings(entries, title){
 }
 
 function drawPong(){
-  const d = G.d;
-  bg('#10251c','#060d0a');
-  // Tisch von oben, Netz in der Mitte
-  const tx = W*0.20, tw = W*0.60, ty = 58, th = H*0.62;
-  ctx.fillStyle='#12507e'; ctx.fillRect(tx, ty, tw, th);
-  ctx.strokeStyle='#e9f2fb'; ctx.lineWidth=2;
-  ctx.strokeRect(tx, ty, tw, th);
-  ctx.beginPath(); ctx.moveTo(tx+tw/2, ty); ctx.lineTo(tx+tw/2, ty+th); ctx.stroke();
-  ctx.fillStyle='rgba(233,242,251,.85)';
-  ctx.fillRect(tx-8, ty+th/2-2, tw+16, 4);          // Netz
+  const d = G.d, T = d.tab, B = G.b;
+  // Halle
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#101b28'); g.addColorStop(1,'#060a12');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
 
-  // Schlaeger
-  ctx.font='26px serif'; ctx.textAlign='center';
-  ctx.fillText('🏓', tx+tw/2 + G.pSide*tw*0.22, ty+22);            // Gegner
-  ctx.fillText('🏓', tx+tw/2 + G.pSide*tw*0.22, ty+th-6);          // du
+  // Perspektive: Kamera hinter dem Spieler, Blick die Platte entlang
+  // Kamera weiter zurueck, sonst fuellt der eigene Schlaeger das halbe Bild
+  const HOR = 58, CAMY = 0.62, CAMZ = -1.30, F = W * 0.54;
+  const px = (x,z) => W/2 + x * F / (z - CAMZ);
+  const py = (y,z) => HOR + (CAMY - y) * F / (z - CAMZ);
 
-  // Ball auf dem Weg zu dir
-  if (G.pState === 'fly'){
-    const by = ty + th*0.10 + (th*0.82) * Math.min(1, G.pT);
-    const bx = tx + tw/2 + G.pSide * tw*0.22;
-    ctx.beginPath(); ctx.arc(bx, by, G.pHigh ? 9 : 6, 0, Math.PI*2);
-    ctx.fillStyle = G.pHigh ? '#ffd75e' : '#fff'; ctx.fill();
-    if (G.pHigh){
-      ctx.fillStyle='#0b1a14'; ctx.fillRect(W/2-140, ty+th*0.26-14, 280, 20);
-      ctx.fillStyle='#ffd75e'; ctx.font='700 15px Segoe UI,Arial';
-      ctx.fillText('HOHER BALL – SCHMETTERN!', W/2, ty+th*0.26);
-    }
+  // Plattenflaeche
+  ctx.beginPath();
+  ctx.moveTo(px(-T.halfW,0),      py(0,0));
+  ctx.lineTo(px( T.halfW,0),      py(0,0));
+  ctx.lineTo(px( T.halfW,T.len),  py(0,T.len));
+  ctx.lineTo(px(-T.halfW,T.len),  py(0,T.len));
+  ctx.closePath();
+  const tg = ctx.createLinearGradient(0, py(0,T.len), 0, py(0,0));
+  tg.addColorStop(0,'#0e4a78'); tg.addColorStop(1,'#1466a4');
+  ctx.fillStyle = tg; ctx.fill();
+
+  // Linien: Rand und Mittellinie
+  ctx.strokeStyle='#f2f7fc'; ctx.lineWidth=2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px(0,0), py(0,0)); ctx.lineTo(px(0,T.len), py(0,T.len));
+  ctx.lineWidth=1.5; ctx.stroke();
+
+  // Kante der Platte (Dicke)
+  ctx.fillStyle='#0a2740';
+  ctx.beginPath();
+  ctx.moveTo(px(-T.halfW,0), py(0,0));
+  ctx.lineTo(px( T.halfW,0), py(0,0));
+  ctx.lineTo(px( T.halfW,0), py(0,0)+9);
+  ctx.lineTo(px(-T.halfW,0), py(0,0)+9);
+  ctx.closePath(); ctx.fill();
+
+  // Netz mit Pfosten
+  const nw = T.halfW + 0.15;
+  ctx.fillStyle='rgba(232,240,250,.30)';
+  ctx.beginPath();
+  ctx.moveTo(px(-nw,T.netZ), py(0,T.netZ));
+  ctx.lineTo(px( nw,T.netZ), py(0,T.netZ));
+  ctx.lineTo(px( nw,T.netZ), py(T.netH,T.netZ));
+  ctx.lineTo(px(-nw,T.netZ), py(T.netH,T.netZ));
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#e8f0fa'; ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(px(-nw,T.netZ), py(T.netH,T.netZ));
+  ctx.lineTo(px( nw,T.netZ), py(T.netH,T.netZ)); ctx.stroke();
+  ctx.lineWidth=3;
+  [-nw, nw].forEach(x => {
+    ctx.beginPath();
+    ctx.moveTo(px(x,T.netZ), py(0,T.netZ));
+    ctx.lineTo(px(x,T.netZ), py(T.netH,T.netZ)); ctx.stroke();
+  });
+
+  // Schlaeger des Gegners
+  const os = F / (d.oppZ - CAMZ);
+  ctx.fillStyle='#c62828';
+  ctx.beginPath();
+  ctx.ellipse(px(G.opp,d.oppZ), py(0.20,d.oppZ), d.padHW*os, d.padHW*os*1.25, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Ballschatten auf der Platte
+  if (B.z > 0 && B.z < T.len && Math.abs(B.x) < T.halfW){
+    const ss = F / (B.z - CAMZ);
+    ctx.fillStyle='rgba(0,0,0,.28)';
+    ctx.beginPath();
+    ctx.ellipse(px(B.x,B.z), py(0,B.z), 0.022*ss, 0.010*ss, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Ball
+  if (B.z > CAMZ + 0.15){
+    const bs = F / (B.z - CAMZ);
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(px(B.x,B.z), py(B.y,B.z), Math.max(2, 0.020*bs), 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Eigener Schlaeger
+  const ps = F / (d.padZ - CAMZ) * 0.82;                    // etwas kleiner zeichnen
+  const pxs = px(G.pad, d.padZ), pys = py(0.02, d.padZ);
+  ctx.fillStyle='#7a4a28';                                   // Griff
+  ctx.fillRect(pxs - 5, pys + d.padHW*ps*0.95, 10, 26);
+  ctx.fillStyle = G.charge > 0.02 ? '#ff7043' : '#2a2a30';   // Blatt
+  ctx.beginPath();
+  ctx.ellipse(pxs, pys, d.padHW*ps, d.padHW*ps*1.20, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.30)'; ctx.lineWidth=2; ctx.stroke();
+
+  // Kraftanzeige
+  if (G.charge > 0.02){
+    const bw = 150, bx = pxs - bw/2, by = pys + d.padHW*ps*1.20 + 34;
+    ctx.fillStyle='rgba(255,255,255,.16)'; ctx.fillRect(bx, by, bw, 9);
+    ctx.fillStyle = G.charge > 0.62 ? '#ff5a45' : G.charge > 0.35 ? '#ffd75e' : '#39e08f';
+    ctx.fillRect(bx, by, bw * G.charge, 9);
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ctx.fillRect(bx + bw*0.75, by-3, 2, 15);                 // ab hier droht das Aus
   }
 
   // Punktestand
-  ctx.font='800 34px Segoe UI,Arial'; ctx.fillStyle='#fff';
-  ctx.fillText(G.pScore[0] + ' : ' + G.pScore[1], W/2, 40);
+  ctx.textAlign='center';
+  ctx.font='800 32px Segoe UI,Arial'; ctx.fillStyle='#fff';
+  ctx.fillText(G.pScore[0] + ' : ' + G.pScore[1], W/2, 34);
   ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
-  ctx.fillText('DU     bis ' + d.toWin + '     GEGNER', W/2, 54);
-
+  ctx.fillText('DU     bis ' + d.toWin + '     GEGNER', W/2, 50);
   if (G.pMsgT > 0){
-    ctx.font='700 19px Segoe UI,Arial';
-    ctx.fillStyle = G.pMsg.includes('!') || G.pMsg.includes('dich') ? '#39e08f' : '#ff6a5a';
-    ctx.fillText(G.pMsg, W/2, ty+th+30);
-  } else if (G.pRally > 1){
-    ctx.font='600 13px Segoe UI,Arial'; ctx.fillStyle='#7f92aa';
-    ctx.fillText('Ballwechsel: ' + G.pRally, W/2, ty+th+30);
-  }
-
-  // Trefferfenster unten
-  const bx0 = 22, bw = W-44, HITP = 0.88;
-  const win = dScale([0.14, 0.11, 0.090, 0.075]);
-  ctx.textAlign='left'; ctx.fillStyle='#8ea3bd'; ctx.font='11px Segoe UI,Arial';
-  ctx.fillText(G.pSide < 0 ? 'BALL KOMMT LINKS' : 'BALL KOMMT RECHTS', bx0, H-44);
-  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx0, H-38, bw, 13);
-  ctx.fillStyle='rgba(57,224,143,.5)';
-  ctx.fillRect(bx0 + bw*(HITP-win), H-38, bw*win*2, 13);
-  if (G.pHigh){                                   // engeres Fenster beim Schmettern
-    ctx.fillStyle='rgba(255,215,94,.55)';
-    ctx.fillRect(bx0 + bw*(HITP-win*0.55), H-38, bw*win*1.1, 13);
-  }
-  if (G.pState === 'fly'){
-    ctx.fillStyle='#fff';
-    ctx.fillRect(bx0 + bw*Math.min(1, G.pT) - 2, H-42, 4, 21);
+    ctx.font='700 20px Segoe UI,Arial';
+    ctx.fillStyle = /Punkt für dich|Gegner daneben|Harter/.test(G.pMsg) ? '#39e08f' : '#ff6a5a';
+    ctx.fillText(G.pMsg, W/2, H-18);
   }
   ctx.textAlign='left';
 }
