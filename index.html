@@ -342,12 +342,14 @@ const DISCIPLINES = {
                  ['🔁','<b>3 Versuche</b> – gewertet wird der beste.']] },
 
   ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
-            phases:['react','slalom'], gates:12,
+            phases:['react','slalom'], gates:12, spacing:58,
+            vMin:17, vMax:33, acc:6.0, dec:9.0,
             norms:[38.0, 32.0, 27.5, 24.0],
-            short:'Durch alle Tore lenken',
+            short:'Tempo selbst dosieren',
             how:[['🚦','Auf <b>LOS!</b> reagieren, dann geht die Fahrt los.'],
                  ['🎿','Links/rechts <b>gedrückt halten</b> zum Lenken – nicht tippen.'],
-                 ['🚩','Jedes <b>verpasste Tor</b> kostet 2,5 Sekunden Strafzeit.']] },
+                 ['🔽','<b>Hocken</b> beschleunigt, Loslassen bremst. Schnell spart Zeit – aber die Lenkung wird <b>träge</b>.'],
+                 ['🚩','Vor weiten Toren rechtzeitig <b>aufrichten</b>, sonst verpasst du sie: 2,5 s Strafe je Tor.']] },
 
   lift:   { name:'Gewichtheben', icon:'🏋️', unit:'kg', lower:false,
             phases:['lift'], attempts:3,
@@ -496,7 +498,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0 };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, tuck:false };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -505,11 +507,12 @@ function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
 addEventListener('keydown', e => {
   if (e.repeat) return;
   // Hochschalten bewusst NICHT auf die Leertaste – die tritt sonst mit
-  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; flash('padS'); e.preventDefault(); }
+  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; IN.tuck = true; flash('padS'); e.preventDefault(); }
   if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
 });
 addEventListener('keyup', e => {
+  if (e.code==='ArrowUp'||e.code==='KeyW') IN.tuck = false;
   if (e.code==='ArrowLeft'||e.code==='KeyA') IN.left = false;
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') IN.right = false;
 });
@@ -524,7 +527,7 @@ function bindPad(id, down, up){
   el.addEventListener('mouseup',    u);
   el.addEventListener('mouseleave', u);
 }
-bindPad('padS', ()=>{ IN.shift++; }, ()=>{});
+bindPad('padS', ()=>{ IN.shift++; IN.tuck = true; }, ()=>{ IN.tuck = false; });
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
 
@@ -574,7 +577,7 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
-        runX:0, foulMsg:0,
+        runX:0, foulMsg:0, travel:0,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -617,15 +620,20 @@ function setPadLabels(){
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
   else if (p === 'bar2' || p === 'lift'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
     hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
-  else if (p === 'slalom'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
-    hint.textContent='Halte gedrückt zum Lenken – durch die Tore fahren. (A und D)'; }
+  else if (p === 'slalom'){ pads.className='withshift'; L.style.display='';
+    L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
+    document.getElementById('padS').textContent='🔽 HOCKEN (halten)';
+    hint.textContent='Lenken mit A und D. Hocken mit W beschleunigt – vor weiten Toren loslassen!'; }
 }
 
 function buildGates(){
-  const n = DISCIPLINES[G.key].gates;
-  const spread = [0.34, 0.40, 0.46, 0.52][S.diff];   // härter = weiter außen
-  for (let i=0;i<n;i++)
-    G.gates.push({ z: 90 + i*70, x: (i%2?1:-1) * spread * (0.5 + Math.random()*0.5) });
+  const d = DISCIPLINES[G.key];
+  // Gemischte Torfolge: enge Tore laden zum Hocken ein, weite zwingen zum
+  // Aufrichten. Ohne diese Abwechslung gaebe es keine Tempo-Entscheidung.
+  const MAG = [0.18, 0.40, 0.26, 0.54, 0.32, 0.60, 0.22, 0.50, 0.58, 0.30, 0.56, 0.38];
+  const sc = [0.80, 0.90, 1.00, 1.10][S.diff];
+  for (let i=0;i<d.gates;i++)
+    G.gates.push({ z: 80 + i*d.spacing, x: (i%2?1:-1) * MAG[i % MAG.length] * sc });
 }
 
 function loop(now){
@@ -824,18 +832,23 @@ function update(dt){
   }
 
   if (G.phase === 'slalom'){
+    // Hocken beschleunigt, Loslassen bremst. Hohes Tempo macht die Lenkung
+    // traege - weite Tore sind dann schlicht nicht mehr erreichbar.
+    G.v += (IN.tuck ? d.acc : -d.dec) * dt;
+    G.v = Math.max(d.vMin, Math.min(d.vMax, G.v));
+    const frac = (G.v - d.vMin) / (d.vMax - d.vMin);
+    const rate = 0.95 * (1 - 0.68 * frac);
     const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
     IN.tapL = IN.tapR = IN.tapAny = 0;
-    G.px += steer * 0.85 * dt;
-    G.px = Math.max(-0.62, Math.min(0.62, G.px));
-    const speed = [150, 178, 205, 232][S.diff];
-    G.travel = (G.travel || 0) + speed * dt;
-    // Tor passiert?
+    G.px = Math.max(-0.72, Math.min(0.72, G.px + steer * rate * dt));
+    G.travel = (G.travel || 0) + G.v * dt;
     const g = G.gates[G.gate];
     if (g && G.travel >= g.z){
-      if (Math.abs(G.px - g.x) > 0.19){ G.missed++;
+      if (Math.abs(G.px - g.x) > 0.19){
+        G.missed++;
         big.textContent = 'TOR VERPASST'; big.style.color='var(--red)';
-        setTimeout(()=>{ if(big) big.textContent=''; }, 500); }
+        setTimeout(()=>{ if(big) big.textContent=''; }, 500);
+      }
       G.gate++;
       if (G.gate >= G.gates.length) finish(G.t + G.missed * 2.5 + (G.reactT||0));
     }
@@ -1137,8 +1150,8 @@ function drawSlalom(){
   // Tore
   G.gates.forEach((g,i) => {
     const rel = g.z - trav;
-    if (rel < -20 || rel > 420) return;
-    const t = 1 - rel/420;                       // 0 = fern, 1 = nah
+    if (rel < -12 || rel > 230) return;
+    const t = 1 - rel/230;                       // 0 = fern, 1 = nah
     const y = t*t * H;
     const road = (W*0.40) + (W*0.60) * (t*t);
     const cx = W/2 + g.x * road;
@@ -1155,6 +1168,13 @@ function drawSlalom(){
   ctx.fillStyle='#33465e'; ctx.font='600 15px Segoe UI,Arial';
   ctx.fillText('Tor ' + Math.min(G.gate+1, G.gates.length) + ' / ' + G.gates.length, 22, 30);
   ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 52);
+  // Tempoanzeige: gruen = wendig, rot = traege
+  const fr = (G.v - G.d.vMin) / (G.d.vMax - G.d.vMin);
+  ctx.fillStyle = fr > 0.72 ? '#c0392b' : fr > 0.4 ? '#b8860b' : '#2d6a4f';
+  ctx.font='700 17px Segoe UI,Arial';
+  ctx.fillText((G.v*3.6).toFixed(0) + ' km/h' + (IN.tuck ? '  🔽' : ''), 22, 100);
+  ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#33465e';
+  ctx.fillText(fr > 0.72 ? 'Lenkung träge!' : fr > 0.4 ? 'noch wendig' : 'volle Kontrolle', 22, 118);
   if (G.missed) { ctx.fillStyle='#c0392b'; ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 74); }
 
   // Wer ist wie weit? Gegner fahren dieselbe Strecke parallel
