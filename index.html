@@ -396,7 +396,7 @@ const DISCIPLINES = {
             // Echte Tischmasse in Metern
             tab:{ len:2.74, halfW:0.7625, netZ:1.37, netH:0.1525 },
             padZ:-0.22, oppZ:2.96, padHW:0.115, padV:4.2,
-            hitV:5.2, hitRange:1.8, steer:0.62, flug:0.45, lift:1.75, chargeT:0.80,
+            hitV:5.2, hitRange:1.9, steer:0.62, flug:0.47, lift:2.05, chargeT:0.80,
             oppPow:0.55,
             norms:[30, 44, 54, 62],
             short:'Schläger führen, Ball treffen',
@@ -693,7 +693,7 @@ function startDiscipline(key){
         att:1, bestVal:0, barX:0, barDir:1, angle:null,
         cd: 3.0, raceT: 0,
         pScore:[0,0], pState:'pause', pPause:1.2, server:0, rally:0,
-        b:{x:0,y:0.3,z:1.4,vx:0,vy:0,vz:0}, pad:0, opp:0, charge:0,
+        b:{x:0,y:0.3,z:1.4,vx:0,vy:0,vz:0}, pad:0, opp:0, charge:0, padHW:0.12,
         lastHit:null, bounces:0, bounceSide:0, pMsg:'', pMsgT:0,
         fScore:[0,0], fState:'idle', fIdle:1.1, fExt:0, fFeint:false,
         fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
@@ -709,6 +709,8 @@ function startDiscipline(key){
   if (d.startW){ G.weight = d.startW; G.minDecl = d.minW; }
   if (d.hCount) for (let i=0;i<d.hCount;i++) G.hurdles.push(d.hFirst + i*d.hGap);
   if (d.runway) G.runway = d.runway * FIN(1, 0.80);
+  // Auf den leichten Stufen faengt ein breiteres Blatt auch knappe Baelle
+  if (d.padHW) G.padHW = dScale([0.185, 0.150, 0.120, 0.100]);
   show('s-play');
   lastT = performance.now();
   cancelAnimationFrame(raf);
@@ -1089,13 +1091,14 @@ function update(dt){
 
     // ── Dein Schlaeger: Beruehrung schlaegt zurueck ──
     if (B.vz <= 0 && zAlt > d.padZ && B.z <= d.padZ){
-      if (Math.abs(B.x - G.pad) <= d.padHW && B.y < 0.75){
-        const treff = (B.x - G.pad) / d.padHW;        // -1 .. 1 auf dem Blatt
+      if (Math.abs(B.x - G.pad) <= G.padHW && B.y < 0.75){
+        const treff = (B.x - G.pad) / G.padHW;        // -1 .. 1 auf dem Blatt
         const kraft = d.hitV + G.charge * d.hitRange;
         B.vz =  kraft;
-        const zielX = Math.max(-T.halfW*0.92, Math.min(T.halfW*0.92, B.x + treff * d.steer));
+        const zielX = Math.max(-T.halfW*0.86, Math.min(T.halfW*0.86, B.x + treff * d.steer));
         B.vx =  (zielX - B.x) / d.flug;
-        B.vy =  d.lift;
+        // Je tiefer der Ball getroffen wird, desto mehr muss untergriffen werden
+        B.vy =  Math.max(1.1, Math.min(2.2, d.lift - B.y * 1.3));
         B.z  =  d.padZ + 0.01;
         G.lastHit = 'you'; G.bounces = 0; G.bounceSide = 0;
         G.rally++;
@@ -1121,17 +1124,17 @@ function update(dt){
       }
       // Je weiter er laufen muss und je haerter der Ball, desto eher patzt er.
       // Ohne das enden Ballwechsel nur durch Zufall und laufen ewig.
-      const weg   = Math.abs(B.x - G.opp) / d.padHW;
+      const weg   = Math.abs(B.x - G.opp) / 0.12;
       const tempo = Math.max(0, (Math.abs(B.vz) - d.hitV) / d.hitRange);
       const fehl  = oppErr + Math.max(0, weg - 1.0) * 0.26 + tempo * 0.22;
       if (weg > oppReach){ punkt(true, 'Gegner: nicht erreicht'); return; }
       if (Math.random() < fehl){ punkt(true, 'Gegner: Fehler'); return; }
-      const treff = Math.max(-1, Math.min(1, (B.x - G.opp) / d.padHW));
+      const treff = Math.max(-1, Math.min(1, (B.x - G.opp) / 0.12));
       B.vz = -(d.hitV + Math.random() * d.hitRange * d.oppPow);
-      const zielO = Math.max(-T.halfW*0.92, Math.min(T.halfW*0.92,
+      const zielO = Math.max(-T.halfW*0.86, Math.min(T.halfW*0.86,
                       B.x - treff * d.steer * 0.9 + (Math.random()-0.5) * 0.30));
       B.vx = (zielO - B.x) / d.flug;
-      B.vy = d.lift;
+      B.vy = Math.max(1.1, Math.min(2.2, d.lift - B.y * 1.3));
       B.z  = d.oppZ - 0.01;
       G.lastHit = 'opp'; G.bounces = 0; G.bounceSide = 0;
     }
@@ -1570,7 +1573,7 @@ function drawPong(){
   const os = F / (d.oppZ - CAMZ);
   ctx.fillStyle='#c62828';
   ctx.beginPath();
-  ctx.ellipse(px(G.opp,d.oppZ), py(0.20,d.oppZ), d.padHW*os, d.padHW*os*1.25, 0, 0, Math.PI*2);
+  ctx.ellipse(px(G.opp,d.oppZ), py(0.20,d.oppZ), 0.12*os, 0.12*os*1.25, 0, 0, Math.PI*2);
   ctx.fill();
 
   // Ballschatten auf der Platte
@@ -1594,21 +1597,24 @@ function drawPong(){
   const ps = F / (d.padZ - CAMZ) * 0.82;                    // etwas kleiner zeichnen
   const pxs = px(G.pad, d.padZ), pys = py(0.02, d.padZ);
   ctx.fillStyle='#7a4a28';                                   // Griff
-  ctx.fillRect(pxs - 5, pys + d.padHW*ps*0.95, 10, 26);
+  ctx.fillRect(pxs - 5, pys + G.padHW*ps*0.95, 10, 26);
   ctx.fillStyle = G.charge > 0.02 ? '#ff7043' : '#2a2a30';   // Blatt
   ctx.beginPath();
-  ctx.ellipse(pxs, pys, d.padHW*ps, d.padHW*ps*1.20, 0, 0, Math.PI*2);
+  ctx.ellipse(pxs, pys, G.padHW*ps, G.padHW*ps*1.20, 0, 0, Math.PI*2);
   ctx.fill();
   ctx.strokeStyle='rgba(255,255,255,.30)'; ctx.lineWidth=2; ctx.stroke();
 
   // Kraftanzeige
   if (G.charge > 0.02){
-    const bw = 150, bx = pxs - bw/2, by = pys + d.padHW*ps*1.20 + 34;
-    ctx.fillStyle='rgba(255,255,255,.16)'; ctx.fillRect(bx, by, bw, 9);
-    ctx.fillStyle = G.charge > 0.62 ? '#ff5a45' : G.charge > 0.35 ? '#ffd75e' : '#39e08f';
+    // Feste Lage am unteren Rand – relativ zum Schlaeger rutscht sie bei
+    // breitem Blatt aus dem Bild
+    const bw = 170, bx = W/2 - bw/2, by = H - 22;
+    // Hintergrundzonen: gruen sicher, gelb schon lang, rot fliegt hinaus
+    ctx.fillStyle='rgba(57,224,143,.20)';  ctx.fillRect(bx, by, bw*0.45, 9);
+    ctx.fillStyle='rgba(255,215,94,.20)';  ctx.fillRect(bx+bw*0.45, by, bw*0.22, 9);
+    ctx.fillStyle='rgba(255,90,69,.22)';   ctx.fillRect(bx+bw*0.67, by, bw*0.33, 9);
+    ctx.fillStyle = G.charge > 0.67 ? '#ff5a45' : G.charge > 0.45 ? '#ffd75e' : '#39e08f';
     ctx.fillRect(bx, by, bw * G.charge, 9);
-    ctx.fillStyle='rgba(255,255,255,.55)';
-    ctx.fillRect(bx + bw*0.75, by-3, 2, 15);                 // ab hier droht das Aus
   }
 
   // Punktestand
