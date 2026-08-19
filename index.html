@@ -366,6 +366,16 @@ const DISCIPLINES = {
                  ['🚫','Erreichst du die <b>Abwurflinie</b> ohne zu werfen, ist der Versuch <b>ungültig</b>.'],
                  ['🔁','<b>3 Versuche</b> – gewertet wird der beste.']] },
 
+  hurd:   { name:'110 m Hürden', icon:'🏃', unit:'s', lower:true,
+            phases:['react','hurdle'], dist:110, vMax:9.6,
+            hFirst:13.72, hGap:9.14, hCount:10,
+            norms:[22.0, 17.5, 14.8, 13.5],
+            short:'Tempo halten, Hürden treffen',
+            how:[['🚦','Auf <b>LOS!</b> reagieren – Fehlstart vermeiden.'],
+                 ['👟','Abwechselnd links und rechts laufen. In der Luft bringt Tippen nichts.'],
+                 ['🦵','<b>Springen</b> mit der Aktionstaste, wenn der Zeiger im <b>grünen Bereich</b> ist – etwa zwei Meter vor der Hürde.'],
+                 ['💥','Zu früh oder zu spät heißt <b>streifen</b> oder <b>reißen</b> und kostet Tempo. Gar nicht springen wirft dich richtig zurück.']] },
+
   fence:  { name:'Fechten', icon:'🤺', unit:'Pkt', lower:false,
             phases:['duel'], toWin:5,
             norms:[28, 45, 58, 68],
@@ -591,9 +601,9 @@ function showBrief(key){
   const ph = d.phases;
   const has = (...names) => names.some(n => ph.includes(n));
   const keys = [];
-  if (has('mash','pace','dive','gear','runup','declare','duel'))
+  if (has('mash','pace','dive','gear','runup','declare','duel','hurdle'))
     keys.push('<span>Tasten: <kbd>A</kbd> <kbd>D</kbd></span>');
-  if (has('gear','runup','declare','lift'))
+  if (has('gear','runup','declare','lift','hurdle'))
     keys.push('<span>Aktion: <kbd>W</kbd></span>');
   if (has('react','bar2'))
     keys.push('<span>Start/Stopp: <kbd>Leertaste</kbd></span>');
@@ -614,6 +624,9 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
+        hurdles:[], hIdx:0, fly:0, pendPen:0, pendRate:0, stumble:false,
+        clean:0, touched:0, hit:0,
+        hMsg:'', hMsgT:0,
         runX:0, foulMsg:0, weight:0, lastOk:null, minDecl:0,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, angle:null,
@@ -622,7 +635,7 @@ function startDiscipline(key){
         fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
         field: buildField(key) };
   // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
-  if (['mash','pace','dive','gear'].some(x => d.phases.includes(x)))
+  if (['mash','pace','dive','gear','hurdle'].some(x => d.phases.includes(x)))
     G.field.forEach(f => f.finishT = f.val);
   document.getElementById('hud-disc').textContent = d.icon + ' ' + d.name;
   document.getElementById('hud-who').textContent = S.land + ' · ' + S.name;
@@ -630,6 +643,7 @@ function startDiscipline(key){
   document.getElementById('pads').className = (d.phases[0]==='react') ? 'single' : '';
   setPadLabels();
   if (d.startW){ G.weight = d.startW; G.minDecl = d.minW; }
+  if (d.hCount) for (let i=0;i<d.hCount;i++) G.hurdles.push(d.hFirst + i*d.hGap);
   show('s-play');
   lastT = performance.now();
   cancelAnimationFrame(raf);
@@ -655,6 +669,10 @@ function setPadLabels(){
     hint.textContent='Treten mit A und D. Schalten: W hoch, S runter.'; }
   else if (p === 'dive'){ pads.className=''; L.style.display=''; L.textContent='🫧 AUFTAUCHEN'; R.textContent='🫧 AUFTAUCHEN';
     hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
+  else if (p === 'hurdle'){ pads.className='withshift'; L.style.display='';
+    L.textContent='◀ LAUFEN'; R.textContent='LAUFEN ▶';
+    document.getElementById('padS').textContent='🦵 SPRINGEN';
+    hint.textContent='Laufen mit A und D, springen mit W – im grünen Bereich abspringen!'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
   else if (p === 'duel'){ pads.className=''; L.style.display='';
@@ -815,6 +833,60 @@ function update(dt){
       }
       nextPhase();
     }
+    return;
+  }
+
+  if (G.phase === 'hurdle'){
+    if (G.hMsgT > 0) G.hMsgT -= dt;
+    const hz = G.hurdles[G.hIdx];
+
+    if (G.fly > 0){
+      // In der Luft: kein Antrieb, das Tempo traegt
+      G.fly -= dt;
+      IN.tapL = IN.tapR = IN.tapAny = 0;
+      if (G.fly <= 0 && G.pendPen){
+        G.v *= G.pendPen;
+        G.rate *= G.pendRate || 1;      // Takt geht mit verloren
+        G.pendPen = 0; G.pendRate = 0; G.stumble = false;
+      }
+    } else {
+      let strokes = 0;
+      if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; strokes++; }
+      if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; strokes++; }
+      IN.tapL = IN.tapR = IN.tapAny = 0;
+      G.rate = Math.min(1, G.rate + 0.07 * strokes);
+      G.rate = Math.max(0, G.rate - dt * (0.10 + G.rate * 0.30));
+      G.v += (d.vMax * G.rate - G.v) * Math.min(1, dt * 2.4);
+    }
+
+    if (IN.shift > 0 && G.fly <= 0){
+      IN.shift = 0;
+      const gap = hz === undefined ? 99 : hz - G.dist;
+      if (gap > 5){                       // Fehlsprung, Huerde bleibt stehen
+        G.fly = 0.30; G.pendPen = 0.90; G.pendRate = 0.85;
+        G.hMsg = 'Fehlsprung'; G.hMsgT = 0.7;
+      } else {
+        G.fly = 0.32;
+        if (gap >= 1.3 && gap <= 2.7){ G.clean++;   G.hMsg = 'sauber'; }
+        else if (gap >= 0.5)         { G.touched++; G.pendPen = 0.85; G.pendRate = 0.86;
+                                       G.hMsg = 'gestreift'; }
+        else                         { G.hit++;     G.pendPen = 0.55; G.pendRate = 0.62;
+                                       G.hMsg = 'gerissen'; }
+        G.hMsgT = 0.7; G.hIdx++;
+      }
+    }
+    IN.shift = 0;
+
+    // Huerde ohne Absprung erreicht: hineinlaufen wirft richtig zurueck
+    if (hz !== undefined && G.dist >= hz && G.fly <= 0){
+      G.v *= 0.30; G.rate *= 0.40;
+      G.fly = 0.45; G.stumble = true;    // straucheln, Tippen zaehlt nicht
+      G.hit++; G.hIdx++;
+      G.hMsg = 'umgerissen!'; G.hMsgT = 0.9;
+    }
+
+    G.dist += G.v * dt;
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT + (G.reactT||0)); }
     return;
   }
 
@@ -1051,7 +1123,7 @@ function draw(){
   else if (p === 'duel') drawDuel();
   else if (p === 'declare') drawDeclare();
   else if (p === 'runup') drawRunup();
-  else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
+  else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear' || p === 'hurdle') drawRace();
   else drawBar();
 }
 
@@ -1108,8 +1180,20 @@ function drawRace(){
     const cy = y + laneH*0.52;
     // Läufer
     ctx.font = (f.you ? 27 : 22) + 'px serif'; ctx.textAlign='center';
-    const bob = f.you ? Math.sin(G.t*14) * (G.v/d.vMax) * 4 : Math.sin(G.t*11 + i) * 2.5;
+    let bob = f.you ? Math.sin(G.t*14) * (G.v/d.vMax) * 4 : Math.sin(G.t*11 + i) * 2.5;
+    if (f.you && G.fly > 0)
+      bob = G.stumble ?  5 * Math.sin((1 - G.fly/0.45) * Math.PI * 3)   // Straucheln
+                      : -14 * Math.sin((1 - G.fly/0.32) * Math.PI);     // Sprungbogen
     ctx.fillText(d.icon, px, cy + 8 + bob);
+    // Hürden auf der eigenen Bahn
+    if (f.you && G.phase === 'hurdle'){
+      G.hurdles.forEach((hz, k) => {
+        const hx = x0 + (hz / d.dist) * (x1 - x0);
+        ctx.fillStyle = k < G.hIdx ? 'rgba(255,255,255,.22)' : '#e8e2d4';
+        ctx.fillRect(hx, cy - 11, 3, 20);
+        ctx.fillRect(hx - 3, cy - 11, 9, 3);
+      });
+    }
     // Nation links am Bahnrand
     ctx.textAlign='left'; ctx.font='600 11px Segoe UI,Arial';
     ctx.fillStyle = f.you ? '#ffd75e' : 'rgba(255,255,255,.45)';
@@ -1160,6 +1244,34 @@ function drawRace(){
     if (c > 0.88 && G.gear < gs.length-1 && Math.floor(G.t*5) % 2 === 0){
       ctx.textAlign='center'; ctx.fillStyle='#ff8a7a'; ctx.font='700 13px Segoe UI,Arial';
       ctx.fillText('HOCHSCHALTEN!', W/2, H-44); ctx.textAlign='left';
+    }
+  } else if (G.phase === 'hurdle'){
+    const hz = G.hurdles[G.hIdx];
+    const bx = 22, bw = W - 44;
+    ctx.fillStyle='#8ea3bd'; ctx.fillText('ABSTAND ZUR HÜRDE', bx, H-44);
+    ctx.textAlign='right'; ctx.fillStyle='#9fb6cf'; ctx.font='600 11px Segoe UI,Arial';
+    ctx.fillText('Hürde ' + Math.min(G.hIdx+1, G.hurdles.length) + ' / ' + G.hurdles.length +
+                 '   ✓' + G.clean + '  ~' + G.touched + '  ✗' + G.hit, W-22, H-44);
+    ctx.textAlign='left'; ctx.font='11px Segoe UI,Arial';
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx, H-38, bw, 13);
+    // Grüner Absprungbereich: 1,3 bis 2,7 m vor der Hürde (Skala 0..6 m)
+    const mAt = m => bx + bw * (1 - m/6);
+    ctx.fillStyle='rgba(57,224,143,.55)';
+    ctx.fillRect(mAt(2.7), H-38, mAt(1.3)-mAt(2.7), 13);
+    ctx.fillStyle='rgba(255,215,94,.25)';
+    ctx.fillRect(mAt(5.0), H-38, mAt(2.7)-mAt(5.0), 13);
+    if (hz !== undefined){
+      const gap = Math.max(0, Math.min(6, hz - G.dist));
+      ctx.fillStyle = G.fly > 0 ? '#5b9bff' : '#fff';
+      ctx.fillRect(mAt(gap) - 2, H-42, 4, 21);
+    }
+    if (G.hMsgT > 0){
+      ctx.textAlign='center';
+      ctx.fillStyle = G.hMsg === 'sauber' ? '#39e08f'
+                    : G.hMsg === 'gestreift' ? '#ffd75e' : '#ff6a5a';
+      ctx.font='700 15px Segoe UI,Arial';
+      ctx.fillText(G.hMsg, W/2, H-46);
+      ctx.textAlign='left'; ctx.font='11px Segoe UI,Arial';
     }
   } else if (G.phase === 'dive'){
     ctx.fillStyle='#8ea3bd'; ctx.fillText('LUFT', 22, H-44);
