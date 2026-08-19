@@ -333,12 +333,13 @@ const DISCIPLINES = {
                  ['⚠️','Zu spät geschaltet heißt <b>hohl drehen</b>: das Tempo ist im kleinen Gang gedeckelt.']] },
 
   throw:  { name:'Speerwurf', icon:'🎯', unit:'m', lower:false,
-            phases:['bar2'], attempts:3,
-            short:'Zwei Mal richtig stoppen',
-            norms:[42, 56, 68, 78],
-            how:[['📐','<b>Erster Stopp:</b> der Abwurfwinkel. Zeiger möglichst in der grünen Mitte stoppen.'],
-                 ['💥','<b>Zweiter Stopp:</b> die Kraft. Auch hier gilt: je mittiger, desto weiter.'],
-                 ['🔁','Du hast <b>3 Versuche</b> – gewertet wird der beste.']] },
+            phases:['runup'], attempts:3, runway:32, runV:9.0, runCad:6.0,
+            norms:[40, 54, 65, 74],
+            short:'Anlauf nehmen, vor der Linie werfen',
+            how:[['🏃','<b>Anlauf:</b> abwechselnd links und rechts tippen. Je mehr Tempo, desto weiter der Wurf.'],
+                 ['🎯','<b>Abwerfen</b> mit der eigenen Taste. Der Winkelbalken läuft dabei die ganze Zeit – wo er steht, ist dein Abflugwinkel.'],
+                 ['🚫','Erreichst du die <b>Abwurflinie</b> ohne zu werfen, ist der Versuch <b>ungültig</b>.'],
+                 ['🔁','<b>3 Versuche</b> – gewertet wird der beste.']] },
 
   ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
             phases:['react','slalom'], gates:12,
@@ -551,8 +552,9 @@ function showBrief(key){
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
   const usesSteer = d.phases.includes('slalom');
-  const usesMash  = d.phases.includes('mash') || d.phases.includes('pace') ||
-                    d.phases.includes('dive')  || d.phases.includes('gear');
+  const usesMash  = d.phases.includes('mash')  || d.phases.includes('pace') ||
+                    d.phases.includes('dive')  || d.phases.includes('gear') ||
+                    d.phases.includes('runup');
   const keys = ['<span>Touch: die großen Flächen unten</span>'];
   if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
   else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
@@ -572,6 +574,7 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
+        runX:0, foulMsg:0,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -600,7 +603,12 @@ function setPadLabels(){
     hint.textContent='Warte auf LOS – zu früh ist ein Fehlstart. (Leertaste)'; }
   else if (p === 'mash'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
     hint.textContent='Abwechselnd links/rechts hämmern. (A und D)'; }
-  else if (p === 'gear'){ pads.className='withshift'; L.style.display=''; 
+  else if (p === 'runup'){ pads.className='withshift'; L.style.display='';
+    L.textContent='◀ ANLAUF'; R.textContent='ANLAUF ▶';
+    document.getElementById('padS').textContent='🎯 ABWERFEN';
+    hint.textContent='Anlauf mit A und D, abwerfen mit W – aber vor der Linie!'; }
+  else if (p === 'gear'){
+    document.getElementById('padS').textContent='⚙️ HOCHSCHALTEN'; pads.className='withshift'; L.style.display=''; 
     L.textContent='◀ TRETEN'; R.textContent='TRETEN ▶';
     hint.textContent='Abwechselnd treten, rechtzeitig hochschalten. (A und D, hochschalten mit W)'; }
   else if (p === 'dive'){ pads.className=''; L.style.display=''; L.textContent='🫧 AUFTAUCHEN'; R.textContent='🫧 AUFTAUCHEN';
@@ -657,6 +665,51 @@ function update(dt){
       G.reactT = G.t - G.reactMark;
       IN.tapAny = 0; big.textContent = '';
       nextPhase();
+    }
+    return;
+  }
+
+  if (G.phase === 'runup'){
+    // Ein einziger Druck erledigt beides: er wirft ab UND seine Lage auf dem
+    // Winkelbalken bestimmt den Abflugwinkel. Spaet werfen bringt Tempo,
+    // kostet aber die freie Wahl des Moments.
+    const spd = [1.05, 1.30, 1.55, 1.85][S.diff];
+    G.barX += G.barDir * spd * dt;
+    if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
+    if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
+
+    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; registerTap(); }
+    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; registerTap(); }
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    G.rate = Math.max(0, G.rate - dt * 3.4);
+    const tgt = d.runV * Math.min(1, G.rate / d.runCad);
+    G.v += (tgt - G.v) * Math.min(1, dt * 2.6);
+    G.runX += G.v * dt;
+    if (G.foulMsg > 0) G.foulMsg -= dt;
+
+    const done = () => {
+      G.angle = null; G.barX = 0; G.barDir = 1;
+      G.runX = 0; G.v = 0; G.rate = 0; G.alt = 1;
+      if (G.att >= d.attempts) finish(G.bestVal);
+      else G.att++;
+    };
+    if (IN.shift > 0){
+      IN.shift = 0;
+      const speedF = Math.min(1, G.v / d.runV);
+      const acc = 1 - Math.abs(G.barX - 0.5) * 2;
+      const val = Math.round((26 + speedF * 52) * (0.60 + acc * 0.40) * 10) / 10;
+      G.bestVal = Math.max(G.bestVal, val);
+      big.textContent = val.toFixed(1) + ' m';
+      big.style.color = val >= G.bestVal ? 'var(--gold)' : '#cfe0f2';
+      setTimeout(()=>{ if (big) big.textContent = ''; }, 900);
+      done();
+      return;
+    }
+    if (G.runX >= d.runway){                 // Uebertreten
+      G.foulMsg = 1.2;
+      big.textContent = 'ÜBERTRETEN!'; big.style.color = 'var(--red)';
+      setTimeout(()=>{ if (big) big.textContent = ''; }, 1000);
+      done();
     }
     return;
   }
@@ -847,6 +900,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
+  else if (p === 'runup') drawRunup();
   else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
   else if (p === 'slalom') drawSlalom();
   else drawBar();
@@ -995,6 +1049,46 @@ function drawStandings(entries, title){
     ctx.fillText(e.txt, bx+bw-10, y);
     ctx.textAlign='left';
   });
+}
+
+function drawRunup(){
+  const d = G.d;
+  bg('#16233a','#080e1a');
+  const gy = H*0.60, x0 = 40, x1 = W - 250;
+  // Anlaufbahn und Abwurflinie
+  ctx.fillStyle = '#7a4530'; ctx.fillRect(x0, gy, x1-x0, 26);
+  ctx.fillStyle = '#e8e8e0'; ctx.fillRect(x1-3, gy-8, 5, 42);
+  ctx.textAlign='center'; ctx.fillStyle='#9fb6cf'; ctx.font='600 11px Segoe UI,Arial';
+  ctx.fillText('ABWURFLINIE', x1, gy-16);
+  // Werfer
+  const px = x0 + (G.runX / d.runway) * (x1 - x0);
+  ctx.font='34px serif';
+  ctx.fillText('🏃', px, gy - 4 + Math.sin(G.t*16)*(G.v/d.runV)*3);
+
+  // Winkelbalken
+  const bw = W-290, bx = 40, by = H*0.82;
+  ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 26);
+  const zw = [0.22,0.17,0.13,0.10][S.diff];
+  ctx.fillStyle='rgba(255,215,94,.30)'; ctx.fillRect(bx + bw*(0.5-zw), by, bw*zw*2, 26);
+  ctx.fillStyle='rgba(57,224,143,.55)'; ctx.fillRect(bx + bw*(0.5-zw*0.42), by, bw*zw*0.84, 26);
+  ctx.fillStyle='#fff'; ctx.fillRect(bx + bw*G.barX - 3, by-8, 6, 42);
+  ctx.textAlign='left'; ctx.fillStyle='#8ea3bd'; ctx.font='11px Segoe UI,Arial';
+  ctx.fillText('ABFLUGWINKEL', bx, by-12);
+
+  // Kopfzeile
+  ctx.fillStyle='#9fb6cf'; ctx.font='600 14px Segoe UI,Arial';
+  ctx.fillText('Versuch ' + G.att + ' / ' + d.attempts, 20, 32);
+  ctx.fillText('Tempo ' + G.v.toFixed(1) + ' m/s', 20, 54);
+  const restM = Math.max(0, d.runway - G.runX);
+  ctx.fillStyle = restM < 6 ? '#ff6a5a' : '#9fb6cf';
+  ctx.fillText('noch ' + restM.toFixed(1) + ' m bis zur Linie', 20, 76);
+
+  // Zwischenstand
+  const list = G.field.map(f => ({ ...f, txt: fmt(d, f.val) + ' m' }))
+    .concat([{ you:true, name:S.name, land:S.land, val:G.bestVal,
+               txt: G.bestVal ? fmt(d, G.bestVal) + ' m' : '–' }])
+    .sort((a,b) => b.val - a.val);
+  drawStandings(list, 'ZWISCHENSTAND');
 }
 
 function drawBar(){
