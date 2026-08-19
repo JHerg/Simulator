@@ -309,12 +309,14 @@ const DISCIPLINES = {
                  ['🫁','Viel Kraft kostet <b>Ausdauer</b>. Ist sie leer, übersäuerst du und brichst ein – teile dir die 100 m ein!']] },
 
   swim:   { name:'50 m Freistil', icon:'🏊', unit:'s', lower:true,
-            phases:['react','mash'], dist:50, vMax:2.35, cadence:5.0,
-            norms:[34.0, 28.0, 24.0, 21.5],
-            short:'Gleichmäßiger Zug',
+            phases:['react','dive','mash'], dist:50, vMax:2.35, cadence:6.5,
+            diveV:2.95, airSec:7.5,
+            norms:[29.0, 25.0, 22.0, 20.0],
+            short:'Tauchen und rechtzeitig hoch',
             how:[['🚦','Auf <b>LOS!</b> reagieren – Fehlstart vermeiden.'],
-                 ['🌊','Abwechselnd links und rechts für die Züge. Der Takt ist <b>ruhiger</b> als beim Sprint.'],
-                 ['📈','Gleichmäßigkeit schlägt Hektik: halte den Rhythmus bis zur Wand durch.']] },
+                 ['🐬','Unter Wasser bist du <b>deutlich schneller</b> – aber die Luft geht aus. Drücke zum <b>Auftauchen</b>.'],
+                 ['🌊','Oben dann abwechselnd links und rechts ziehen.'],
+                 ['⚠️','Geht die Luft <b>ganz</b> aus, brichst du ein – das kostet mehr, als das Tauchen einbringt.']] },
 
   bike:   { name:'500 m Bahnsprint', icon:'🚴', unit:'s', lower:true,
             phases:['mash'], dist:500, vMax:19.0, cadence:6.4,
@@ -540,7 +542,8 @@ function showBrief(key){
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
   const usesSteer = d.phases.includes('slalom');
-  const usesMash  = d.phases.includes('mash') || d.phases.includes('pace');
+  const usesMash  = d.phases.includes('mash') || d.phases.includes('pace') ||
+                    d.phases.includes('dive');
   const keys = ['<span>Touch: die großen Flächen unten</span>'];
   if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
   else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
@@ -558,6 +561,7 @@ function startDiscipline(key){
         // Rennen
         dist:0, v:0, rate:0, lastTap:0, alt:1, reactT:0, falseStart:false,
         freq:0, power:0, stam:1, burned:false,
+        air:1, gaspT:0, gasped:false,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -586,6 +590,8 @@ function setPadLabels(){
     hint.textContent='Warte auf LOS – zu früh ist ein Fehlstart. (Leertaste)'; }
   else if (p === 'mash'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
     hint.textContent='Abwechselnd links/rechts hämmern. (A und D)'; }
+  else if (p === 'dive'){ pads.className=''; L.style.display=''; L.textContent='🫧 AUFTAUCHEN'; R.textContent='🫧 AUFTAUCHEN';
+    hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
   else if (p === 'bar2' || p === 'lift'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
@@ -642,6 +648,26 @@ function update(dt){
     return;
   }
 
+  if (G.phase === 'dive'){
+    // Unter Wasser schneller, aber die Luft laeuft ab. Einzige Entscheidung:
+    // wann tauche ich auf? Zu spaet und der Einbruch frisst den Vorsprung.
+    G.air = Math.max(0, G.air - dt / d.airSec);
+    G.v += (d.diveV - G.v) * Math.min(1, dt * 2.6);
+    G.dist += G.v * dt;
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); return; }
+    if (IN.tapAny > 0 || G.air <= 0){
+      G.gasped = G.air <= 0;
+      IN.tapL = IN.tapR = IN.tapAny = 0;
+      if (G.gasped){
+        G.gaspT = 4.0;
+        big.textContent = 'LUFT WEG!'; big.style.color = 'var(--red)';
+        setTimeout(()=>{ if (big) big.textContent = ''; }, 1200);
+      }
+      nextPhase();
+    }
+    return;
+  }
+
   if (G.phase === 'pace'){
     // Links pumpt die Schrittfrequenz, rechts die Schrittlaenge.
     // Beide sacken von allein ab, hohe Kraft frisst zusaetzlich Ausdauer.
@@ -670,7 +696,8 @@ function update(dt){
     if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; registerTap(); }
     IN.tapL = IN.tapR = IN.tapAny = 0;
     G.rate = Math.max(0, G.rate - dt * 3.4);            // Tempo fällt ohne Takt
-    const target = d.vMax * Math.min(1, G.rate / d.cadence);
+    if (G.gaspT > 0) G.gaspT -= dt;                     // Nachwirkung des Luftmangels
+    const target = d.vMax * Math.min(1, G.rate / d.cadence) * (G.gaspT > 0 ? 0.45 : 1);
     G.v += (target - G.v) * Math.min(1, dt * 2.2);
     G.dist += G.v * dt;
     if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t - (G.reactMark||0) + (G.reactT||0)); }
@@ -781,7 +808,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
-  else if (p === 'mash' || p === 'pace') drawRace();
+  else if (p === 'mash' || p === 'pace' || p === 'dive') drawRace();
   else if (p === 'slalom') drawSlalom();
   else drawBar();
 }
@@ -827,7 +854,8 @@ function drawRace(){
 
   all.forEach((f, i) => {
     const y = top + i*laneH;
-    ctx.fillStyle = f.you ? 'rgba(255,215,94,.13)'
+    ctx.fillStyle = (f.you && G.phase === 'dive') ? 'rgba(30,110,180,.55)'
+      : f.you ? 'rgba(255,215,94,.13)'
       : (G.key==='swim' ? '#0e4166' : G.key==='bike' ? '#332525' : '#63381f');
     ctx.fillRect(0, y, W, laneH - 3);
     if (f.you){ ctx.strokeStyle='rgba(255,215,94,.5)'; ctx.lineWidth=1.5;
@@ -875,6 +903,15 @@ function drawRace(){
       ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(x, H-38, bw, 13);
       ctx.fillStyle = col; ctx.fillRect(x, H-38, bw*Math.max(0,val), 13);
     });
+  } else if (G.phase === 'dive'){
+    ctx.fillStyle='#8ea3bd'; ctx.fillText('LUFT', 22, H-44);
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
+    ctx.fillStyle = G.air > 0.45 ? '#4fc3f7' : G.air > 0.2 ? '#ffd75e' : '#ff5a45';
+    ctx.fillRect(22, H-38, (W-44)*G.air, 13);
+    if (G.air < 0.28 && Math.floor(G.t*5) % 2 === 0){
+      ctx.textAlign='center'; ctx.fillStyle='#ff8a7a'; ctx.font='700 13px Segoe UI,Arial';
+      ctx.fillText('AUFTAUCHEN!', W/2, H-44); ctx.textAlign='left';
+    }
   } else {
     const rr = Math.min(1, G.rate / d.cadence);
     ctx.fillStyle='#8ea3bd'; ctx.fillText('TAKT', 22, H-44);
