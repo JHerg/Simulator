@@ -301,12 +301,12 @@ const DIFFS = [
 // norms[stufe] = Qualifikationsnorm. Bei Zeiten kleiner = besser.
 const DISCIPLINES = {
   sprint: { name:'100 m Sprint', icon:'🏃', unit:'s', lower:true,
-            phases:['react','mash'], dist:100, vMax:11.6, cadence:7.2,
-            norms:[15.5, 13.4, 11.9, 10.9],
-            short:'Starten und Takt halten',
+            phases:['react','pace'], dist:100, vMax:11.8,
+            norms:[14.5, 12.5, 11.3, 10.6],
+            short:'Kraft und Frequenz einteilen',
             how:[['🚦','Warte auf <b>LOS!</b> und drücke sofort. Wer zu früh drückt, hat einen Fehlstart.'],
-                 ['⚡','Dann <b>abwechselnd</b> links und rechts hämmern. Nur der Wechsel zählt – Dauerdrücken bringt nichts.'],
-                 ['📈','Je schneller der Takt, desto höher das Tempo. Lässt du nach, wirst du langsamer.']] },
+                 ['👟','<b>Links</b> erhöht die <b>Schrittfrequenz</b>, <b>rechts</b> die <b>Schrittlänge</b>. Beide fallen von allein wieder ab.'],
+                 ['🫁','Viel Kraft kostet <b>Ausdauer</b>. Ist sie leer, übersäuerst du und brichst ein – teile dir die 100 m ein!']] },
 
   swim:   { name:'50 m Freistil', icon:'🏊', unit:'s', lower:true,
             phases:['react','mash'], dist:50, vMax:2.35, cadence:5.0,
@@ -540,7 +540,7 @@ function showBrief(key){
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
   const usesSteer = d.phases.includes('slalom');
-  const usesMash  = d.phases.includes('mash');
+  const usesMash  = d.phases.includes('mash') || d.phases.includes('pace');
   const keys = ['<span>Touch: die großen Flächen unten</span>'];
   if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
   else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
@@ -557,6 +557,7 @@ function startDiscipline(key){
   G = { key, d, phase: d.phases[0], pi: 0, t: 0, done:false,
         // Rennen
         dist:0, v:0, rate:0, lastTap:0, alt:1, reactT:0, falseStart:false,
+        freq:0, power:0, stam:1, burned:false,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -585,6 +586,8 @@ function setPadLabels(){
     hint.textContent='Warte auf LOS – zu früh ist ein Fehlstart. (Leertaste)'; }
   else if (p === 'mash'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
     hint.textContent='Abwechselnd links/rechts hämmern. (A und D)'; }
+  else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
+    hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
   else if (p === 'bar2' || p === 'lift'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
     hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
   else if (p === 'slalom'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
@@ -636,6 +639,28 @@ function update(dt){
       IN.tapAny = 0; big.textContent = '';
       nextPhase();
     }
+    return;
+  }
+
+  if (G.phase === 'pace'){
+    // Links pumpt die Schrittfrequenz, rechts die Schrittlaenge.
+    // Beide sacken von allein ab, hohe Kraft frisst zusaetzlich Ausdauer.
+    if (IN.tapL > 0) G.freq  = Math.min(1, G.freq  + 0.20 * IN.tapL);
+    if (IN.tapR > 0) G.power = Math.min(1, G.power + 0.20 * IN.tapR);
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    G.freq  = Math.max(0, G.freq  - dt * (0.12 + G.freq  * 0.15));
+    G.power = Math.max(0, G.power - dt * (0.10 + G.power * 0.13));
+    G.stam  = Math.max(0, G.stam  - dt * (0.028 + G.power * G.power * 0.11));
+    if (G.stam <= 0 && !G.burned){
+      G.burned = true;
+      big.textContent = 'ÜBERSÄUERT!'; big.style.color = 'var(--red)';
+      setTimeout(()=>{ if (big) big.textContent = ''; }, 1100);
+    }
+    // Geometrisches Mittel: nur wer beides hochhaelt, laeuft wirklich schnell
+    const target = d.vMax * Math.sqrt(G.freq * G.power) * (G.stam > 0 ? 1 : 0.55);
+    G.v += (target - G.v) * Math.min(1, dt * 2.4);
+    G.dist += G.v * dt;
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); }
     return;
   }
 
@@ -756,7 +781,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
-  else if (p === 'mash')   drawRace();
+  else if (p === 'mash' || p === 'pace') drawRace();
   else if (p === 'slalom') drawSlalom();
   else drawBar();
 }
@@ -837,13 +862,26 @@ function drawRace(){
   ctx.textAlign='right'; ctx.fillStyle='#ffd75e'; ctx.font='700 14px Segoe UI,Arial';
   ctx.fillText('Platz ' + (ahead+1) + ' / ' + all.length + ' · ' + G.t.toFixed(2) + ' s', W-12, 72);
 
-  // Taktbalken
-  const rr = Math.min(1, G.rate / d.cadence);
-  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
-  ctx.fillStyle = rr > 0.85 ? '#39e08f' : rr > 0.5 ? '#ffd75e' : '#ff8a5a';
-  ctx.fillRect(22, H-38, (W-44)*rr, 13);
-  ctx.textAlign='left'; ctx.fillStyle='#8ea3bd'; ctx.font='11px Segoe UI,Arial';
-  ctx.fillText('TAKT', 22, H-44);
+  // Unten: ein Taktbalken beim Haemmern, drei Balken bei Kraft/Frequenz
+  ctx.textAlign='left'; ctx.font='11px Segoe UI,Arial';
+  if (G.phase === 'pace'){
+    const bw = (W - 66) / 3;
+    [['FREQUENZ', G.freq,  '#5b9bff'],
+     ['KRAFT',    G.power, '#ffb020'],
+     ['AUSDAUER', G.stam,  G.stam > 0.3 ? '#39e08f' : '#ff5a45']
+    ].forEach(([lab, val, col], i) => {
+      const x = 22 + i*(bw+11);
+      ctx.fillStyle='#8ea3bd'; ctx.fillText(lab, x, H-44);
+      ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(x, H-38, bw, 13);
+      ctx.fillStyle = col; ctx.fillRect(x, H-38, bw*Math.max(0,val), 13);
+    });
+  } else {
+    const rr = Math.min(1, G.rate / d.cadence);
+    ctx.fillStyle='#8ea3bd'; ctx.fillText('TAKT', 22, H-44);
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
+    ctx.fillStyle = rr > 0.85 ? '#39e08f' : rr > 0.5 ? '#ffd75e' : '#ff8a5a';
+    ctx.fillRect(22, H-38, (W-44)*rr, 13);
+  }
 }
 
 // Zwischenstand am rechten Rand: zeigt, was die Gegner erreicht haben
