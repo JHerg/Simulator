@@ -144,6 +144,13 @@
   #pads.twoshift #padS{grid-column:1;}
   #pads.twoshift #padD{grid-column:2;display:block;}
 
+  /* ── Siegerehrung ──────────────────────────────────── */
+  #cer-cv{width:100%;max-width:760px;height:auto;display:block;margin:0 auto;
+          border-radius:18px;background:rgba(4,9,18,.75);border:1px solid var(--line);}
+  #cer-say{min-height:52px;margin:16px auto 0;max-width:640px;
+           font-size:clamp(17px,3vw,24px);font-weight:700;color:var(--gold);
+           text-shadow:0 2px 18px rgba(255,180,60,.35);}
+
   /* ── Ergebnis ───────────────────────────────────────── */
   .rescard{background:rgba(255,255,255,.055);border:1px solid var(--line);
     border-radius:20px;padding:28px 24px;max-width:520px;margin:0 auto 24px;}
@@ -281,6 +288,17 @@
     </div>
   </section>
 
+  <!-- ══ Siegerehrung ══ -->
+  <section class="screen" id="s-ceremony">
+    <div class="kicker"><span class="dot"></span> <span id="cer-disc">Siegerehrung</span></div>
+    <canvas id="cer-cv" width="760" height="400"></canvas>
+    <div id="cer-say">&nbsp;</div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="cer-skip">⏭ Überspringen</button>
+      <button class="btn" id="cer-next" disabled>Weiter</button>
+    </div>
+  </section>
+
   <!-- ══ Gesamtwertung ══ -->
   <section class="screen" id="s-summary">
     <h2>Endstand</h2>
@@ -358,6 +376,15 @@ const DISCIPLINES = {
                  ['🔽','<b>Hocken</b> beschleunigt, Loslassen bremst. Schnell spart Zeit – aber die Lenkung wird <b>träge</b>.'],
                  ['🚩','Vor weiten Toren rechtzeitig <b>aufrichten</b>, sonst verpasst du sie: 2,5 s Strafe je Tor.']] },
 
+  fence:  { name:'Fechten', icon:'🤺', unit:'Pkt', lower:false,
+            phases:['duel'], toWin:5,
+            norms:[28, 45, 58, 68],
+            short:'Finte von Angriff unterscheiden',
+            how:[['👀','Der Gegner fährt die Klinge aus. Eine <b>echte Attacke</b> zieht durch, eine <b>Finte</b> stoppt auf halbem Weg und geht zurück.'],
+                 ['🛡','<b>Parieren</b>, wenn die Attacke echt ist und sich festgelegt hat. Zu früh pariert oder auf eine Finte hereingefallen: Treffer für ihn.'],
+                 ['⚔️','<b>Angreifen</b>, wenn er sich mit einer Finte blößgestellt hat. Gegen eine echte Attacke läufst du ins Messer.'],
+                 ['🏁','Nichts tun ist gegen Finten sicher. Wer zuerst <b>5 Treffer</b> hat, gewinnt.']] },
+
   lift:   { name:'Gewichtheben', icon:'🏋️', unit:'kg', lower:false,
             phases:['declare'], attempts:3, minW:60, maxW:220, step:2.5, startW:90,
             norms:[95, 130, 160, 185],
@@ -375,7 +402,7 @@ const LAENDER = ['🇩🇪 Deutschland','🇦🇹 Österreich','🇨🇭 Schweiz
   '🇵🇹 Portugal','🇬🇷 Griechenland','🇹🇷 Türkei','🇺🇸 USA','🇨🇦 Kanada','🇧🇷 Brasilien',
   '🇯🇵 Japan','🇰🇷 Südkorea','🇦🇺 Australien','🇰🇪 Kenia','🇿🇦 Südafrika'];
 
-const S = { name:'', land:'', diff:0, queue:[], idx:0, results:[] };
+const S = { name:'', land:'', diff:0, queue:[], idx:0, results:[], stage:'quali' };
 
 /* ══════════════════════════════════════════════════════════════
    Teilnehmerfeld: fünf Gegnerinnen und Gegner mit Namen, Nation
@@ -392,7 +419,11 @@ const FIELD_N = 5;   // Gegner; mit dir zusammen ein Feld von sechs
 
 function buildField(key){
   const d = DISCIPLINES[key], norm = d.norms[S.diff];
-  const spread = [0.11, 0.085, 0.06, 0.04][S.diff];
+  // Im Finale treten nur die Besten an – das Feld rueckt spuerbar zusammen
+  // und nach oben, sonst waere die Endrunde leichter als die Qualifikation.
+  const fin = S.stage === 'final';
+  const spread = (fin ? [0.06,0.05,0.04,0.03] : [0.11,0.085,0.06,0.04])[S.diff];
+  const bonus  = fin ? 0.045 : 0;
   const pool = LAENDER.filter(l => l !== S.land);
   const used = new Set();
   const field = [];
@@ -406,7 +437,7 @@ function buildField(key){
     const nm = vn + ' ' + nn;
     // Das Feld liegt bewusst ueber der Norm: die Norm ist nur die Qualifikation,
     // eine Medaille muss man sich gegen echte Gegner verdienen.
-    const edge = Math.random() * spread - 0.01;
+    const edge = Math.random() * spread - 0.01 + bonus;
     const val = d.lower ? norm * (1 - edge) : norm * (1 + edge);
     field.push({
       name: nm,
@@ -558,19 +589,21 @@ function startNext(){
 function showBrief(key){
   const d = DISCIPLINES[key];
   document.getElementById('b-ico').textContent = d.icon;
-  document.getElementById('b-name').textContent = d.name;
+  document.getElementById('b-name').textContent =
+    d.name + (S.stage === 'final' ? ' — FINALE' : '');
   document.getElementById('b-meta').innerHTML =
     'Stufe <b style="color:#fff">' + DIFFS[S.diff].name + '</b> · ' +
     'Qualifikationsnorm <b style="color:#fff">' + d.norms[S.diff] + ' ' + d.unit + '</b>' +
-    (S.queue.length > 1 ? ' · Disziplin ' + (S.idx+1) + ' von ' + S.queue.length : '');
+    (S.queue.length > 1 ? ' · Disziplin ' + (S.idx+1) + ' von ' + S.queue.length : '') +
+    (S.stage === 'final' ? ' · <b style="color:#ffd75e">Nur die Besten – jetzt zählt es</b>' : '');
   document.getElementById('b-steps').innerHTML =
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
   const ph = d.phases;
   const has = (...names) => names.some(n => ph.includes(n));
   const keys = [];
-  if (has('mash','pace','dive','gear','runup','slalom','declare'))
-    keys.push('<span>Lenken/Tippen: <kbd>A</kbd> <kbd>D</kbd></span>');
+  if (has('mash','pace','dive','gear','runup','slalom','declare','duel'))
+    keys.push('<span>Tasten: <kbd>A</kbd> <kbd>D</kbd></span>');
   if (has('gear','runup','slalom','declare','lift'))
     keys.push('<span>Aktion: <kbd>W</kbd></span>');
   if (has('react','bar2'))
@@ -597,7 +630,10 @@ function startDiscipline(key){
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
         px:0, gate:0, gates:[], missed:0,
-        cd: 3.0, raceT: 0, field: buildField(key) };
+        cd: 3.0, raceT: 0,
+        fScore:[0,0], fState:'idle', fIdle:1.1, fExt:0, fFeint:false,
+        fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
+        field: buildField(key) };
   // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
   if (['mash','pace','dive','gear','slalom'].some(x => d.phases.includes(x)))
     G.field.forEach(f => f.finishT = f.val);
@@ -635,6 +671,9 @@ function setPadLabels(){
     hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
+  else if (p === 'duel'){ pads.className=''; L.style.display='';
+    L.textContent='🛡 PARIEREN'; R.textContent='⚔️ ANGREIFEN';
+    hint.textContent='Echte Attacke parieren (A), Finte bestrafen (D). Nichts tun ist gegen Finten sicher.'; }
   else if (p === 'declare'){ pads.className='withshift'; L.style.display='';
     L.textContent='➖ leichter'; R.textContent='schwerer ➕';
     document.getElementById('padS').textContent='✔ GEWICHT ANSAGEN';
@@ -848,6 +887,68 @@ function update(dt){
     return;
   }
 
+  if (G.phase === 'duel'){
+    // Das Zeitfenster zum Parieren ist (1 - Entscheidungsschwelle) / Tempo.
+    // Bei 0.65 als Schwelle bleiben 0.47 / 0.33 / 0.24 / 0.18 Sekunden.
+    const spd    = [0.75, 1.05, 1.45, 1.95][S.diff];   // wie schnell die Klinge ausfaehrt
+    const feintP = [0.35, 0.45, 0.58, 0.66][S.diff];   // Anteil Finten
+    if (G.fMsgT > 0) G.fMsgT -= dt;
+
+    const punkt = (mir, txt) => {
+      G.fScore[mir ? 0 : 1]++;
+      G.fMsg = txt; G.fMsgT = 1.1;
+      G.fState = 'idle'; G.fIdle = 1.0; G.fExt = 0;
+      if (G.fScore[0] >= d.toWin || G.fScore[1] >= d.toWin)
+        finish(G.fScore[0] * 10 + (d.toWin - G.fScore[1]) * 6);
+    };
+
+    if (G.fState === 'idle'){
+      IN.tapL = IN.tapR = IN.tapAny = 0;      // Eingaben in der Pause verwerfen
+      G.fIdle -= dt;
+      if (G.fIdle <= 0){
+        G.fState  = 'windup';
+        G.fExt    = 0;
+        G.fRetract= false;
+        G.fFeint  = Math.random() < feintP;
+        G.fPeak   = 0.46 + Math.random() * 0.16;
+        G.fHold   = 0.22;
+      }
+      return;
+    }
+
+    // Klinge faehrt aus – eine Finte stoppt am Umkehrpunkt und geht zurueck
+    if (!G.fRetract){
+      G.fExt += spd * dt;
+      if (G.fFeint && G.fExt >= G.fPeak){
+        G.fExt = G.fPeak;
+        G.fHold -= dt;
+        if (G.fHold <= 0) G.fRetract = true;
+      }
+      if (!G.fFeint && G.fExt >= 1){ punkt(false, 'Getroffen – zu lange gezögert'); return; }
+    } else {
+      G.fExt -= spd * 1.4 * dt;
+      if (G.fExt <= 0){ G.fState='idle'; G.fIdle = 0.8; return; }   // Finte verpufft
+    }
+
+    const pariert  = IN.tapL > 0;
+    const angriff  = IN.tapR > 0;
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+
+    if (pariert){
+      if (G.fFeint)            punkt(false, 'Auf die Finte hereingefallen');
+      else if (G.fExt >= 0.45) punkt(true,  'Pariert und getroffen!');
+      else                     punkt(false, 'Zu früh pariert');
+      return;
+    }
+    if (angriff){
+      const bloss = G.fFeint && (G.fRetract || G.fHold < 0.22);
+      if (bloss) punkt(true,  'Finte bestraft!');
+      else       punkt(false, 'Ins Messer gelaufen');
+      return;
+    }
+    return;
+  }
+
   if (G.phase === 'declare'){
     // Gewicht ansagen: mehr Kilo zaehlen mehr, machen die gueltige Zone aber enger
     // Wie im echten Wettkampf: die Hantel wird nur schwerer, nie wieder leichter.
@@ -966,7 +1067,9 @@ function nextPhase(){
 }
 
 function fmt(d, v){
-  return d.unit === 's' ? v.toFixed(2) : (d.unit === 'kg' ? String(Math.round(v)) : v.toFixed(1));
+  if (d.unit === 's')   return v.toFixed(2);
+  if (d.unit === 'kg' || d.unit === 'Pkt') return String(Math.round(v));
+  return v.toFixed(1);
 }
 
 function finish(val){
@@ -996,6 +1099,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
+  else if (p === 'duel') drawDuel();
   else if (p === 'declare') drawDeclare();
   else if (p === 'runup') drawRunup();
   else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
@@ -1146,6 +1250,44 @@ function drawStandings(entries, title){
     ctx.fillText(e.txt, bx+bw-10, y);
     ctx.textAlign='left';
   });
+}
+
+function drawDuel(){
+  const d = G.d;
+  bg('#241a2e','#0c0812');
+  // Planche
+  ctx.fillStyle='#3a2f46'; ctx.fillRect(0, H*0.62, W, 14);
+  ctx.fillStyle='rgba(255,255,255,.10)';
+  for (let i=1;i<6;i++) ctx.fillRect(W*i/6, H*0.62, 2, 14);
+
+  const py = H*0.56, px = W*0.24, ox = W*0.74;
+  // Gegner mit ausfahrender Klinge
+  const reach = (ox - px) - 34;
+  ctx.strokeStyle = G.fExt >= 0.45 ? '#ff8a5a' : '#c9d4e2';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(ox - 14, py - 12);
+  ctx.lineTo(ox - 14 - reach * G.fExt, py - 12); ctx.stroke();
+
+  ctx.font='46px serif'; ctx.textAlign='center';
+  ctx.fillText('🤺', px, py + 8);
+  ctx.save(); ctx.translate(ox, py + 8); ctx.scale(-1, 1);
+  ctx.fillText('🤺', 0, 0); ctx.restore();
+
+  // Punktestand
+  ctx.font='800 40px Segoe UI,Arial'; ctx.fillStyle='#fff';
+  ctx.fillText(G.fScore[0] + ' : ' + G.fScore[1], W/2, 62);
+  ctx.font='600 12px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
+  ctx.fillText('DU        ' + d.toWin + ' TREFFER        GEGNER', W/2, 84);
+
+  if (G.fMsgT > 0){
+    ctx.font='700 22px Segoe UI,Arial';
+    ctx.fillStyle = G.fMsg.includes('!') ? '#39e08f' : '#ff6a5a';
+    ctx.fillText(G.fMsg, W/2, H*0.86);
+  } else if (G.fState === 'idle'){
+    ctx.font='600 15px Segoe UI,Arial'; ctx.fillStyle='#7f92aa';
+    ctx.fillText('Achtung…', W/2, H*0.86);
+  }
+  ctx.textAlign='left';
 }
 
 function liftStandings(){
@@ -1338,13 +1480,216 @@ function showResult(){
       `<td>${e.land} ${e.you ? '<b>' + e.name + '</b>' : e.name}</td>` +
       `<td class="r">${e.shown} ${r.unit}</td>` +
       `<td class="r">${md[e.pos] || ''}</td></tr>`).join('');
-  document.getElementById('r-next').textContent =
-    (S.idx + 1 < S.queue.length) ? 'Nächste Disziplin →' : 'Zur Wertung →';
+  const nx = document.getElementById('r-next');
+  if (S.stage === 'quali' && r.ok)      nx.textContent = '🏅 Ins Finale →';
+  else if (S.stage === 'final')         nx.textContent = '🏆 Siegerehrung →';
+  else nx.textContent = (S.idx + 1 < S.queue.length) ? 'Nächste Disziplin →' : 'Zur Wertung →';
+  document.getElementById('r-title').textContent =
+    r.icon + ' ' + r.name + (S.stage === 'final' ? ' — Finale' : ' — Qualifikation');
   show('s-result');
 }
 document.getElementById('r-retry').addEventListener('click', () => startDiscipline(S.queue[S.idx]));
 document.getElementById('r-help').addEventListener('click', () => showBrief(S.queue[S.idx]));
-document.getElementById('r-next').addEventListener('click', () => { S.idx++; startNext(); });
+document.getElementById('r-next').addEventListener('click', () => {
+  const r = S.results[S.idx];
+  if (S.stage === 'quali' && r.ok){          // qualifiziert -> Endrunde
+    S.stage = 'final'; S.qualiResult = r;
+    showBrief(S.queue[S.idx]); return;
+  }
+  if (S.stage === 'final'){ startCeremony(r); return; }
+  S.idx++; S.stage = 'quali'; startNext();   // ausgeschieden
+});
+
+document.getElementById('cer-next').addEventListener('click', () => {
+  stopCeremony(); S.idx++; S.stage = 'quali'; startNext();
+});
+document.getElementById('cer-skip').addEventListener('click', () => cerJump());
+
+/* ══════════════════════════════════════════════════════════════
+   Siegerehrung: Podest, Fanfare und gesprochene Ansage.
+   Musik entsteht komplett im Browser ueber die Web Audio API, die
+   Ansage ueber die Sprachausgabe - beides ohne externe Dateien.
+   ══════════════════════════════════════════════════════════════ */
+const cerCv = document.getElementById('cer-cv');
+const cerCx = cerCv.getContext('2d');
+const CW = cerCv.width, CH = cerCv.height;
+let cerRaf = 0, cerT = 0, cerSteps = [], cerShown = 0, cerTop = [], cerConf = [];
+let audioCtx = null;
+
+function ac(){
+  if (!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// Ein Ton mit weichem Ein- und Ausschwingen
+function tone(freq, at, dur, type, vol){
+  const c = ac(); if (!c) return;
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'sawtooth'; o.frequency.value = freq;
+  const t0 = c.currentTime + at;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol || 0.10, t0 + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function chord(freqs, at, dur, vol){ freqs.forEach(f => tone(f, at, dur, 'sawtooth', vol)); }
+
+// Kurzer Trompetenstoss vor jeder Ansage
+function sting(base){
+  chord([base, base*1.26, base*1.5], 0, 0.5, 0.07);
+}
+// Grosse Fanfare zum Schluss
+function fanfare(){
+  const G4=392, C5=523.25, E5=659.25, G5=783.99, C6=1046.5;
+  [[G4,0,0.18],[C5,0.18,0.18],[E5,0.36,0.18],[G5,0.54,0.5]].forEach(([f,a,d]) =>
+    tone(f, a, d, 'sawtooth', 0.09));
+  chord([C5,E5,G5,C6], 1.05, 1.6, 0.075);
+  // Paukenschlaege
+  [0, 0.54, 1.05].forEach(a => {
+    const c = ac(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.type='sine'; const t0=c.currentTime+a;
+    o.frequency.setValueAtTime(140, t0);
+    o.frequency.exponentialRampToValueAtTime(45, t0+0.25);
+    g.gain.setValueAtTime(0.5, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0+0.35);
+    o.connect(g); g.connect(c.destination); o.start(t0); o.stop(t0+0.4);
+  });
+}
+
+function say(text){
+  document.getElementById('cer-say').textContent = text;
+  try {
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'de-DE'; u.rate = 0.92; u.pitch = 1.0;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch(e) { /* ohne Sprachausgabe bleibt der Text stehen */ }
+}
+
+function startCeremony(res){
+  cerTop = res.rank.slice(0, 3);
+  cerConf = [];
+  cerShown = 0; cerT = 0;
+  document.getElementById('cer-disc').textContent = res.icon + ' ' + res.name;
+  document.getElementById('cer-say').textContent = 'Die Athleten betreten das Podest…';
+  document.getElementById('cer-next').disabled = true;
+  const rang = ['Gold', 'Silber', 'Bronze'];
+  // Von Bronze nach Gold ansagen – so, wie es bei einer Ehrung zugeht
+  cerSteps = [2, 1, 0].filter(i => cerTop[i]).map((i, k) => ({
+    at: 2.0 + k * 4.2, idx: i,
+    text: 'Platz ' + (i + 1) + ': ' + rang[i] + ' geht an ' +
+          cerTop[i].name + ' für ' + cerTop[i].land.replace(/^\S+\s/, '') +
+          ' mit ' + cerTop[i].shown + ' ' + res.unit + '.',
+  }));
+  show('s-ceremony');
+  ac(); fanfare();
+  cancelAnimationFrame(cerRaf);
+  let last = performance.now();
+  const loop = now => {
+    const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    cerT += dt;
+    while (cerShown < cerSteps.length && cerT >= cerSteps[cerShown].at){
+      const st = cerSteps[cerShown];
+      say(st.text);
+      sting(st.idx === 0 ? 523.25 : st.idx === 1 ? 440 : 392);
+      if (st.idx === 0){ fanfare(); spawnConfetti(); }
+      cerShown++;
+    }
+    if (cerShown >= cerSteps.length && cerT > cerSteps[cerSteps.length-1].at + 2.5)
+      document.getElementById('cer-next').disabled = false;
+    drawCeremony(dt);
+    cerRaf = requestAnimationFrame(loop);
+  };
+  cerRaf = requestAnimationFrame(loop);
+}
+
+function cerJump(){                       // Überspringen: direkt ans Ende
+  cerSteps.forEach((st, i) => { if (i >= cerShown) document.getElementById('cer-say').textContent = st.text; });
+  cerShown = cerSteps.length;
+  cerT = (cerSteps[cerSteps.length-1]?.at || 0) + 3;
+  spawnConfetti();
+  try { speechSynthesis.cancel(); } catch(e){}
+  document.getElementById('cer-next').disabled = false;
+}
+
+function stopCeremony(){
+  cancelAnimationFrame(cerRaf); cerRaf = 0;
+  try { speechSynthesis.cancel(); } catch(e){}
+}
+
+function spawnConfetti(){
+  const COL = ['#ffd75e','#ff9a3c','#39e08f','#5b9bff','#ff6a8a','#fff'];
+  for (let i = 0; i < 120; i++)
+    cerConf.push({ x: Math.random()*CW, y: -Math.random()*CH*0.6,
+                   vy: 60 + Math.random()*110, vx: (Math.random()-0.5)*40,
+                   s: 3 + Math.random()*5, rot: Math.random()*6.3,
+                   vr: (Math.random()-0.5)*7, c: COL[(Math.random()*COL.length)|0] });
+}
+
+function drawCeremony(dt){
+  const g = cerCx.createLinearGradient(0,0,0,CH);
+  g.addColorStop(0,'#141d33'); g.addColorStop(1,'#070c16');
+  cerCx.fillStyle = g; cerCx.fillRect(0,0,CW,CH);
+
+  // Scheinwerferkegel auf das Podest
+  const spot = cerCx.createRadialGradient(CW/2, CH*0.30, 10, CW/2, CH*0.55, CW*0.55);
+  spot.addColorStop(0,'rgba(255,225,150,.20)'); spot.addColorStop(1,'rgba(255,225,150,0)');
+  cerCx.fillStyle = spot; cerCx.fillRect(0,0,CW,CH);
+
+  // Podeste: 2. links, 1. Mitte, 3. rechts
+  const base = CH*0.86, bw = CW*0.20;
+  const slots = [
+    { i:1, x: CW*0.5 - bw*1.55, h: 78,  col:'#b9c4d2', lab:'2' },
+    { i:0, x: CW*0.5 - bw*0.5,  h: 118, col:'#ffd75e', lab:'1' },
+    { i:2, x: CW*0.5 + bw*0.55, h: 52,  col:'#c98a4b', lab:'3' },
+  ];
+  slots.forEach(sl => {
+    const e = cerTop[sl.i]; if (!e) return;
+    const shown = cerSteps.some((st,k) => st.idx === sl.i && k < cerShown);
+    cerCx.globalAlpha = shown ? 1 : 0.30;
+    // Block
+    cerCx.fillStyle = sl.col;
+    cerCx.fillRect(sl.x, base - sl.h, bw, sl.h);
+    cerCx.fillStyle = 'rgba(0,0,0,.25)';
+    cerCx.fillRect(sl.x, base - sl.h, bw, 8);
+    cerCx.fillStyle = '#0a1020'; cerCx.font = '800 26px Segoe UI,Arial';
+    cerCx.textAlign = 'center';
+    cerCx.fillText(sl.lab, sl.x + bw/2, base - sl.h/2 + 10);
+    // Athlet
+    if (shown){
+      cerCx.font = '38px serif';
+      cerCx.fillText('🧍', sl.x + bw/2, base - sl.h - 8);
+      cerCx.font = '20px serif';
+      cerCx.fillText(e.land.split(' ')[0], sl.x + bw/2, base - sl.h - 52);
+      cerCx.fillStyle = e.you ? '#ffd75e' : '#dce7f5';
+      cerCx.font = (e.you ? '800 ' : '600 ') + '13px Segoe UI,Arial';
+      cerCx.fillText(e.name, sl.x + bw/2, base + 20);
+      cerCx.fillStyle = '#8ea3bd'; cerCx.font = '12px Segoe UI,Arial';
+      cerCx.fillText(e.shown, sl.x + bw/2, base + 37);
+    }
+    cerCx.globalAlpha = 1;
+  });
+  cerCx.fillStyle = 'rgba(255,255,255,.10)';
+  cerCx.fillRect(0, base, CW, 4);
+
+  // Konfetti
+  for (let i = cerConf.length - 1; i >= 0; i--){
+    const c = cerConf[i];
+    c.x += c.vx*dt; c.y += c.vy*dt; c.rot += c.vr*dt;
+    if (c.y > CH + 20){ cerConf.splice(i,1); continue; }
+    cerCx.save(); cerCx.translate(c.x, c.y); cerCx.rotate(c.rot);
+    cerCx.fillStyle = c.c; cerCx.fillRect(-c.s/2, -c.s/2, c.s, c.s*0.6);
+    cerCx.restore();
+  }
+  cerCx.textAlign = 'left';
+}
 
 function showSummary(){
   document.getElementById('sum-who').textContent =
