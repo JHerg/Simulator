@@ -137,6 +137,9 @@
   #padS{display:none;grid-column:1/-1;padding:16px 10px;font-size:16px;
         background:rgba(90,140,255,.22);}
   #pads.withshift #padS{display:block;}
+  #pads.onlyshift{grid-template-columns:1fr;}
+  #pads.onlyshift #padL,#pads.onlyshift #padR{display:none;}
+  #pads.onlyshift #padS{display:block;}
 
   /* ── Ergebnis ───────────────────────────────────────── */
   .rescard{background:rgba(255,255,255,.055);border:1px solid var(--line);
@@ -352,12 +355,13 @@ const DISCIPLINES = {
                  ['🚩','Vor weiten Toren rechtzeitig <b>aufrichten</b>, sonst verpasst du sie: 2,5 s Strafe je Tor.']] },
 
   lift:   { name:'Gewichtheben', icon:'🏋️', unit:'kg', lower:false,
-            phases:['lift'], attempts:3,
+            phases:['declare'], attempts:3, minW:60, maxW:220, step:2.5, startW:90,
             norms:[95, 130, 160, 185],
-            short:'Punktgenau stoppen',
-            how:[['🎯','Den laufenden Zeiger <b>genau in der grünen Mitte</b> stoppen.'],
-                 ['⚖️','Je genauer der Treffer, desto mehr Gewicht bekommst du hoch.'],
-                 ['🔁','<b>3 Versuche</b> – der beste zählt.']] },
+            short:'Gewicht ansagen und heben',
+            how:[['⚖️','<b>Sage an</b>, wie viel aufgelegt wird – mit links und rechts einstellen.'],
+                 ['🎯','Dann den Zeiger in der <b>grünen Zone</b> stoppen. Je mehr Kilo, desto <b>schmaler</b> die Zone.'],
+                 ['❌','Verfehlt heißt <b>ungültig</b> – dieser Versuch bringt nichts.'],
+                 ['🔁','<b>3 Versuche</b>. Sicher steigern oder gleich hoch pokern?']] },
 };
 
 const LAENDER = ['🇩🇪 Deutschland','🇦🇹 Österreich','🇨🇭 Schweiz','🇫🇷 Frankreich',
@@ -554,13 +558,16 @@ function showBrief(key){
   document.getElementById('b-steps').innerHTML =
     d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
   // Steuerung passend zur ersten Mechanik
-  const usesSteer = d.phases.includes('slalom');
-  const usesMash  = d.phases.includes('mash')  || d.phases.includes('pace') ||
-                    d.phases.includes('dive')  || d.phases.includes('gear') ||
-                    d.phases.includes('runup');
-  const keys = ['<span>Touch: die großen Flächen unten</span>'];
-  if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
-  else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
+  const ph = d.phases;
+  const has = (...names) => names.some(n => ph.includes(n));
+  const keys = [];
+  if (has('mash','pace','dive','gear','runup','slalom','declare'))
+    keys.push('<span>Lenken/Tippen: <kbd>A</kbd> <kbd>D</kbd></span>');
+  if (has('gear','runup','slalom','declare','lift'))
+    keys.push('<span>Aktion: <kbd>W</kbd></span>');
+  if (has('react','bar2'))
+    keys.push('<span>Start/Stopp: <kbd>Leertaste</kbd></span>');
+  keys.push('<span>Touch: die großen Flächen unten</span>');
   document.getElementById('b-keys').innerHTML = keys.join('');
   show('s-brief');
 }
@@ -577,7 +584,7 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
-        runX:0, foulMsg:0, travel:0,
+        runX:0, foulMsg:0, travel:0, weight:0, lastOk:null,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -592,6 +599,7 @@ function startDiscipline(key){
   document.getElementById('pads').className = (d.phases[0]==='react') ? 'single' : '';
   setPadLabels();
   if (d.phases.includes('slalom')) buildGates();
+  if (d.startW) G.weight = d.startW;
   show('s-play');
   lastT = performance.now();
   cancelAnimationFrame(raf);
@@ -618,7 +626,14 @@ function setPadLabels(){
     hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
-  else if (p === 'bar2' || p === 'lift'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
+  else if (p === 'declare'){ pads.className='withshift'; L.style.display='';
+    L.textContent='➖ leichter'; R.textContent='schwerer ➕';
+    document.getElementById('padS').textContent='✔ GEWICHT ANSAGEN';
+    hint.textContent='Gewicht mit A und D einstellen, mit W ansagen.'; }
+  else if (p === 'lift'){ pads.className='onlyshift';
+    document.getElementById('padS').textContent='🏋️ STOPP';
+    hint.textContent='Zeiger in der grünen Zone stoppen. (W)'; }
+  else if (p === 'bar2'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
     hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
   else if (p === 'slalom'){ pads.className='withshift'; L.style.display='';
     L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
@@ -804,7 +819,40 @@ function update(dt){
     return;
   }
 
-  if (G.phase === 'bar2' || G.phase === 'lift'){
+  if (G.phase === 'declare'){
+    // Gewicht ansagen: mehr Kilo zaehlen mehr, machen die gueltige Zone aber enger
+    if (IN.tapL > 0) G.weight = Math.max(d.minW, G.weight - d.step * IN.tapL);
+    if (IN.tapR > 0) G.weight = Math.min(d.maxW, G.weight + d.step * IN.tapR);
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    if (IN.shift > 0){
+      IN.shift = 0; G.phase = 'lift'; G.barX = 0; G.barDir = 1; setPadLabels();
+    }
+    return;
+  }
+
+  if (G.phase === 'lift'){
+    const spd = [1.05, 1.35, 1.7, 2.1][S.diff];
+    G.barX += G.barDir * spd * dt;
+    if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
+    if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
+    if (IN.shift > 0){
+      IN.shift = 0; IN.tapL = IN.tapR = IN.tapAny = 0;
+      const ok = Math.abs(G.barX - 0.5) <= liftZone(G.weight);
+      G.lastOk = ok;
+      if (ok){
+        G.bestVal = Math.max(G.bestVal, G.weight);
+        big.textContent = 'GÜLTIG · ' + G.weight + ' kg'; big.style.color = 'var(--green)';
+      } else {
+        big.textContent = 'UNGÜLTIG'; big.style.color = 'var(--red)';
+      }
+      setTimeout(()=>{ if (big) big.textContent = ''; }, 1100);
+      if (G.att >= d.attempts) finish(G.bestVal);
+      else { G.att++; G.phase = 'declare'; setPadLabels(); }
+    }
+    return;
+  }
+
+  if (G.phase === 'bar2'){
     const spd = [1.05, 1.35, 1.7, 2.1][S.diff];
     G.barX += G.barDir * spd * dt;
     if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
@@ -854,6 +902,13 @@ function update(dt){
     }
     return;
   }
+}
+
+// Gueltige Zone schrumpft mit dem angesagten Gewicht und der Schwierigkeit
+function liftZone(w){
+  const d = G.d;
+  const f = (w - d.minW) / (d.maxW - d.minW);
+  return Math.max(0.012, (0.26 - 0.235 * f) * [1.15, 1.0, 0.87, 0.75][S.diff]);
 }
 
 function registerTap(){
@@ -913,6 +968,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
+  else if (p === 'declare') drawDeclare();
   else if (p === 'runup') drawRunup();
   else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
   else if (p === 'slalom') drawSlalom();
@@ -1064,6 +1120,38 @@ function drawStandings(entries, title){
   });
 }
 
+function liftStandings(){
+  const d = G.d;
+  return G.field.map(f => ({ ...f, txt: fmt(d, f.val) + ' kg' }))
+    .concat([{ you:true, name:S.name, land:S.land, val:G.bestVal,
+               txt: G.bestVal ? fmt(d, G.bestVal) + ' kg' : '–' }])
+    .sort((a,b) => b.val - a.val);
+}
+
+function drawDeclare(){
+  const d = G.d;
+  bg('#1c1730','#0a0814');
+  ctx.textAlign='center';
+  ctx.font='44px serif'; ctx.fillText('🏋️', W/2 - 130, H*0.34);
+  ctx.fillStyle='#8ea3bd'; ctx.font='600 13px Segoe UI,Arial';
+  ctx.fillText('VERSUCH ' + G.att + ' / ' + d.attempts, W/2 - 130, H*0.16);
+  ctx.fillStyle='#fff'; ctx.font='800 58px Segoe UI,Arial';
+  ctx.fillText(G.weight.toFixed(1).replace('.0','') + ' kg', W/2 - 130, H*0.55);
+
+  // Vorschau, wie eng die Zone bei diesem Gewicht wird
+  const z = liftZone(G.weight), bw = 300, bx = W/2 - 130 - bw/2, by = H*0.66;
+  ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 18);
+  ctx.fillStyle='rgba(57,224,143,.6)'; ctx.fillRect(bx + bw*(0.5-z), by, bw*z*2, 18);
+  ctx.fillStyle='#8ea3bd'; ctx.font='600 12px Segoe UI,Arial';
+  ctx.fillText('so groß wird die gültige Zone', W/2 - 130, by + 36);
+  if (G.bestVal){
+    ctx.fillStyle='#ffd75e'; ctx.font='600 13px Segoe UI,Arial';
+    ctx.fillText('bisher gültig: ' + G.bestVal + ' kg', W/2 - 130, H*0.12);
+  }
+  ctx.textAlign='left';
+  drawStandings(liftStandings(), 'ZWISCHENSTAND');
+}
+
 function drawRunup(){
   const d = G.d;
   bg('#16233a','#080e1a');
@@ -1109,16 +1197,16 @@ function drawBar(){
   const bw = W-120, bx = 60, by = H/2 + 20;
   ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 34);
   // Zonen
-  const zw = [0.22,0.17,0.13,0.10][S.diff];
-  ctx.fillStyle='rgba(255,215,94,.32)';
+  const zw = G.phase === 'lift' ? liftZone(G.weight) : [0.22,0.17,0.13,0.10][S.diff];
+  ctx.fillStyle='rgba(255,215,94,.24)';
+  ctx.fillRect(bx + bw*(0.5-zw*1.6), by, bw*zw*3.2, 34);
+  ctx.fillStyle='rgba(57,224,143,.62)';
   ctx.fillRect(bx + bw*(0.5-zw), by, bw*zw*2, 34);
-  ctx.fillStyle='rgba(57,224,143,.55)';
-  ctx.fillRect(bx + bw*(0.5-zw*0.42), by, bw*zw*0.84, 34);
   // Zeiger
   ctx.fillStyle='#fff'; ctx.fillRect(bx + bw*G.barX - 3, by-11, 6, 56);
   // Beschriftung
   ctx.textAlign='center'; ctx.fillStyle='#cfe0f2'; ctx.font='700 22px Segoe UI,Arial';
-  const label = G.phase==='lift' ? 'Versuch ' + G.att + ' / 3'
+  const label = G.phase==='lift' ? G.weight.toFixed(1).replace('.0','') + ' kg heben'
               : (G.angle===null ? 'Abwurfwinkel' : 'Kraft');
   ctx.fillText(label, W/2, by - 46);
   if (G.phase !== 'lift'){                       // Versuchszähler auch beim Wurf
