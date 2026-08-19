@@ -320,9 +320,9 @@ const DISCIPLINES = {
                  ['🫁','Viel Kraft kostet <b>Ausdauer</b>. Ist sie leer, übersäuerst du und brichst ein – teile dir die 100 m ein!']] },
 
   swim:   { name:'50 m Freistil', icon:'🏊', unit:'s', lower:true,
-            phases:['react','dive','mash'], dist:50, vMax:2.35, cadence:6.5,
+            phases:['react','dive','mash'], dist:50, vMax:2.35,
             diveV:2.95, airSec:7.5,
-            norms:[29.0, 25.0, 22.0, 20.0],
+            norms:[33.0, 26.0, 22.0, 20.0],
             short:'Tauchen und rechtzeitig hoch',
             how:[['🚦','Auf <b>LOS!</b> reagieren – Fehlstart vermeiden.'],
                  ['🐬','Unter Wasser bist du <b>deutlich schneller</b> – aber die Luft geht aus. Drücke zum <b>Auftauchen</b>.'],
@@ -340,7 +340,7 @@ const DISCIPLINES = {
                  ['⚠️','Zu spät geschaltet heißt <b>hohl drehen</b>: das Tempo ist im kleinen Gang gedeckelt.']] },
 
   throw:  { name:'Speerwurf', icon:'🎯', unit:'m', lower:false,
-            phases:['runup'], attempts:3, runway:32, runV:9.0, runCad:6.0,
+            phases:['runup'], attempts:3, runway:32, runV:9.0,
             norms:[40, 54, 65, 74],
             short:'Anlauf nehmen, vor der Linie werfen',
             how:[['🏃','<b>Anlauf:</b> abwechselnd links und rechts tippen. Je mehr Tempo, desto weiter der Wurf.'],
@@ -349,9 +349,9 @@ const DISCIPLINES = {
                  ['🔁','<b>3 Versuche</b> – gewertet wird der beste.']] },
 
   ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
-            phases:['react','slalom'], gates:12, spacing:58,
-            vMin:17, vMax:33, acc:6.0, dec:9.0,
-            norms:[38.0, 32.0, 27.5, 24.0],
+            phases:['react','slalom'], gates:14, spacing:42,
+            vMin:17, vMax:40, acc:7.0, dec:9.0,
+            norms:[28.0, 25.0, 23.0, 21.5],
             short:'Tempo selbst dosieren',
             how:[['🚦','Auf <b>LOS!</b> reagieren, dann geht die Fahrt los.'],
                  ['🎿','Links/rechts <b>gedrückt halten</b> zum Lenken – nicht tippen.'],
@@ -365,6 +365,7 @@ const DISCIPLINES = {
             how:[['⚖️','<b>Sage an</b>, wie viel aufgelegt wird – mit links und rechts einstellen.'],
                  ['🎯','Dann den Zeiger in der <b>grünen Zone</b> stoppen. Je mehr Kilo, desto <b>schmaler</b> die Zone.'],
                  ['❌','Verfehlt heißt <b>ungültig</b> – dieser Versuch bringt nichts.'],
+                 ['⬆️','Die Hantel wird nur <b>schwerer</b>: was du angesagt hast, ist die Untergrenze.'],
                  ['🔁','<b>3 Versuche</b>. Sicher steigern oder gleich hoch pokern?']] },
 };
 
@@ -591,12 +592,12 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
-        runX:0, foulMsg:0, travel:0, weight:0, lastOk:null,
+        runX:0, foulMsg:0, travel:0, weight:0, lastOk:null, minDecl:0,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
         px:0, gate:0, gates:[], missed:0,
-        cd: 3.0, field: buildField(key) };
+        cd: 3.0, raceT: 0, field: buildField(key) };
   // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
   if (['mash','pace','dive','gear','slalom'].some(x => d.phases.includes(x)))
     G.field.forEach(f => f.finishT = f.val);
@@ -606,7 +607,7 @@ function startDiscipline(key){
   document.getElementById('pads').className = (d.phases[0]==='react') ? 'single' : '';
   setPadLabels();
   if (d.phases.includes('slalom')) buildGates();
-  if (d.startW) G.weight = d.startW;
+  if (d.startW){ G.weight = d.startW; G.minDecl = d.minW; }
   show('s-play');
   lastT = performance.now();
   cancelAnimationFrame(raf);
@@ -653,8 +654,8 @@ function buildGates(){
   const d = DISCIPLINES[G.key];
   // Gemischte Torfolge: enge Tore laden zum Hocken ein, weite zwingen zum
   // Aufrichten. Ohne diese Abwechslung gaebe es keine Tempo-Entscheidung.
-  const MAG = [0.18, 0.40, 0.26, 0.54, 0.32, 0.60, 0.22, 0.50, 0.58, 0.30, 0.56, 0.38];
-  const sc = [0.80, 0.90, 1.00, 1.10][S.diff];
+  const MAG = [0.20, 0.44, 0.28, 0.58, 0.34, 0.62, 0.24, 0.54, 0.62, 0.32, 0.60, 0.40, 0.26, 0.56];
+  const sc = [0.80, 0.95, 1.10, 1.22][S.diff];
   for (let i=0;i<d.gates;i++)
     G.gates.push({ z: 80 + i*d.spacing, x: (i%2?1:-1) * MAG[i % MAG.length] * sc });
 }
@@ -669,11 +670,15 @@ function loop(now){
 /* ── Mechaniken ──────────────────────────────────────────────── */
 function update(dt){
   G.t += dt;
+  // G.t wird bei jedem Phasenwechsel genullt. Die gewertete Zeit braucht aber
+  // eine Uhr, die ueber alle Phasen durchlaeuft - sonst waeren zum Beispiel die
+  // Sekunden unter Wasser beim Schwimmen geschenkt.
+  if (G.phase !== 'react') G.raceT += dt;
   const d = G.d;
 
   // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen
   if (G.phase !== 'react' && G.t > 90){
-    if (d.lower) finish(90 + (G.missed||0) * 2.5);
+    if (d.lower) finish(G.raceT + (G.missed||0) * 2.5);
     else finish(G.bestVal);
     return;
   }
@@ -709,11 +714,15 @@ function update(dt){
     if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
     if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
 
-    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; registerTap(); }
-    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; registerTap(); }
+    // Gleiches lineares Modell wie beim Schwimmen: der alte Ansatz ueber den
+    // Kehrwert des Tastenabstands brach bei ruhigem Tippen zusammen.
+    let strokes = 0;
+    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; strokes++; }
+    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; strokes++; }
     IN.tapL = IN.tapR = IN.tapAny = 0;
-    G.rate = Math.max(0, G.rate - dt * 3.4);
-    const tgt = d.runV * Math.min(1, G.rate / d.runCad);
+    G.rate = Math.min(1, G.rate + 0.08 * strokes);
+    G.rate = Math.max(0, G.rate - dt * (0.12 + G.rate * 0.35));
+    const tgt = d.runV * G.rate;
     G.v += (tgt - G.v) * Math.min(1, dt * 2.6);
     G.runX += G.v * dt;
     if (G.foulMsg > 0) G.foulMsg -= dt;
@@ -771,7 +780,7 @@ function update(dt){
     G.v = Math.min(G.v, gs[G.gear]);     // im kleinen Gang gedeckelt
     if (G.shiftFlash > 0) G.shiftFlash -= dt;
     G.dist += G.v * dt;
-    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t); }
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT); }
     return;
   }
 
@@ -781,7 +790,7 @@ function update(dt){
     G.air = Math.max(0, G.air - dt / d.airSec);
     G.v += (d.diveV - G.v) * Math.min(1, dt * 2.6);
     G.dist += G.v * dt;
-    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); return; }
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT + (G.reactT||0)); return; }
     // Nach dem Start tippen viele reflexhaft weiter. Ohne Sperre waere der
     // Tauchgang sofort vorbei, bevor man ihn ueberhaupt bemerkt.
     if (G.t < 0.7) IN.tapL = IN.tapR = IN.tapAny = 0;
@@ -816,27 +825,35 @@ function update(dt){
     const target = d.vMax * Math.sqrt(G.freq * G.power) * (G.stam > 0 ? 1 : 0.62);
     G.v += (target - G.v) * Math.min(1, dt * 2.4);
     G.dist += G.v * dt;
-    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); }
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT + (G.reactT||0)); }
     return;
   }
 
   if (G.phase === 'mash'){
-    // Taktrate aus dem Wechsel links/rechts – reines Dauerdrücken bringt nichts
-    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; registerTap(); }
-    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; registerTap(); }
+    // Zugkraft steigt je Wechsel und faellt stetig wieder ab. Frueher kam die
+    // Rate aus dem Kehrwert des Tastenabstands - dabei fiel sie bei ruhigem
+    // Tippen schneller, als ein Zug sie heben konnte (Rate 1.0 bei 3 Anschlaegen
+    // pro Sekunde), und die Strecke wurde unschwimmbar.
+    let strokes = 0;
+    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; strokes++; }
+    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; strokes++; }
     IN.tapL = IN.tapR = IN.tapAny = 0;
-    G.rate = Math.max(0, G.rate - dt * 3.4);            // Tempo fällt ohne Takt
+    G.rate = Math.min(1, G.rate + 0.085 * strokes);
+    G.rate = Math.max(0, G.rate - dt * (0.10 + G.rate * 0.30));
     if (G.gaspT > 0) G.gaspT -= dt;                     // Nachwirkung des Luftmangels
-    const target = d.vMax * Math.min(1, G.rate / d.cadence) * (G.gaspT > 0 ? 0.45 : 1);
+    const target = d.vMax * G.rate * (G.gaspT > 0 ? 0.45 : 1);
     G.v += (target - G.v) * Math.min(1, dt * 2.2);
     G.dist += G.v * dt;
-    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t - (G.reactMark||0) + (G.reactT||0)); }
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.raceT + (G.reactT||0)); }
     return;
   }
 
   if (G.phase === 'declare'){
     // Gewicht ansagen: mehr Kilo zaehlen mehr, machen die gueltige Zone aber enger
-    if (IN.tapL > 0) G.weight = Math.max(d.minW, G.weight - d.step * IN.tapL);
+    // Wie im echten Wettkampf: die Hantel wird nur schwerer, nie wieder leichter.
+    // Sonst waere es immer richtig, gleich das Maximum anzusagen und notfalls
+    // im naechsten Versuch bequem zurueckzugehen.
+    if (IN.tapL > 0) G.weight = Math.max(G.minDecl, G.weight - d.step * IN.tapL);
     if (IN.tapR > 0) G.weight = Math.min(d.maxW, G.weight + d.step * IN.tapR);
     IN.tapL = IN.tapR = IN.tapAny = 0;
     if (IN.shift > 0){
@@ -861,6 +878,7 @@ function update(dt){
         big.textContent = 'UNGÜLTIG'; big.style.color = 'var(--red)';
       }
       setTimeout(()=>{ if (big) big.textContent = ''; }, 1100);
+      G.minDecl = G.weight;              // ab jetzt Untergrenze
       if (G.att >= d.attempts) finish(G.bestVal);
       else { G.att++; G.phase = 'declare'; setPadLabels(); }
     }
@@ -913,7 +931,7 @@ function update(dt){
         setTimeout(()=>{ if(big) big.textContent=''; }, 500);
       }
       G.gate++;
-      if (G.gate >= G.gates.length) finish(G.t + G.missed * 2.5 + (G.reactT||0));
+      if (G.gate >= G.gates.length) finish(G.raceT + G.missed * 2.5 + (G.reactT||0));
     }
     return;
   }
@@ -923,15 +941,10 @@ function update(dt){
 function liftZone(w){
   const d = G.d;
   const f = (w - d.minW) / (d.maxW - d.minW);
-  return Math.max(0.012, (0.26 - 0.235 * f) * [1.15, 1.0, 0.87, 0.75][S.diff]);
-}
-
-function registerTap(){
-  const now = G.t;
-  const gap = now - (G.lastTap || now);
-  G.lastTap = now;
-  if (gap > 0.001) G.rate = Math.min(12, G.rate * 0.55 + (1/gap) * 0.45);
-  else G.rate = Math.min(12, G.rate + 1);
+  // Steil abfallend: beim Maximum bleibt kaum ein Fenster, sonst waere es
+  // immer richtig, einfach das Hoechstgewicht anzusagen.
+  return Math.max(0.010, (0.26 * Math.pow(1 - f, 1.3) + 0.012)
+                         * [1.15, 1.0, 0.87, 0.75][S.diff]);
 }
 
 function throwValue(angleAcc, powerAcc){
@@ -1106,8 +1119,8 @@ function drawRace(){
       ctx.fillText('AUFTAUCHEN!', W/2, H-44); ctx.textAlign='left';
     }
   } else {
-    const rr = Math.min(1, G.rate / d.cadence);
-    ctx.fillStyle='#8ea3bd'; ctx.fillText('TAKT', 22, H-44);
+    const rr = Math.min(1, G.rate);
+    ctx.fillStyle='#8ea3bd'; ctx.fillText('ZUGKRAFT', 22, H-44);
     ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
     ctx.fillStyle = rr > 0.85 ? '#39e08f' : rr > 0.5 ? '#ffd75e' : '#ff8a5a';
     ctx.fillRect(22, H-38, (W-44)*rr, 13);
@@ -1159,6 +1172,10 @@ function drawDeclare(){
   ctx.fillStyle='rgba(57,224,143,.6)'; ctx.fillRect(bx + bw*(0.5-z), by, bw*z*2, 18);
   ctx.fillStyle='#8ea3bd'; ctx.font='600 12px Segoe UI,Arial';
   ctx.fillText('so groß wird die gültige Zone', W/2 - 130, by + 36);
+  if (G.minDecl > d.minW){
+    ctx.fillStyle='#8ea3bd'; ctx.font='600 12px Segoe UI,Arial';
+    ctx.fillText('Untergrenze ' + G.minDecl + ' kg – zurück geht es nicht', W/2 - 130, by + 56);
+  }
   if (G.bestVal){
     ctx.fillStyle='#ffd75e'; ctx.font='600 13px Segoe UI,Arial';
     ctx.fillText('bisher gültig: ' + G.bestVal + ' kg', W/2 - 130, H*0.12);
