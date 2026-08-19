@@ -376,6 +376,15 @@ const DISCIPLINES = {
                  ['🦵','<b>Springen</b> mit der Aktionstaste, wenn der Zeiger im <b>grünen Bereich</b> ist – etwa zwei Meter vor der Hürde.'],
                  ['💥','Zu früh oder zu spät heißt <b>streifen</b> oder <b>reißen</b> und kostet Tempo. Gar nicht springen wirft dich richtig zurück.']] },
 
+  pong:   { name:'Tischtennis', icon:'🏓', unit:'Pkt', lower:false,
+            phases:['pong'], toWin:21, cap:25,
+            norms:[30, 44, 54, 62],
+            short:'Ballwechsel bis 21',
+            how:[['🏓','Der Ball kommt auf eine <b>Seite</b> – drücke genau diese Seite, wenn der Zeiger im Trefferfenster ist.'],
+                 ['🎯','Je <b>mittiger</b> dein Timing, desto härter der Rückschlag und desto mehr Druck für den Gegner.'],
+                 ['💥','Kommt der Ball <b>hoch</b>, kannst du <b>schmettern</b> – fast sicherer Punkt, aber das Fenster ist eng. Ohne hohen Ball ist es ein Fehlschlag.'],
+                 ['🏁','Satz bis <b>21 Punkte</b>, zwei Punkte Vorsprung nötig, gedeckelt bei 25. Ein Sieg zählt extra.']] },
+
   fence:  { name:'Fechten', icon:'🤺', unit:'Pkt', lower:false,
             phases:['duel'], toWin:5,
             norms:[28, 45, 58, 68],
@@ -602,9 +611,9 @@ function showBrief(key){
   const ph = d.phases;
   const has = (...names) => names.some(n => ph.includes(n));
   const keys = [];
-  if (has('mash','pace','dive','gear','runup','declare','duel','hurdle'))
+  if (has('mash','pace','dive','gear','runup','declare','duel','hurdle','pong'))
     keys.push('<span>Tasten: <kbd>A</kbd> <kbd>D</kbd></span>');
-  if (has('gear','runup','declare','lift','hurdle'))
+  if (has('gear','runup','declare','lift','hurdle','pong'))
     keys.push('<span>Aktion: <kbd>W</kbd></span>');
   if (has('react'))
     keys.push('<span>Start/Stopp: <kbd>Leertaste</kbd></span>');
@@ -632,6 +641,8 @@ function startDiscipline(key){
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, angle:null,
         cd: 3.0, raceT: 0,
+        pScore:[0,0], pState:'pause', pPause:1.0, pT:0, pDur:1, pSide:1,
+        pHigh:false, pQual:0, pMsg:'', pMsgT:0, pRally:0, pServe:true,
         fScore:[0,0], fState:'idle', fIdle:1.1, fExt:0, fFeint:false,
         fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
         field: buildField(key) };
@@ -677,6 +688,10 @@ function setPadLabels(){
     hint.textContent='Laufen mit A und D, springen mit W – im grünen Bereich abspringen!'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
+  else if (p === 'pong'){ pads.className='withshift'; L.style.display='';
+    L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
+    document.getElementById('padS').textContent='🏓 SCHMETTERN';
+    hint.textContent='Seite des Balls treffen (A/D). Bei hohem Ball schmettern (W).'; }
   else if (p === 'duel'){ pads.className=''; L.style.display='';
     L.textContent='🛡 PARIEREN'; R.textContent='⚔️ ANGREIFEN';
     hint.textContent='Echte Attacke parieren (A), Finte bestrafen (D). Nichts tun ist gegen Finten sicher.'; }
@@ -705,10 +720,14 @@ function update(dt){
   if (G.phase !== 'react') G.raceT += dt;
   const d = G.d;
 
-  // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen
-  if (G.phase !== 'react' && G.t > 90){
-    if (d.lower) finish(G.raceT);
-    else finish(G.bestVal);
+  // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen.
+  // Satz-Disziplinen brauchen laenger und werden nach Punktestand gewertet -
+  // sonst endete ein Spiel beim Stand von 14:17 mit null Punkten.
+  const capT = d.toWin ? 240 : 90;
+  if (G.phase !== 'react' && G.t > capT){
+    if (d.toWin)      finish(satzWert(d));
+    else if (d.lower) finish(G.raceT);
+    else              finish(G.bestVal);
     return;
   }
 
@@ -935,6 +954,73 @@ function update(dt){
     return;
   }
 
+  if (G.phase === 'pong'){
+    const win  = dScale([0.14, 0.11, 0.090, 0.075]);   // halbe Breite des Fensters
+    const base = dScale([1.05, 0.90, 0.78, 0.68]);     // Grundflugzeit
+    const eBas = dScale([0.06, 0.048, 0.038, 0.030]);  // Grundfehler des Gegners
+    const eFak = dScale([0.55, 0.44, 0.36, 0.29]);     // wie stark Druck wirkt
+    const HIT  = 0.88;                                  // idealer Treffpunkt
+    if (G.pMsgT > 0) G.pMsgT -= dt;
+
+    const punkt = (mir, txt) => {
+      G.pScore[mir ? 0 : 1]++;
+      G.pMsg = txt; G.pMsgT = 1.0;
+      G.pState = 'pause'; G.pPause = 0.9; G.pRally = 0;
+      const a = G.pScore[0], b = G.pScore[1];
+      const fertig = (a >= d.toWin || b >= d.toWin) && Math.abs(a-b) >= 2
+                     || a >= d.cap || b >= d.cap;
+      if (fertig) finish(satzWert(d));
+    };
+
+    if (G.pState === 'pause'){
+      IN.tapL = IN.tapR = IN.tapAny = IN.shift = 0;
+      G.pPause -= dt;
+      if (G.pPause <= 0){
+        G.pState = 'fly'; G.pT = 0;
+        G.pSide  = Math.random() < 0.5 ? -1 : 1;
+        G.pDur   = base * (0.95 + Math.random() * 0.15);
+        G.pHigh  = false;
+      }
+      return;
+    }
+
+    // Ball fliegt auf dich zu
+    G.pT += dt / G.pDur;
+    const links = IN.tapL > 0, rechts = IN.tapR > 0, schmetter = IN.shift > 0;
+    IN.tapL = IN.tapR = IN.tapAny = IN.shift = 0;
+
+    if (G.pT >= 1.0){ punkt(false, 'Ball durchgelassen'); return; }
+
+    if (links || rechts || schmetter){
+      const abw = Math.abs(G.pT - HIT);
+      const seiteOk = schmetter ? true : ((links ? -1 : 1) === G.pSide);
+      const fenster = schmetter ? win * 0.55 : win;
+
+      if (schmetter && !G.pHigh){ punkt(false, 'Fehlschlag – kein hoher Ball'); return; }
+      if (!seiteOk)            { punkt(false, 'Falsche Seite');                return; }
+      if (abw > fenster)       { punkt(false, abw > 0 && G.pT < HIT ? 'Zu früh' : 'Zu spät'); return; }
+
+      // Treffer: Qualitaet bestimmt den Druck auf den Gegner
+      const qual = 1 - abw / fenster;
+      G.pQual = qual; G.pRally++;
+      const druck = schmetter ? 0.55 + qual * 0.45 : qual;
+      const fehlChance = schmetter ? 0.80 + qual * 0.15 : eBas + druck * eFak;
+
+      if (Math.random() < fehlChance){
+        punkt(true, schmetter ? 'Schmetterball!' : qual > 0.75 ? 'Starker Ball!' : 'Punkt für dich');
+        return;
+      }
+      // Gegner bringt ihn zurueck: schwacher Schlag kommt schnell zurueck
+      G.pState = 'fly'; G.pT = 0;
+      G.pSide  = Math.random() < 0.5 ? -1 : 1;
+      G.pDur   = base * (1.22 - druck * 0.42) * (0.95 + Math.random() * 0.12);
+      G.pHigh  = druck > 0.72 && Math.random() < 0.38;   // Vorlage zum Schmettern
+      G.pMsg = ''; 
+      return;
+    }
+    return;
+  }
+
   if (G.phase === 'duel'){
     // Das Zeitfenster zum Parieren ist (1 - Entscheidungsschwelle) / Tempo.
     // Bei 0.65 als Schwelle bleiben 0.47 / 0.33 / 0.24 / 0.18 Sekunden.
@@ -946,8 +1032,7 @@ function update(dt){
       G.fScore[mir ? 0 : 1]++;
       G.fMsg = txt; G.fMsgT = 1.1;
       G.fState = 'idle'; G.fIdle = 1.0; G.fExt = 0;
-      if (G.fScore[0] >= d.toWin || G.fScore[1] >= d.toWin)
-        finish(G.fScore[0] * 10 + (d.toWin - G.fScore[1]) * 6);
+      if (G.fScore[0] >= d.toWin || G.fScore[1] >= d.toWin) finish(satzWert(d));
     };
 
     if (G.fState === 'idle'){
@@ -1066,6 +1151,17 @@ function nextPhase(){
   setPadLabels();
 }
 
+// Wertung der Satz-Disziplinen: eigene Punkte zaehlen doppelt, der Abstand
+// zum Gegner geht als Bonus ein
+function satzWert(d){
+  const sc = d.phases.includes('pong') ? G.pScore : G.fScore;
+  const [a, b] = sc;
+  const sieg = a > b ? (d.phases.includes('pong') ? 6 : 0) : 0;
+  if (d.phases.includes('pong'))
+    return a * 2 + (d.toWin - Math.min(b, d.toWin)) + sieg;
+  return a * 10 + (d.toWin - Math.min(b, d.toWin)) * 6;
+}
+
 function fmt(d, v){
   if (d.unit === 's')   return v.toFixed(2);
   if (d.unit === 'kg' || d.unit === 'Pkt') return String(Math.round(v));
@@ -1099,6 +1195,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
+  else if (p === 'pong') drawPong();
   else if (p === 'duel') drawDuel();
   else if (p === 'declare') drawDeclare();
   else if (p === 'runup') drawRunup();
@@ -1290,6 +1387,70 @@ function drawStandings(entries, title){
     ctx.fillText(e.txt, bx+bw-10, y);
     ctx.textAlign='left';
   });
+}
+
+function drawPong(){
+  const d = G.d;
+  bg('#10251c','#060d0a');
+  // Tisch von oben, Netz in der Mitte
+  const tx = W*0.20, tw = W*0.60, ty = 58, th = H*0.62;
+  ctx.fillStyle='#12507e'; ctx.fillRect(tx, ty, tw, th);
+  ctx.strokeStyle='#e9f2fb'; ctx.lineWidth=2;
+  ctx.strokeRect(tx, ty, tw, th);
+  ctx.beginPath(); ctx.moveTo(tx+tw/2, ty); ctx.lineTo(tx+tw/2, ty+th); ctx.stroke();
+  ctx.fillStyle='rgba(233,242,251,.85)';
+  ctx.fillRect(tx-8, ty+th/2-2, tw+16, 4);          // Netz
+
+  // Schlaeger
+  ctx.font='26px serif'; ctx.textAlign='center';
+  ctx.fillText('🏓', tx+tw/2 + G.pSide*tw*0.22, ty+22);            // Gegner
+  ctx.fillText('🏓', tx+tw/2 + G.pSide*tw*0.22, ty+th-6);          // du
+
+  // Ball auf dem Weg zu dir
+  if (G.pState === 'fly'){
+    const by = ty + th*0.10 + (th*0.82) * Math.min(1, G.pT);
+    const bx = tx + tw/2 + G.pSide * tw*0.22;
+    ctx.beginPath(); ctx.arc(bx, by, G.pHigh ? 9 : 6, 0, Math.PI*2);
+    ctx.fillStyle = G.pHigh ? '#ffd75e' : '#fff'; ctx.fill();
+    if (G.pHigh){
+      ctx.fillStyle='#0b1a14'; ctx.fillRect(W/2-140, ty+th*0.26-14, 280, 20);
+      ctx.fillStyle='#ffd75e'; ctx.font='700 15px Segoe UI,Arial';
+      ctx.fillText('HOHER BALL – SCHMETTERN!', W/2, ty+th*0.26);
+    }
+  }
+
+  // Punktestand
+  ctx.font='800 34px Segoe UI,Arial'; ctx.fillStyle='#fff';
+  ctx.fillText(G.pScore[0] + ' : ' + G.pScore[1], W/2, 40);
+  ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
+  ctx.fillText('DU     bis ' + d.toWin + '     GEGNER', W/2, 54);
+
+  if (G.pMsgT > 0){
+    ctx.font='700 19px Segoe UI,Arial';
+    ctx.fillStyle = G.pMsg.includes('!') || G.pMsg.includes('dich') ? '#39e08f' : '#ff6a5a';
+    ctx.fillText(G.pMsg, W/2, ty+th+30);
+  } else if (G.pRally > 1){
+    ctx.font='600 13px Segoe UI,Arial'; ctx.fillStyle='#7f92aa';
+    ctx.fillText('Ballwechsel: ' + G.pRally, W/2, ty+th+30);
+  }
+
+  // Trefferfenster unten
+  const bx0 = 22, bw = W-44, HITP = 0.88;
+  const win = dScale([0.14, 0.11, 0.090, 0.075]);
+  ctx.textAlign='left'; ctx.fillStyle='#8ea3bd'; ctx.font='11px Segoe UI,Arial';
+  ctx.fillText(G.pSide < 0 ? 'BALL KOMMT LINKS' : 'BALL KOMMT RECHTS', bx0, H-44);
+  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx0, H-38, bw, 13);
+  ctx.fillStyle='rgba(57,224,143,.5)';
+  ctx.fillRect(bx0 + bw*(HITP-win), H-38, bw*win*2, 13);
+  if (G.pHigh){                                   // engeres Fenster beim Schmettern
+    ctx.fillStyle='rgba(255,215,94,.55)';
+    ctx.fillRect(bx0 + bw*(HITP-win*0.55), H-38, bw*win*1.1, 13);
+  }
+  if (G.pState === 'fly'){
+    ctx.fillStyle='#fff';
+    ctx.fillRect(bx0 + bw*Math.min(1, G.pT) - 2, H-42, 4, 21);
+  }
+  ctx.textAlign='left';
 }
 
 function drawDuel(){
