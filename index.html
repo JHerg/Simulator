@@ -143,6 +143,20 @@
   #padD{display:none;padding:16px 10px;font-size:16px;background:rgba(90,140,255,.14);}
   #pads.twoshift #padS{grid-column:1;}
   #pads.twoshift #padD{grid-column:2;display:block;}
+  /* Virtueller Joystick: nur fuer Disziplinen mit stufenloser Steuerung */
+  #stick{display:none;position:relative;height:132px;touch-action:none;
+         background:rgba(255,255,255,.06);cursor:grab;overflow:hidden;}
+  #stick-knob{position:absolute;top:50%;left:50%;width:64px;height:64px;
+    margin:-32px 0 0 -32px;border-radius:50%;
+    background:radial-gradient(circle at 38% 34%,#ffd75e,#ff8a1e);
+    box-shadow:0 4px 16px rgba(255,150,40,.5);transition:background .12s;}
+  #stick-lbl{position:absolute;bottom:9px;left:0;right:0;text-align:center;
+    font-size:11px;letter-spacing:.18em;color:#7f92aa;pointer-events:none;}
+  #stick.on #stick-knob{background:radial-gradient(circle at 38% 34%,#fff2c4,#ffb020);}
+  #pads.stick{grid-template-columns:1.55fr 1fr;}
+  #pads.stick #padL,#pads.stick #padR,#pads.stick #padD{display:none;}
+  #pads.stick #stick{display:block;grid-column:1;grid-row:1;}
+  #pads.stick #padS{display:block;grid-column:2;grid-row:1;height:132px;}
 
   /* ── Siegerehrung ──────────────────────────────────── */
   #cer-cv{width:100%;max-width:760px;height:auto;display:block;margin:0 auto;
@@ -264,6 +278,7 @@
       <button class="pad" id="padR">RECHTS ▶</button>
       <button class="pad" id="padS">⚙️ HOCHSCHALTEN</button>
       <button class="pad" id="padD">⚙️ RUNTER</button>
+      <div class="pad" id="stick"><div id="stick-knob"></div><span id="stick-lbl">SCHLÄGER</span></div>
     </div>
     <p class="note" id="play-hint"></p>
     <div class="row" style="margin-top:10px">
@@ -380,7 +395,7 @@ const DISCIPLINES = {
             phases:['pong'], toWin:21, cap:25,
             // Echte Tischmasse in Metern
             tab:{ len:2.74, halfW:0.7625, netZ:1.37, netH:0.1525 },
-            padZ:-0.22, oppZ:2.96, padHW:0.115, padV:2.9,
+            padZ:-0.22, oppZ:2.96, padHW:0.115, padV:4.2,
             hitV:5.2, hitRange:1.8, steer:0.62, flug:0.45, lift:1.75, chargeT:0.80,
             oppPow:0.55,
             norms:[30, 44, 54, 62],
@@ -553,7 +568,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0, power:false };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0, power:false, axis:0 };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -585,6 +600,36 @@ function bindPad(id, down, up){
 }
 bindPad('padS', ()=>{ IN.shift++; IN.power = true; }, ()=>{ IN.power = false; });
 bindPad('padD', ()=>{ IN.down++; }, ()=>{});
+
+// Joystick: Zeiger aufsetzen, seitlich ziehen. Der Ausschlag steuert das Tempo
+// des Schlaegers - so laesst er sich auf dem Tablet fein fuehren.
+(function bindStick(){
+  const el = document.getElementById('stick'), knob = document.getElementById('stick-knob');
+  if (!el) return;
+  const R = 62;
+  let id = null, x0 = 0;
+  const setz = dx => {
+    const d = Math.max(-R, Math.min(R, dx));
+    IN.axis = d / R;
+    knob.style.transform = 'translateX(' + d + 'px)';
+  };
+  el.addEventListener('pointerdown', e => {
+    id = e.pointerId; x0 = e.clientX; el.setPointerCapture(id);
+    el.classList.add('on'); setz(0); e.preventDefault();
+  });
+  el.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return;
+    setz(e.clientX - x0); e.preventDefault();
+  });
+  const los = e => {
+    if (id === null || (e.pointerId !== undefined && e.pointerId !== id)) return;
+    id = null; IN.axis = 0; knob.style.transform = 'translateX(0)';
+    el.classList.remove('on');
+  };
+  el.addEventListener('pointerup', los);
+  el.addEventListener('pointercancel', los);
+  el.addEventListener('lostpointercapture', los);
+})();
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
 
@@ -695,10 +740,9 @@ function setPadLabels(){
     hint.textContent='Laufen mit A und D, springen mit W – im grünen Bereich abspringen!'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
     hint.textContent='Links = Schrittfrequenz, rechts = Kraft. Ausdauer im Blick behalten! (A und D)'; }
-  else if (p === 'pong'){ pads.className='withshift'; L.style.display='';
-    L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
-    document.getElementById('padS').textContent='💥 KRAFT (halten)';
-    hint.textContent='Schläger mit A und D führen. W gedrückt halten lädt Kraft auf – aber nicht zu viel!'; }
+  else if (p === 'pong'){ pads.className='withshift stick';
+    document.getElementById('padS').textContent='💥 KRAFT';
+    hint.textContent='Schläger mit dem Joystick oder A und D führen. Kraft halten lädt auf – aber nicht zu viel!'; }
   else if (p === 'duel'){ pads.className=''; L.style.display='';
     L.textContent='🛡 PARIEREN'; R.textContent='⚔️ ANGREIFEN';
     hint.textContent='Echte Attacke parieren (A), Finte bestrafen (D). Nichts tun ist gegen Finten sicher.'; }
@@ -983,7 +1027,7 @@ function update(dt){
     };
 
     // ── Schlaeger steuern ──
-    const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
+    const steer = IN.axis !== 0 ? IN.axis : ((IN.left ? -1 : 0) + (IN.right ? 1 : 0));
     G.pad = Math.max(-T.halfW - 0.22, Math.min(T.halfW + 0.22, G.pad + steer * d.padV * dt));
     IN.tapL = IN.tapR = IN.tapAny = 0;
     // Kraft aufladen, solange gehalten wird
