@@ -316,7 +316,7 @@
 /* ══════════════════════════════════════════════════════════════
    Aufbau: Jede Disziplin ist nur eine Abfolge wiederverwendbarer
    Mechaniken. "react" = Reaktion, "mash" = Tempo hämmern,
-   "bar" = Timing-Balken, "slalom" = Lenken. Neue Disziplinen
+   "bar" = Timing-Balken, "duel" = Zweikampf. Neue Disziplinen
    entstehen dadurch als Kombination, nicht als eigenes Spiel.
    ══════════════════════════════════════════════════════════════ */
 
@@ -365,16 +365,6 @@ const DISCIPLINES = {
                  ['🎯','<b>Abwerfen</b> mit der eigenen Taste. Der Winkelbalken läuft dabei die ganze Zeit – wo er steht, ist dein Abflugwinkel.'],
                  ['🚫','Erreichst du die <b>Abwurflinie</b> ohne zu werfen, ist der Versuch <b>ungültig</b>.'],
                  ['🔁','<b>3 Versuche</b> – gewertet wird der beste.']] },
-
-  ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
-            phases:['react','slalom'], gates:14, spacing:42,
-            vMin:17, vMax:40, acc:7.0, dec:9.0,
-            norms:[28.0, 25.0, 23.0, 21.5],
-            short:'Tempo selbst dosieren',
-            how:[['🚦','Auf <b>LOS!</b> reagieren, dann geht die Fahrt los.'],
-                 ['🎿','Links/rechts <b>gedrückt halten</b> zum Lenken – nicht tippen.'],
-                 ['🔽','<b>Hocken</b> beschleunigt, Loslassen bremst. Schnell spart Zeit – aber die Lenkung wird <b>träge</b>.'],
-                 ['🚩','Vor weiten Toren rechtzeitig <b>aufrichten</b>, sonst verpasst du sie: 2,5 s Strafe je Tor.']] },
 
   fence:  { name:'Fechten', icon:'🤺', unit:'Pkt', lower:false,
             phases:['duel'], toWin:5,
@@ -539,7 +529,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0, tuck:false };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0 };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -548,13 +538,12 @@ function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
 addEventListener('keydown', e => {
   if (e.repeat) return;
   // Hochschalten bewusst NICHT auf die Leertaste – die tritt sonst mit
-  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; IN.tuck = true; flash('padS'); e.preventDefault(); }
+  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; flash('padS'); e.preventDefault(); }
   if (e.code==='ArrowDown'||e.code==='KeyS') { IN.down++; flash('padD'); e.preventDefault(); }
   if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
 });
 addEventListener('keyup', e => {
-  if (e.code==='ArrowUp'||e.code==='KeyW') IN.tuck = false;
   if (e.code==='ArrowLeft'||e.code==='KeyA') IN.left = false;
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') IN.right = false;
 });
@@ -569,7 +558,7 @@ function bindPad(id, down, up){
   el.addEventListener('mouseup',    u);
   el.addEventListener('mouseleave', u);
 }
-bindPad('padS', ()=>{ IN.shift++; IN.tuck = true; }, ()=>{ IN.tuck = false; });
+bindPad('padS', ()=>{ IN.shift++; }, ()=>{});
 bindPad('padD', ()=>{ IN.down++; }, ()=>{});
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
@@ -602,9 +591,9 @@ function showBrief(key){
   const ph = d.phases;
   const has = (...names) => names.some(n => ph.includes(n));
   const keys = [];
-  if (has('mash','pace','dive','gear','runup','slalom','declare','duel'))
+  if (has('mash','pace','dive','gear','runup','declare','duel'))
     keys.push('<span>Tasten: <kbd>A</kbd> <kbd>D</kbd></span>');
-  if (has('gear','runup','slalom','declare','lift'))
+  if (has('gear','runup','declare','lift'))
     keys.push('<span>Aktion: <kbd>W</kbd></span>');
   if (has('react','bar2'))
     keys.push('<span>Start/Stopp: <kbd>Leertaste</kbd></span>');
@@ -625,24 +614,21 @@ function startDiscipline(key){
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
         gear:0, shiftFlash:0,
-        runX:0, foulMsg:0, travel:0, weight:0, lastOk:null, minDecl:0,
+        runX:0, foulMsg:0, weight:0, lastOk:null, minDecl:0,
         // Balken / Heben
-        att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
-        // Slalom
-        px:0, gate:0, gates:[], missed:0,
+        att:1, bestVal:0, barX:0, barDir:1, angle:null,
         cd: 3.0, raceT: 0,
         fScore:[0,0], fState:'idle', fIdle:1.1, fExt:0, fFeint:false,
         fPeak:0.55, fHold:0, fRetract:false, fMsg:'', fMsgT:0,
         field: buildField(key) };
   // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
-  if (['mash','pace','dive','gear','slalom'].some(x => d.phases.includes(x)))
+  if (['mash','pace','dive','gear'].some(x => d.phases.includes(x)))
     G.field.forEach(f => f.finishT = f.val);
   document.getElementById('hud-disc').textContent = d.icon + ' ' + d.name;
   document.getElementById('hud-who').textContent = S.land + ' · ' + S.name;
   document.getElementById('hud-norm').textContent = d.norms[S.diff] + ' ' + d.unit;
   document.getElementById('pads').className = (d.phases[0]==='react') ? 'single' : '';
   setPadLabels();
-  if (d.phases.includes('slalom')) buildGates();
   if (d.startW){ G.weight = d.startW; G.minDecl = d.minW; }
   show('s-play');
   lastT = performance.now();
@@ -683,20 +669,6 @@ function setPadLabels(){
     hint.textContent='Zeiger in der grünen Zone stoppen. (W)'; }
   else if (p === 'bar2'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
     hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
-  else if (p === 'slalom'){ pads.className='withshift'; L.style.display='';
-    L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
-    document.getElementById('padS').textContent='🔽 HOCKEN (halten)';
-    hint.textContent='Lenken mit A und D. Hocken mit W beschleunigt – vor weiten Toren loslassen!'; }
-}
-
-function buildGates(){
-  const d = DISCIPLINES[G.key];
-  // Gemischte Torfolge: enge Tore laden zum Hocken ein, weite zwingen zum
-  // Aufrichten. Ohne diese Abwechslung gaebe es keine Tempo-Entscheidung.
-  const MAG = [0.20, 0.44, 0.28, 0.58, 0.34, 0.62, 0.24, 0.54, 0.62, 0.32, 0.60, 0.40, 0.26, 0.56];
-  const sc = [0.80, 0.95, 1.10, 1.22][S.diff];
-  for (let i=0;i<d.gates;i++)
-    G.gates.push({ z: 80 + i*d.spacing, x: (i%2?1:-1) * MAG[i % MAG.length] * sc });
 }
 
 function loop(now){
@@ -717,7 +689,7 @@ function update(dt){
 
   // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen
   if (G.phase !== 'react' && G.t > 90){
-    if (d.lower) finish(G.raceT + (G.missed||0) * 2.5);
+    if (d.lower) finish(G.raceT);
     else finish(G.bestVal);
     return;
   }
@@ -1013,29 +985,6 @@ function update(dt){
     return;
   }
 
-  if (G.phase === 'slalom'){
-    // Hocken beschleunigt, Loslassen bremst. Hohes Tempo macht die Lenkung
-    // traege - weite Tore sind dann schlicht nicht mehr erreichbar.
-    G.v += (IN.tuck ? d.acc : -d.dec) * dt;
-    G.v = Math.max(d.vMin, Math.min(d.vMax, G.v));
-    const frac = (G.v - d.vMin) / (d.vMax - d.vMin);
-    const rate = 0.95 * (1 - 0.68 * frac);
-    const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
-    IN.tapL = IN.tapR = IN.tapAny = 0;
-    G.px = Math.max(-0.75, Math.min(0.75, G.px + steer * rate * dt));
-    G.travel = (G.travel || 0) + G.v * dt;
-    const g = G.gates[G.gate];
-    if (g && G.travel >= g.z){
-      if (Math.abs(G.px - g.x) > 0.19){
-        G.missed++;
-        big.textContent = 'TOR VERPASST'; big.style.color='var(--red)';
-        setTimeout(()=>{ if(big) big.textContent=''; }, 500);
-      }
-      G.gate++;
-      if (G.gate >= G.gates.length) finish(G.raceT + G.missed * 2.5 + (G.reactT||0));
-    }
-    return;
-  }
 }
 
 // Gueltige Zone schrumpft mit dem angesagten Gewicht und der Schwierigkeit
@@ -1103,7 +1052,6 @@ function draw(){
   else if (p === 'declare') drawDeclare();
   else if (p === 'runup') drawRunup();
   else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
-  else if (p === 'slalom') drawSlalom();
   else drawBar();
 }
 
@@ -1400,60 +1348,6 @@ function drawBar(){
                txt: G.bestVal ? fmt(G.d, G.bestVal) + ' ' + G.d.unit : '–' }])
     .sort((a,b) => G.d.lower ? a.val - b.val : b.val - a.val);
   drawStandings(list, 'ZWISCHENSTAND');
-}
-
-function drawSlalom(){
-  bg('#1b3350','#0a1220');
-  // Piste als Trapez: oben schmal (fern), unten breit (nah)
-  const TOP = 0.20, BOT = 0.50, POS = 0.75;   // Halbbreiten als Bildanteil
-  ctx.fillStyle='#e8f2fb'; ctx.beginPath();
-  ctx.moveTo(W*(0.5-TOP), 0); ctx.lineTo(W*(0.5+TOP), 0);
-  ctx.lineTo(W*(0.5+BOT), H); ctx.lineTo(W*(0.5-BOT), H);
-  ctx.closePath(); ctx.fill();
-
-  // Seitliche Position in Bildkoordinaten. Muss zur Piste passen, sonst landen
-  // Fahrer und Tore ausserhalb des Bildes - genau das war vorher der Fehler.
-  const halfAt = t => W * (TOP + (BOT-TOP) * t*t) * 0.92;
-  const xAt = (pos, t) => W/2 + (pos / POS) * halfAt(t);
-
-  const trav = G.travel || 0;
-  G.gates.forEach((g,i) => {
-    const rel = g.z - trav;
-    if (rel < -8 || rel > 230) return;
-    const t = 1 - rel/230;
-    const y = t*t * (H-30);          // Torebene auf Hoehe des Fahrers, nicht darunter
-    const cx = xAt(g.x, t);
-    const gw = 2 * (0.19 / POS) * halfAt(t);   // Torbreite = echtes Trefferfenster
-    const ph = 12 + 40*t*t;
-    const passed = i < G.gate;
-    ctx.fillStyle = passed ? '#9fb0c2' : '#d02a2a';
-    ctx.fillRect(cx - gw/2 - 4, y-8, 5+4*t, ph);
-    ctx.fillStyle = passed ? '#9fb0c2' : '#1f6fd0';
-    ctx.fillRect(cx + gw/2 - 1, y-8, 5+4*t, ph);
-  });
-
-  ctx.font='40px serif'; ctx.textAlign='center';
-  ctx.fillText('\u26F7\uFE0F', xAt(G.px, 1), H-34);
-
-  ctx.textAlign='left';
-  ctx.fillStyle='#33465e'; ctx.font='600 15px Segoe UI,Arial';
-  ctx.fillText('Tor ' + Math.min(G.gate+1, G.gates.length) + ' / ' + G.gates.length, 22, 30);
-  ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 52);
-  const fr = (G.v - G.d.vMin) / (G.d.vMax - G.d.vMin);
-  ctx.fillStyle = fr > 0.72 ? '#c0392b' : fr > 0.4 ? '#b8860b' : '#2d6a4f';
-  ctx.font='700 17px Segoe UI,Arial';
-  ctx.fillText((G.v*3.6).toFixed(0) + ' km/h' + (IN.tuck ? '  \u{1F53D}' : ''), 22, 100);
-  ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#33465e';
-  ctx.fillText(fr > 0.72 ? 'Lenkung träge!' : fr > 0.4 ? 'noch wendig' : 'volle Kontrolle', 22, 118);
-  if (G.missed){ ctx.fillStyle='#c0392b'; ctx.font='600 13px Segoe UI,Arial';
-                 ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 140); }
-
-  const myProg = G.gate / G.gates.length;
-  const list = G.field.map(f => ({ ...f, p: aiProgress(f, G.t) }))
-    .concat([{ you:true, name:S.name, land:S.land, p: myProg }])
-    .sort((a,b) => b.p - a.p)
-    .map(e => ({ ...e, txt: Math.round(e.p*100) + '%' }));
-  drawStandings(list, 'STRECKE');
 }
 
 /* ── Ergebnis ────────────────────────────────────────────────── */
