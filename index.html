@@ -395,9 +395,9 @@ const DISCIPLINES = {
             phases:['pong'], toWin:21, cap:25,
             // Echte Tischmasse in Metern
             tab:{ len:2.74, halfW:0.7625, netZ:1.37, netH:0.1525 },
-            padZ:-0.22, oppZ:2.96, padHW:0.115, padV:4.2,
+            padZ:-0.22, oppZ:2.96, padHW:0.115, padV:3.4,
             hitV:5.2, hitRange:1.9, steer:0.62, flug:0.47, lift:2.05, chargeT:0.80,
-            oppPow:0.55,
+            oppPow:0.40,
             norms:[30, 44, 54, 62],
             short:'Schläger führen, Ball treffen',
             how:[['🏓','Den Schläger mit <b>links und rechts</b> führen. Berührt er den Ball, wird zurückgeschlagen.'],
@@ -1109,9 +1109,9 @@ function update(dt){
     if (B.vz < 0 && B.z < d.padZ - 0.05){ punkt(false, 'Nicht erreicht'); return; }
 
     // ── Gegner ──
-    const oppV     = dScale([1.5, 1.80, 2.10, 2.45]);
-    const oppErr   = dScale([0.12, 0.090, 0.070, 0.055]);
-    const oppReach = dScale([1.8, 2.00, 2.20, 2.45]);
+    const oppV     = dScale([1.05, 1.30, 1.60, 1.95]);
+    const oppErr   = dScale([0.16, 0.125, 0.100, 0.080]);
+    const oppReach = dScale([1.60, 1.80, 2.00, 2.25]);
     const ziel = B.vz > 0 ? B.x + B.vx * 0.25 : 0;
     const dx = Math.max(-1, Math.min(1, (ziel - G.opp) * 3));
     G.opp += dx * oppV * dt;
