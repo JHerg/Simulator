@@ -140,6 +140,9 @@
   #pads.onlyshift{grid-template-columns:1fr;}
   #pads.onlyshift #padL,#pads.onlyshift #padR{display:none;}
   #pads.onlyshift #padS{display:block;}
+  #padD{display:none;padding:16px 10px;font-size:16px;background:rgba(90,140,255,.14);}
+  #pads.twoshift #padS{grid-column:1;}
+  #pads.twoshift #padD{grid-column:2;display:block;}
 
   /* ── Ergebnis ───────────────────────────────────────── */
   .rescard{background:rgba(255,255,255,.055);border:1px solid var(--line);
@@ -253,6 +256,7 @@
       <button class="pad" id="padL">◀ LINKS</button>
       <button class="pad" id="padR">RECHTS ▶</button>
       <button class="pad" id="padS">⚙️ HOCHSCHALTEN</button>
+      <button class="pad" id="padD">⚙️ RUNTER</button>
     </div>
     <p class="note" id="play-hint"></p>
     <div class="row" style="margin-top:10px">
@@ -387,7 +391,7 @@ const FIELD_N = 5;   // Gegner; mit dir zusammen ein Feld von sechs
 
 function buildField(key){
   const d = DISCIPLINES[key], norm = d.norms[S.diff];
-  const spread = [0.10, 0.085, 0.07, 0.055][S.diff];
+  const spread = [0.11, 0.085, 0.06, 0.04][S.diff];
   const pool = LAENDER.filter(l => l !== S.land);
   const used = new Set();
   const field = [];
@@ -399,9 +403,10 @@ function buildField(key){
     used.add(vn);
     nn = NACHNAMEN[(Math.random()*NACHNAMEN.length)|0];
     const nm = vn + ' ' + nn;
-    // Feld liegt im Mittel knapp auf Normhöhe – etwa die Hälfte qualifiziert sich
-    const off = (Math.random()*2 - 1) * spread - 0.015;
-    const val = d.lower ? norm * (1 - off) : norm * (1 + off);
+    // Das Feld liegt bewusst ueber der Norm: die Norm ist nur die Qualifikation,
+    // eine Medaille muss man sich gegen echte Gegner verdienen.
+    const edge = Math.random() * spread - 0.01;
+    const val = d.lower ? norm * (1 - edge) : norm * (1 + edge);
     field.push({
       name: nm,
       land: pool[(Math.random()*pool.length)|0],
@@ -502,7 +507,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, tuck:false };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0, down:0, tuck:false };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -512,6 +517,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   // Hochschalten bewusst NICHT auf die Leertaste – die tritt sonst mit
   if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; IN.tuck = true; flash('padS'); e.preventDefault(); }
+  if (e.code==='ArrowDown'||e.code==='KeyS') { IN.down++; flash('padD'); e.preventDefault(); }
   if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
 });
@@ -532,6 +538,7 @@ function bindPad(id, down, up){
   el.addEventListener('mouseleave', u);
 }
 bindPad('padS', ()=>{ IN.shift++; IN.tuck = true; }, ()=>{ IN.tuck = false; });
+bindPad('padD', ()=>{ IN.down++; }, ()=>{});
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
 
@@ -591,7 +598,7 @@ function startDiscipline(key){
         px:0, gate:0, gates:[], missed:0,
         cd: 3.0, field: buildField(key) };
   // Rennen: Ergebnis in eine Zielzeit übersetzen, damit die Gegner mitlaufen
-  if (d.phases.includes('mash') || d.phases.includes('slalom'))
+  if (['mash','pace','dive','gear','slalom'].some(x => d.phases.includes(x)))
     G.field.forEach(f => f.finishT = f.val);
   document.getElementById('hud-disc').textContent = d.icon + ' ' + d.name;
   document.getElementById('hud-who').textContent = S.land + ' · ' + S.name;
@@ -618,10 +625,11 @@ function setPadLabels(){
     L.textContent='◀ ANLAUF'; R.textContent='ANLAUF ▶';
     document.getElementById('padS').textContent='🎯 ABWERFEN';
     hint.textContent='Anlauf mit A und D, abwerfen mit W – aber vor der Linie!'; }
-  else if (p === 'gear'){
-    document.getElementById('padS').textContent='⚙️ HOCHSCHALTEN'; pads.className='withshift'; L.style.display=''; 
+  else if (p === 'gear'){ pads.className='withshift twoshift'; L.style.display='';
     L.textContent='◀ TRETEN'; R.textContent='TRETEN ▶';
-    hint.textContent='Abwechselnd treten, rechtzeitig hochschalten. (A und D, hochschalten mit W)'; }
+    document.getElementById('padS').textContent='⚙️ HOCH';
+    document.getElementById('padD').textContent='⚙️ RUNTER';
+    hint.textContent='Treten mit A und D. Schalten: W hoch, S runter.'; }
   else if (p === 'dive'){ pads.className=''; L.style.display=''; L.textContent='🫧 AUFTAUCHEN'; R.textContent='🫧 AUFTAUCHEN';
     hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
@@ -756,6 +764,10 @@ function update(dt){
         G.gear++; G.shiftFlash = 0.5;
       }
     }
+    if (IN.down > 0){                    // Runterschalten hebt die Frequenz wieder
+      IN.down = 0;
+      if (G.gear > 0){ G.gear--; G.shiftFlash = 0.5; }
+    }
     G.v = Math.min(G.v, gs[G.gear]);     // im kleinen Gang gedeckelt
     if (G.shiftFlash > 0) G.shiftFlash -= dt;
     G.dist += G.v * dt;
@@ -770,6 +782,9 @@ function update(dt){
     G.v += (d.diveV - G.v) * Math.min(1, dt * 2.6);
     G.dist += G.v * dt;
     if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); return; }
+    // Nach dem Start tippen viele reflexhaft weiter. Ohne Sperre waere der
+    // Tauchgang sofort vorbei, bevor man ihn ueberhaupt bemerkt.
+    if (G.t < 0.7) IN.tapL = IN.tapR = IN.tapAny = 0;
     if (IN.tapAny > 0 || G.air <= 0){
       G.gasped = G.air <= 0;
       IN.tapL = IN.tapR = IN.tapAny = 0;
@@ -791,14 +806,14 @@ function update(dt){
     IN.tapL = IN.tapR = IN.tapAny = 0;
     G.freq  = Math.max(0, G.freq  - dt * (0.12 + G.freq  * 0.15));
     G.power = Math.max(0, G.power - dt * (0.10 + G.power * 0.13));
-    G.stam  = Math.max(0, G.stam  - dt * (0.028 + G.power * G.power * 0.11));
+    G.stam  = Math.max(0, G.stam  - dt * (0.020 + G.power * G.power * 0.095));
     if (G.stam <= 0 && !G.burned){
       G.burned = true;
       big.textContent = 'ÜBERSÄUERT!'; big.style.color = 'var(--red)';
       setTimeout(()=>{ if (big) big.textContent = ''; }, 1100);
     }
     // Geometrisches Mittel: nur wer beides hochhaelt, laeuft wirklich schnell
-    const target = d.vMax * Math.sqrt(G.freq * G.power) * (G.stam > 0 ? 1 : 0.55);
+    const target = d.vMax * Math.sqrt(G.freq * G.power) * (G.stam > 0 ? 1 : 0.62);
     G.v += (target - G.v) * Math.min(1, dt * 2.4);
     G.dist += G.v * dt;
     if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t + (G.reactT||0)); }
@@ -888,7 +903,7 @@ function update(dt){
     const rate = 0.95 * (1 - 0.68 * frac);
     const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
     IN.tapL = IN.tapR = IN.tapAny = 0;
-    G.px = Math.max(-0.72, Math.min(0.72, G.px + steer * rate * dt));
+    G.px = Math.max(-0.75, Math.min(0.75, G.px + steer * rate * dt));
     G.travel = (G.travel || 0) + G.v * dt;
     const g = G.gates[G.gate];
     if (g && G.travel >= g.z){
@@ -1230,42 +1245,50 @@ function drawBar(){
 
 function drawSlalom(){
   bg('#1b3350','#0a1220');
-  // Piste
+  // Piste als Trapez: oben schmal (fern), unten breit (nah)
+  const TOP = 0.20, BOT = 0.50, POS = 0.75;   // Halbbreiten als Bildanteil
   ctx.fillStyle='#e8f2fb'; ctx.beginPath();
-  ctx.moveTo(W*0.30, 0); ctx.lineTo(W*0.70, 0); ctx.lineTo(W, H); ctx.lineTo(0, H);
+  ctx.moveTo(W*(0.5-TOP), 0); ctx.lineTo(W*(0.5+TOP), 0);
+  ctx.lineTo(W*(0.5+BOT), H); ctx.lineTo(W*(0.5-BOT), H);
   ctx.closePath(); ctx.fill();
+
+  // Seitliche Position in Bildkoordinaten. Muss zur Piste passen, sonst landen
+  // Fahrer und Tore ausserhalb des Bildes - genau das war vorher der Fehler.
+  const halfAt = t => W * (TOP + (BOT-TOP) * t*t) * 0.92;
+  const xAt = (pos, t) => W/2 + (pos / POS) * halfAt(t);
+
   const trav = G.travel || 0;
-  // Tore
   G.gates.forEach((g,i) => {
     const rel = g.z - trav;
-    if (rel < -12 || rel > 230) return;
-    const t = 1 - rel/230;                       // 0 = fern, 1 = nah
-    const y = t*t * H;
-    const road = (W*0.40) + (W*0.60) * (t*t);
-    const cx = W/2 + g.x * road;
-    const gw = 26 + 66*t*t;
-    ctx.fillStyle = i < G.gate ? '#9fb0c2' : '#d02a2a';
-    ctx.fillRect(cx - gw/2 - 4, y-10, 7, 10+34*t);
-    ctx.fillStyle = i < G.gate ? '#9fb0c2' : '#1f6fd0';
-    ctx.fillRect(cx + gw/2 - 3, y-10, 7, 10+34*t);
+    if (rel < -8 || rel > 230) return;
+    const t = 1 - rel/230;
+    const y = t*t * (H-30);          // Torebene auf Hoehe des Fahrers, nicht darunter
+    const cx = xAt(g.x, t);
+    const gw = 2 * (0.19 / POS) * halfAt(t);   // Torbreite = echtes Trefferfenster
+    const ph = 12 + 40*t*t;
+    const passed = i < G.gate;
+    ctx.fillStyle = passed ? '#9fb0c2' : '#d02a2a';
+    ctx.fillRect(cx - gw/2 - 4, y-8, 5+4*t, ph);
+    ctx.fillStyle = passed ? '#9fb0c2' : '#1f6fd0';
+    ctx.fillRect(cx + gw/2 - 1, y-8, 5+4*t, ph);
   });
-  // Fahrer
+
   ctx.font='40px serif'; ctx.textAlign='center';
-  ctx.fillText('⛷️', W/2 + G.px * W*0.98, H-42);
+  ctx.fillText('\u26F7\uFE0F', xAt(G.px, 1), H-34);
+
   ctx.textAlign='left';
   ctx.fillStyle='#33465e'; ctx.font='600 15px Segoe UI,Arial';
   ctx.fillText('Tor ' + Math.min(G.gate+1, G.gates.length) + ' / ' + G.gates.length, 22, 30);
   ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 52);
-  // Tempoanzeige: gruen = wendig, rot = traege
   const fr = (G.v - G.d.vMin) / (G.d.vMax - G.d.vMin);
   ctx.fillStyle = fr > 0.72 ? '#c0392b' : fr > 0.4 ? '#b8860b' : '#2d6a4f';
   ctx.font='700 17px Segoe UI,Arial';
-  ctx.fillText((G.v*3.6).toFixed(0) + ' km/h' + (IN.tuck ? '  🔽' : ''), 22, 100);
+  ctx.fillText((G.v*3.6).toFixed(0) + ' km/h' + (IN.tuck ? '  \u{1F53D}' : ''), 22, 100);
   ctx.font='600 11px Segoe UI,Arial'; ctx.fillStyle='#33465e';
   ctx.fillText(fr > 0.72 ? 'Lenkung träge!' : fr > 0.4 ? 'noch wendig' : 'volle Kontrolle', 22, 118);
-  if (G.missed) { ctx.fillStyle='#c0392b'; ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 74); }
+  if (G.missed){ ctx.fillStyle='#c0392b'; ctx.font='600 13px Segoe UI,Arial';
+                 ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 140); }
 
-  // Wer ist wie weit? Gegner fahren dieselbe Strecke parallel
   const myProg = G.gate / G.gates.length;
   const list = G.field.map(f => ({ ...f, p: aiProgress(f, G.t) }))
     .concat([{ you:true, name:S.name, land:S.land, p: myProg }])
