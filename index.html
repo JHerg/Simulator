@@ -134,6 +134,9 @@
     -webkit-tap-highlight-color:transparent;transition:background .07s,transform .07s;}
   .pad:active,.pad.hit{background:rgba(255,190,80,.4);transform:scale(.97);}
   #pads.single{grid-template-columns:1fr;}
+  #padS{display:none;grid-column:1/-1;padding:16px 10px;font-size:16px;
+        background:rgba(90,140,255,.22);}
+  #pads.withshift #padS{display:block;}
 
   /* ── Ergebnis ───────────────────────────────────────── */
   .rescard{background:rgba(255,255,255,.055);border:1px solid var(--line);
@@ -246,6 +249,7 @@
     <div id="pads">
       <button class="pad" id="padL">◀ LINKS</button>
       <button class="pad" id="padR">RECHTS ▶</button>
+      <button class="pad" id="padS">⚙️ HOCHSCHALTEN</button>
     </div>
     <p class="note" id="play-hint"></p>
     <div class="row" style="margin-top:10px">
@@ -319,12 +323,14 @@ const DISCIPLINES = {
                  ['⚠️','Geht die Luft <b>ganz</b> aus, brichst du ein – das kostet mehr, als das Tauchen einbringt.']] },
 
   bike:   { name:'500 m Bahnsprint', icon:'🚴', unit:'s', lower:true,
-            phases:['mash'], dist:500, vMax:19.0, cadence:6.4,
-            norms:[46.0, 38.0, 32.5, 28.5],
-            short:'Lange Distanz, kein Start',
-            how:[['🚴','Kein Startsignal – es geht <b>sofort</b> los.'],
-                 ['⚡','Abwechselnd links und rechts treten, um Tempo aufzubauen.'],
-                 ['💪','500 m sind lang. Wer zu früh alles gibt, bricht auf der Zielgeraden ein.']] },
+            phases:['gear'], dist:500, vMax:20.5,
+            gears:[7.5, 12.0, 16.5, 20.5], kick:1.2, drag:0.32,
+            norms:[50.0, 38.0, 32.0, 28.5],
+            short:'Im richtigen Moment hochschalten',
+            how:[['🚴','Kein Startsignal – abwechselnd links und rechts treten, es geht <b>sofort</b> los.'],
+                 ['⚙️','Mit <b>Hochschalten</b> in den nächsten Gang. Das Tempo bleibt, die Trittfrequenz fällt.'],
+                 ['🎯','Tritt möglichst im <b>grünen Bereich</b> der Frequenzanzeige – dort bringt jeder Tritt am meisten.'],
+                 ['⚠️','Zu spät geschaltet heißt <b>hohl drehen</b>: das Tempo ist im kleinen Gang gedeckelt.']] },
 
   throw:  { name:'Speerwurf', icon:'🎯', unit:'m', lower:false,
             phases:['bar2'], attempts:3,
@@ -489,7 +495,7 @@ function refreshNorms(){
 }
 
 /* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
-const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0 };
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0, shift:0 };
 function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
 function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
 function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
@@ -497,6 +503,8 @@ function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
 
 addEventListener('keydown', e => {
   if (e.repeat) return;
+  // Hochschalten bewusst NICHT auf die Leertaste – die tritt sonst mit
+  if (e.code==='ArrowUp'||e.code==='KeyW') { IN.shift++; flash('padS'); e.preventDefault(); }
   if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
   if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
 });
@@ -515,6 +523,7 @@ function bindPad(id, down, up){
   el.addEventListener('mouseup',    u);
   el.addEventListener('mouseleave', u);
 }
+bindPad('padS', ()=>{ IN.shift++; }, ()=>{});
 bindPad('padL', pressL, ()=>IN.left=false);
 bindPad('padR', pressR, ()=>IN.right=false);
 
@@ -543,7 +552,7 @@ function showBrief(key){
   // Steuerung passend zur ersten Mechanik
   const usesSteer = d.phases.includes('slalom');
   const usesMash  = d.phases.includes('mash') || d.phases.includes('pace') ||
-                    d.phases.includes('dive');
+                    d.phases.includes('dive')  || d.phases.includes('gear');
   const keys = ['<span>Touch: die großen Flächen unten</span>'];
   if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
   else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
@@ -562,6 +571,7 @@ function startDiscipline(key){
         dist:0, v:0, rate:0, lastTap:0, alt:1, reactT:0, falseStart:false,
         freq:0, power:0, stam:1, burned:false,
         air:1, gaspT:0, gasped:false,
+        gear:0, shiftFlash:0,
         // Balken / Heben
         att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
         // Slalom
@@ -590,6 +600,9 @@ function setPadLabels(){
     hint.textContent='Warte auf LOS – zu früh ist ein Fehlstart. (Leertaste)'; }
   else if (p === 'mash'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
     hint.textContent='Abwechselnd links/rechts hämmern. (A und D)'; }
+  else if (p === 'gear'){ pads.className='withshift'; L.style.display=''; 
+    L.textContent='◀ TRETEN'; R.textContent='TRETEN ▶';
+    hint.textContent='Abwechselnd treten, rechtzeitig hochschalten. (A und D, hochschalten mit W)'; }
   else if (p === 'dive'){ pads.className=''; L.style.display=''; L.textContent='🫧 AUFTAUCHEN'; R.textContent='🫧 AUFTAUCHEN';
     hint.textContent='Unter Wasser bist du schneller – aber die Luft geht aus! (beliebige Taste)'; }
   else if (p === 'pace'){ pads.className=''; L.style.display=''; L.textContent='👟 FREQUENZ'; R.textContent='💪 KRAFT';
@@ -645,6 +658,32 @@ function update(dt){
       IN.tapAny = 0; big.textContent = '';
       nextPhase();
     }
+    return;
+  }
+
+  if (G.phase === 'gear'){
+    // Trittfrequenz ergibt sich aus Tempo und Gang. Der Wirkungsgrad hat ein
+    // Optimum: zu niedrig wuergt ab, zu hoch dreht hohl.
+    const gs = d.gears;
+    const c = G.v / gs[G.gear];
+    const eff = Math.max(0.12, Math.min(1, 1 - Math.pow((c - 0.55) / 0.62, 2)));
+    // Treten nur im Wechsel – Dauerdruecken bringt nichts
+    let strokes = 0;
+    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; strokes++; }
+    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; strokes++; }
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    G.v += d.kick * eff * strokes;
+    G.v = Math.max(0, G.v - d.drag * G.v * dt);
+    if (IN.shift > 0){
+      IN.shift = 0;
+      if (G.gear < gs.length - 1){       // Tempo bleibt, Frequenz faellt
+        G.gear++; G.shiftFlash = 0.5;
+      }
+    }
+    G.v = Math.min(G.v, gs[G.gear]);     // im kleinen Gang gedeckelt
+    if (G.shiftFlash > 0) G.shiftFlash -= dt;
+    G.dist += G.v * dt;
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t); }
     return;
   }
 
@@ -808,7 +847,7 @@ function draw(){
   ctx.clearRect(0,0,W,H);
   const p = G.phase;
   if (p === 'react')  drawReact();
-  else if (p === 'mash' || p === 'pace' || p === 'dive') drawRace();
+  else if (p === 'mash' || p === 'pace' || p === 'dive' || p === 'gear') drawRace();
   else if (p === 'slalom') drawSlalom();
   else drawBar();
 }
@@ -903,6 +942,22 @@ function drawRace(){
       ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(x, H-38, bw, 13);
       ctx.fillStyle = col; ctx.fillRect(x, H-38, bw*Math.max(0,val), 13);
     });
+  } else if (G.phase === 'gear'){
+    const gs = d.gears, c = Math.min(1, G.v / gs[G.gear]);
+    ctx.fillStyle='#8ea3bd'; ctx.fillText('TRITTFREQUENZ', 22, H-44);
+    ctx.textAlign='right'; ctx.fillStyle='#ffd75e'; ctx.font='700 12px Segoe UI,Arial';
+    ctx.fillText('GANG ' + (G.gear+1) + ' / ' + gs.length, W-22, H-44);
+    ctx.textAlign='left'; ctx.font='11px Segoe UI,Arial';
+    const bx = 22, bw = W-44;
+    ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(bx, H-38, bw, 13);
+    // gruener Bereich = bester Wirkungsgrad
+    ctx.fillStyle='rgba(57,224,143,.28)'; ctx.fillRect(bx + bw*0.35, H-38, bw*0.40, 13);
+    ctx.fillStyle = (c > 0.88) ? '#ff5a45' : (c >= 0.35 && c <= 0.75) ? '#39e08f' : '#ffd75e';
+    ctx.fillRect(bx, H-38, bw*c, 13);
+    if (c > 0.88 && G.gear < gs.length-1 && Math.floor(G.t*5) % 2 === 0){
+      ctx.textAlign='center'; ctx.fillStyle='#ff8a7a'; ctx.font='700 13px Segoe UI,Arial';
+      ctx.fillText('HOCHSCHALTEN!', W/2, H-44); ctx.textAlign='left';
+    }
   } else if (G.phase === 'dive'){
     ctx.fillStyle='#8ea3bd'; ctx.fillText('LUFT', 22, H-44);
     ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-38, W-44, 13);
