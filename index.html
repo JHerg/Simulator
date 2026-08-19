@@ -6,164 +6,789 @@
 <title>Sportgames 2026</title>
 <style>
   :root{
-    --bg:#070b14;
-    --ink:#f2f6fb;
-    --muted:#93a4bd;
-    --gold:#ffd75e;
+    --bg:#070b14; --ink:#f2f6fb; --muted:#93a4bd;
+    --gold:#ffd75e; --orange:#ff9a3c; --green:#39e08f; --red:#ff6a5a;
+    --card:rgba(255,255,255,.055); --line:rgba(255,255,255,.13);
   }
   *{margin:0;padding:0;box-sizing:border-box;}
   html,body{height:100%;}
   body{
-    background:var(--bg);
-    color:var(--ink);
+    background:var(--bg); color:var(--ink);
     font-family:'Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
-    min-height:100svh;
-    display:flex;align-items:center;justify-content:center;
-    padding:32px 20px;
-    overflow-x:hidden;
-    position:relative;
+    min-height:100svh; display:flex; align-items:center; justify-content:center;
+    padding:26px 18px; overflow-x:hidden; position:relative;
   }
 
-  /* ── Bewegter Farbschleier im Hintergrund ───────────────────── */
+  /* ── Hintergrund ────────────────────────────────────── */
   .aurora{position:fixed;inset:0;overflow:hidden;z-index:0;pointer-events:none;}
-  .blob{
-    position:absolute;border-radius:50%;filter:blur(95px);opacity:.42;
-    animation:drift 22s ease-in-out infinite;
-  }
+  .blob{position:absolute;border-radius:50%;filter:blur(95px);opacity:.4;
+        animation:drift 22s ease-in-out infinite;}
   .b1{width:52vw;height:52vw;background:#1b6bff;top:-14%;left:-12%;}
   .b2{width:46vw;height:46vw;background:#ff8a1e;bottom:-16%;right:-10%;animation-delay:-7s;}
   .b3{width:38vw;height:38vw;background:#00d0a4;top:34%;right:26%;animation-delay:-13s;}
-  @keyframes drift{
-    0%,100%{transform:translate(0,0) scale(1);}
-    33%    {transform:translate(5vw,-4vh) scale(1.12);}
-    66%    {transform:translate(-4vw,5vh) scale(.92);}
-  }
-  /* feines Raster darüber – gibt dem Ganzen Halt */
-  .grid{
-    position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.18;
+  @keyframes drift{0%,100%{transform:translate(0,0) scale(1);}
+    33%{transform:translate(5vw,-4vh) scale(1.12);}66%{transform:translate(-4vw,5vh) scale(.92);}}
+  .grid{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.16;
     background-image:linear-gradient(rgba(255,255,255,.09) 1px,transparent 1px),
                      linear-gradient(90deg,rgba(255,255,255,.09) 1px,transparent 1px);
     background-size:64px 64px;
     mask-image:radial-gradient(ellipse 80% 65% at 50% 45%,#000 30%,transparent 78%);
-    -webkit-mask-image:radial-gradient(ellipse 80% 65% at 50% 45%,#000 30%,transparent 78%);
-  }
+    -webkit-mask-image:radial-gradient(ellipse 80% 65% at 50% 45%,#000 30%,transparent 78%);}
 
-  /* ── Inhalt ─────────────────────────────────────────────────── */
-  main{position:relative;z-index:2;text-align:center;max-width:900px;width:100%;}
+  /* ── Bildschirme ────────────────────────────────────── */
+  #app{position:relative;z-index:2;width:100%;max-width:940px;}
+  .screen{display:none;text-align:center;}
+  .screen.on{display:block;animation:fade .3s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
 
-  .kicker{
-    display:inline-flex;align-items:center;gap:10px;
-    padding:8px 18px;border-radius:999px;
-    background:rgba(255,255,255,.07);
-    border:1px solid rgba(255,255,255,.16);
-    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    font-size:13px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
-    color:#cddcf0;margin-bottom:28px;
-  }
-  .dot{width:8px;height:8px;border-radius:50%;background:#39e08f;
-       box-shadow:0 0 12px #39e08f;animation:pulse 2s ease-in-out infinite;}
+  .kicker{display:inline-flex;align-items:center;gap:9px;padding:7px 17px;border-radius:999px;
+    background:rgba(255,255,255,.07);border:1px solid var(--line);
+    font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+    color:#cddcf0;margin-bottom:22px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+       box-shadow:0 0 12px var(--green);animation:pulse 2s ease-in-out infinite;}
   @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.45;transform:scale(.8);}}
 
-  /* Begrüßung bleibt ruhig, der Event-Name trägt die Seite */
-  .greet{
-    display:block;
-    font-size:clamp(17px,3vw,27px);
-    font-weight:600;color:#c3d3e8;letter-spacing:.01em;
-    margin-bottom:6px;
-  }
-  h1{
-    font-size:clamp(38px,9vw,92px);
-    font-weight:800;line-height:1.05;letter-spacing:-.025em;
-    margin-bottom:22px;text-wrap:balance;
-  }
-  h1 .shine{
-    background:linear-gradient(100deg,#ffd75e 0%,#ff9a3c 42%,#ffd75e 100%);
-    background-size:220% auto;
-    -webkit-background-clip:text;background-clip:text;color:transparent;
-    animation:sweep 6s linear infinite;
-  }
+  .greet{display:block;font-size:clamp(16px,2.8vw,25px);font-weight:600;
+         color:#c3d3e8;margin-bottom:5px;}
+  h1{font-size:clamp(34px,8.4vw,86px);font-weight:800;line-height:1.05;
+     letter-spacing:-.025em;margin-bottom:18px;text-wrap:balance;}
+  .shine{background:linear-gradient(100deg,#ffd75e 0%,#ff9a3c 42%,#ffd75e 100%);
+    background-size:220% auto;-webkit-background-clip:text;background-clip:text;
+    color:transparent;animation:sweep 6s linear infinite;}
   @keyframes sweep{to{background-position:220% center;}}
+  h2{font-size:clamp(22px,4.4vw,34px);font-weight:800;margin-bottom:8px;letter-spacing:-.01em;}
+  .lead{font-size:clamp(14px,2vw,17px);line-height:1.6;color:var(--muted);
+        max-width:560px;margin:0 auto 30px;text-wrap:pretty;}
 
-  .lead{
-    font-size:clamp(15px,2.1vw,19px);line-height:1.65;color:var(--muted);
-    max-width:560px;margin:0 auto 38px;text-wrap:pretty;
-  }
+  /* ── Kacheln ────────────────────────────────────────── */
+  .tiles{display:grid;gap:12px;margin-bottom:28px;
+         grid-template-columns:repeat(auto-fit,minmax(158px,1fr));}
+  .tile{display:flex;align-items:center;gap:11px;padding:15px 16px;border-radius:15px;
+    background:var(--card);border:1px solid var(--line);cursor:pointer;text-align:left;
+    color:#dce7f5;font-size:15px;font-weight:600;font-family:inherit;
+    transition:transform .16s,background .16s,border-color .16s;position:relative;}
+  .tile:hover{transform:translateY(-3px);background:rgba(255,255,255,.1);
+              border-color:rgba(255,255,255,.3);}
+  .tile .ico{font-size:23px;line-height:1;}
+  .tile .sub{display:block;font-size:11.5px;font-weight:500;color:#7f92aa;margin-top:2px;}
+  .tile.sel{background:rgba(255,180,60,.17);border-color:var(--gold);}
+  .tile.sel::after{content:'✓';position:absolute;top:9px;right:11px;
+                   color:var(--gold);font-weight:800;font-size:14px;}
 
-  /* Disziplinen */
-  .sports{
-    display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:40px;
-  }
-  .sport{
-    display:flex;align-items:center;gap:9px;
-    padding:11px 18px;border-radius:14px;
-    background:rgba(255,255,255,.055);
-    border:1px solid rgba(255,255,255,.12);
-    font-size:14.5px;font-weight:600;color:#dce7f5;
-    transition:transform .18s ease,background .18s ease,border-color .18s ease;
-  }
-  .sport:hover{transform:translateY(-3px);background:rgba(255,255,255,.1);
-               border-color:rgba(255,255,255,.28);}
-  .sport span{font-size:19px;line-height:1;}
+  /* ── Knöpfe ─────────────────────────────────────────── */
+  .btn{display:inline-block;padding:15px 44px;border:none;border-radius:14px;
+    font-size:17px;font-weight:700;font-family:inherit;color:#0a1020;cursor:pointer;
+    background:linear-gradient(135deg,var(--gold),var(--orange));
+    box-shadow:0 8px 28px rgba(255,150,40,.3);
+    transition:transform .15s,box-shadow .15s,opacity .15s;}
+  .btn:hover:not(:disabled){transform:translateY(-3px);box-shadow:0 13px 36px rgba(255,160,50,.46);}
+  .btn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none;}
+  .btn.ghost{background:rgba(255,255,255,.08);color:#cfdcea;border:1px solid var(--line);
+             box-shadow:none;padding:13px 28px;font-size:15px;}
+  .btn.ghost:hover{background:rgba(255,255,255,.15);transform:translateY(-2px);}
+  .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center;}
+  .note{margin-top:16px;font-size:13px;color:#66788f;}
 
-  .cta{
-    display:inline-block;padding:17px 52px;border:none;border-radius:15px;
-    font-size:18px;font-weight:700;font-family:inherit;color:#0a1020;cursor:pointer;
-    background:linear-gradient(135deg,#ffd75e,#ff9a3c);
-    box-shadow:0 8px 30px rgba(255,150,40,.34);
-    transition:transform .16s ease,box-shadow .16s ease;
-  }
-  .cta:hover{transform:translateY(-3px);box-shadow:0 14px 40px rgba(255,160,50,.5);}
-  .cta:active{transform:translateY(-1px);}
+  /* ── Eingaben ───────────────────────────────────────── */
+  .field{max-width:420px;margin:0 auto 20px;text-align:left;}
+  .field label{display:block;font-size:12px;letter-spacing:.13em;text-transform:uppercase;
+               color:#8ea3bd;margin-bottom:8px;font-weight:600;}
+  .field input,.field select{width:100%;padding:14px 16px;border-radius:13px;
+    background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--ink);
+    font-size:16px;font-family:inherit;outline:none;transition:border-color .15s;}
+  .field input:focus,.field select:focus{border-color:var(--gold);}
+  .field select option{background:#101827;color:var(--ink);}
 
-  .note{margin-top:20px;font-size:13.5px;color:#66788f;}
+  /* ── Spielfeld ──────────────────────────────────────── */
+  #stage{position:relative;width:100%;max-width:760px;margin:0 auto;}
+  canvas{width:100%;height:auto;display:block;border-radius:18px;
+         background:rgba(4,9,18,.72);border:1px solid var(--line);}
+  #hud{display:flex;justify-content:space-between;align-items:center;gap:12px;
+       margin-bottom:12px;font-size:13.5px;color:#9db1c8;flex-wrap:wrap;}
+  #hud b{color:var(--ink);}
+  #bigmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(28px,7vw,62px);font-weight:800;letter-spacing:-.02em;
+    pointer-events:none;text-shadow:0 4px 26px rgba(0,0,0,.6);}
 
-  @media (prefers-reduced-motion:reduce){
-    .blob,.dot,h1 .shine{animation:none;}
-  }
+  /* Touch-Tasten */
+  #pads{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;}
+  .pad{padding:24px 10px;border-radius:16px;background:rgba(255,255,255,.09);
+    border:1px solid var(--line);font-size:19px;font-weight:800;color:#e6eef8;
+    font-family:inherit;cursor:pointer;user-select:none;-webkit-user-select:none;
+    -webkit-tap-highlight-color:transparent;transition:background .07s,transform .07s;}
+  .pad:active,.pad.hit{background:rgba(255,190,80,.4);transform:scale(.97);}
+  #pads.single{grid-template-columns:1fr;}
+
+  /* ── Ergebnis ───────────────────────────────────────── */
+  .rescard{background:rgba(255,255,255,.055);border:1px solid var(--line);
+    border-radius:20px;padding:28px 24px;max-width:520px;margin:0 auto 24px;}
+  .medal{font-size:64px;line-height:1;margin-bottom:10px;}
+  .resval{font-size:clamp(34px,8vw,54px);font-weight:800;letter-spacing:-.02em;margin-bottom:6px;}
+  .resnorm{font-size:14px;color:var(--muted);margin-bottom:14px;}
+  .verdict{font-size:17px;font-weight:700;padding:9px 20px;border-radius:999px;display:inline-block;}
+  .verdict.ok{background:rgba(57,224,143,.16);color:var(--green);}
+  .verdict.no{background:rgba(255,106,90,.15);color:var(--red);}
+
+  table{width:100%;border-collapse:collapse;max-width:620px;margin:0 auto 24px;font-size:14.5px;}
+  th,td{padding:12px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.09);}
+  th{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:#8ea3bd;font-weight:600;}
+  td.r,th.r{text-align:right;}
+  .tot{font-size:20px;font-weight:800;margin-bottom:20px;}
+
+  /* Im Spiel ruht der Hintergrund – der Weichzeichner kostet auf schwachen
+     Geraeten spuerbar Leistung und lenkt ausserdem ab. */
+  body.playing .blob{animation:none;opacity:.22;}
+  body.playing .grid{opacity:.07;}
+  @media (prefers-reduced-motion:reduce){.blob,.dot,.shine{animation:none;}}
+  @media (max-width:520px){ .btn{padding:14px 30px;font-size:16px;} }
 </style>
 </head>
 <body>
 
-<div class="aurora">
-  <div class="blob b1"></div>
-  <div class="blob b2"></div>
-  <div class="blob b3"></div>
-</div>
+<div class="aurora"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
 <div class="grid"></div>
 
-<main>
-  <div class="kicker"><span class="dot"></span> Saison 2026</div>
+<div id="app">
 
-  <h1>
-    <span class="greet">Herzlich willkommen bei den</span>
-    <span class="shine">Sportgames 2026</span>
-  </h1>
+  <!-- ══ Startseite ══ -->
+  <section class="screen on" id="s-home">
+    <div class="kicker"><span class="dot"></span> Saison 2026</div>
+    <h1><span class="greet">Herzlich willkommen bei den</span><span class="shine">Sportgames 2026</span></h1>
+    <p class="lead">Wähle eine Disziplin für den Schnelldurchgang – oder starte die Spiele
+      und tritt in bis zu drei Wettbewerben an.</p>
+    <div class="tiles" id="home-tiles"></div>
+    <button class="btn" id="go-multi">🏅 Spiele starten</button>
+    <p class="note">Einzelne Kachel = eine Disziplin · Spiele starten = 1 bis 3 wählen</p>
+  </section>
 
-  <p class="lead">
-    Die große Spielesammlung rund um Sport und Wettkampf.
-    Tritt an, sammle Medaillen und hol dir den Titel.
-  </p>
+  <!-- ══ Profil ══ -->
+  <section class="screen" id="s-profile">
+    <h2>Wer tritt an?</h2>
+    <p class="lead">Name und Nation erscheinen in der Ergebnisliste.</p>
+    <div class="field">
+      <label for="in-name">Name</label>
+      <input id="in-name" type="text" maxlength="22" placeholder="z. B. Alex Berger" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="in-land">Nation</label>
+      <select id="in-land"></select>
+    </div>
+    <div class="field" id="f-custom" style="display:none">
+      <label for="in-custom">Eigene Nation</label>
+      <input id="in-custom" type="text" maxlength="20" placeholder="Name deines Landes" autocomplete="off">
+    </div>
+    <div class="row">
+      <button class="btn ghost" data-back="s-home">← Zurück</button>
+      <button class="btn" id="p-next" disabled>Weiter</button>
+    </div>
+  </section>
 
-  <div class="sports">
-    <div class="sport"><span>🏃</span> Leichtathletik</div>
-    <div class="sport"><span>🏊</span> Schwimmen</div>
-    <div class="sport"><span>🚴</span> Radsport</div>
-    <div class="sport"><span>🎯</span> Zielwerfen</div>
-    <div class="sport"><span>⛷️</span> Ski</div>
-    <div class="sport"><span>🏋️</span> Gewichtheben</div>
-  </div>
+  <!-- ══ Schwierigkeit ══ -->
+  <section class="screen" id="s-diff">
+    <h2>Schwierigkeit</h2>
+    <p class="lead">Die Stufe bestimmt, wie schnell du sein musst, um dich zu qualifizieren.</p>
+    <div class="tiles" id="diff-tiles"></div>
+    <div class="row"><button class="btn ghost" data-back="s-profile">← Zurück</button></div>
+  </section>
 
-  <button class="cta" id="start">🏅 Spiele starten</button>
-  <p class="note">Die Disziplinen kommen als Nächstes.</p>
-</main>
+  <!-- ══ Auswahl 1–3 ══ -->
+  <section class="screen" id="s-pick">
+    <h2>Disziplinen wählen</h2>
+    <p class="lead">Wähle eine bis drei Disziplinen. Du trittst nacheinander an.</p>
+    <div class="tiles" id="pick-tiles"></div>
+    <div class="row">
+      <button class="btn ghost" data-back="s-diff">← Zurück</button>
+      <button class="btn" id="pick-go" disabled>Wettkampf beginnen</button>
+    </div>
+    <p class="note" id="pick-count">0 von 3 gewählt</p>
+  </section>
+
+  <!-- ══ Spiel ══ -->
+  <section class="screen" id="s-play">
+    <div id="hud">
+      <div><b id="hud-disc">–</b> <span id="hud-phase"></span></div>
+      <div id="hud-who">–</div>
+      <div>Norm: <b id="hud-norm">–</b></div>
+    </div>
+    <div id="stage">
+      <canvas id="cv" width="760" height="380"></canvas>
+      <div id="bigmsg"></div>
+    </div>
+    <div id="pads">
+      <button class="pad" id="padL">◀ LINKS</button>
+      <button class="pad" id="padR">RECHTS ▶</button>
+    </div>
+    <p class="note" id="play-hint"></p>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="play-abort">✕ Abbrechen</button>
+    </div>
+  </section>
+
+  <!-- ══ Einzelergebnis ══ -->
+  <section class="screen" id="s-result">
+    <h2 id="r-title">Ergebnis</h2>
+    <div class="rescard">
+      <div class="medal" id="r-medal">🏅</div>
+      <div class="resval" id="r-val">–</div>
+      <div class="resnorm" id="r-norm">–</div>
+      <div class="verdict ok" id="r-verdict">Qualifiziert</div>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="r-retry">🔄 Nochmal</button>
+      <button class="btn" id="r-next">Weiter</button>
+    </div>
+  </section>
+
+  <!-- ══ Gesamtwertung ══ -->
+  <section class="screen" id="s-summary">
+    <h2>Endstand</h2>
+    <p class="lead" id="sum-who">–</p>
+    <table id="sum-table"></table>
+    <div class="tot" id="sum-tot">–</div>
+    <div class="row"><button class="btn" id="sum-home">🏠 Zur Startseite</button></div>
+  </section>
+
+</div>
 
 <script>
-  document.getElementById('start').addEventListener('click', () => {
-    const n = document.querySelector('.note');
-    n.textContent = '🚧 Noch in Arbeit — die erste Disziplin folgt!';
-    n.style.color = '#ffc25e';
-  });
-</script>
+'use strict';
 
+/* ══════════════════════════════════════════════════════════════
+   Aufbau: Jede Disziplin ist nur eine Abfolge wiederverwendbarer
+   Mechaniken. "react" = Reaktion, "mash" = Tempo hämmern,
+   "bar" = Timing-Balken, "slalom" = Lenken. Neue Disziplinen
+   entstehen dadurch als Kombination, nicht als eigenes Spiel.
+   ══════════════════════════════════════════════════════════════ */
+
+const DIFFS = [
+  { key:'amateur', name:'Amateur',    icon:'🙂', sub:'Locker qualifiziert', mult:1.00 },
+  { key:'profi',   name:'Profi',      icon:'😤', sub:'Solide Leistung nötig', mult:1.00 },
+  { key:'elite',   name:'Elite',      icon:'🔥', sub:'Nationalkader-Niveau',  mult:1.00 },
+  { key:'welt',    name:'Weltklasse', icon:'💀', sub:'Nur mit Bestleistung',  mult:1.00 },
+];
+
+// norms[stufe] = Qualifikationsnorm. Bei Zeiten kleiner = besser.
+const DISCIPLINES = {
+  sprint: { name:'100 m Sprint', icon:'🏃', unit:'s', lower:true,
+            phases:['react','mash'], dist:100, vMax:11.6, cadence:7.2,
+            norms:[15.5, 13.4, 11.9, 10.9] },
+  swim:   { name:'50 m Freistil', icon:'🏊', unit:'s', lower:true,
+            phases:['react','mash'], dist:50, vMax:2.35, cadence:5.0,
+            norms:[34.0, 28.0, 24.0, 21.5] },
+  bike:   { name:'500 m Bahnsprint', icon:'🚴', unit:'s', lower:true,
+            phases:['mash'], dist:500, vMax:19.0, cadence:6.4,
+            norms:[46.0, 38.0, 32.5, 28.5] },
+  throw:  { name:'Speerwurf', icon:'🎯', unit:'m', lower:false,
+            phases:['bar2'], attempts:3,
+            norms:[42, 56, 68, 78] },
+  ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
+            phases:['react','slalom'], gates:12,
+            norms:[38.0, 32.0, 27.5, 24.0] },
+  lift:   { name:'Gewichtheben', icon:'🏋️', unit:'kg', lower:false,
+            phases:['lift'], attempts:3,
+            norms:[95, 130, 160, 185] },
+};
+
+const LAENDER = ['🇩🇪 Deutschland','🇦🇹 Österreich','🇨🇭 Schweiz','🇫🇷 Frankreich',
+  '🇮🇹 Italien','🇪🇸 Spanien','🇳🇱 Niederlande','🇧🇪 Belgien','🇵🇱 Polen','🇨🇿 Tschechien',
+  '🇬🇧 Großbritannien','🇸🇪 Schweden','🇳🇴 Norwegen','🇫🇮 Finnland','🇩🇰 Dänemark',
+  '🇵🇹 Portugal','🇬🇷 Griechenland','🇹🇷 Türkei','🇺🇸 USA','🇨🇦 Kanada','🇧🇷 Brasilien',
+  '🇯🇵 Japan','🇰🇷 Südkorea','🇦🇺 Australien','🇰🇪 Kenia','🇿🇦 Südafrika'];
+
+const S = { name:'', land:'', diff:0, queue:[], idx:0, results:[] };
+
+/* ── Bildschirmwechsel ───────────────────────────────────────── */
+function show(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === id));
+  document.body.classList.toggle('playing', id === 's-play');
+  window.scrollTo(0,0);
+}
+document.querySelectorAll('[data-back]').forEach(b =>
+  b.addEventListener('click', () => show(b.dataset.back)));
+
+/* ── Startseite + Auswahl aufbauen ───────────────────────────── */
+function tileHTML(d){
+  return `<span class="ico">${d.icon}</span><span>${d.name}<span class="sub">${d.sub||''}</span></span>`;
+}
+const homeT = document.getElementById('home-tiles');
+const pickT = document.getElementById('pick-tiles');
+Object.entries(DISCIPLINES).forEach(([k,d]) => {
+  const mk = (parent, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'tile'; b.dataset.k = k;
+    b.innerHTML = tileHTML({icon:d.icon, name:d.name, sub:'Norm ab ' + d.norms[0] + ' ' + d.unit});
+    b.addEventListener('click', () => onClick(k, b));
+    parent.appendChild(b);
+  };
+  mk(homeT, k => { S.queue = [k]; S.multi = false; show('s-profile'); });
+  mk(pickT, (k, b) => togglePick(k, b));
+});
+
+let picked = [];
+function togglePick(k, btn){
+  const i = picked.indexOf(k);
+  if (i >= 0) { picked.splice(i,1); btn.classList.remove('sel'); }
+  else if (picked.length < 3) { picked.push(k); btn.classList.add('sel'); }
+  document.getElementById('pick-count').textContent = picked.length + ' von 3 gewählt';
+  document.getElementById('pick-go').disabled = picked.length === 0;
+}
+document.getElementById('go-multi').addEventListener('click', () => {
+  S.multi = true; show('s-profile');
+});
+document.getElementById('pick-go').addEventListener('click', () => {
+  S.queue = picked.slice(); S.idx = 0; S.results = []; startNext();
+});
+
+/* ── Profil ──────────────────────────────────────────────────── */
+const selLand = document.getElementById('in-land');
+LAENDER.forEach(l => { const o=document.createElement('option'); o.textContent=l; selLand.appendChild(o); });
+{ const o=document.createElement('option'); o.textContent='✏️ Eigene Nation…'; o.value='__own'; selLand.appendChild(o); }
+
+const inName = document.getElementById('in-name');
+const inCustom = document.getElementById('in-custom');
+const pNext = document.getElementById('p-next');
+function checkProfile(){
+  const okLand = selLand.value === '__own' ? inCustom.value.trim().length > 1 : true;
+  pNext.disabled = !(inName.value.trim().length > 1 && okLand);
+}
+selLand.addEventListener('change', () => {
+  document.getElementById('f-custom').style.display = selLand.value === '__own' ? 'block' : 'none';
+  checkProfile();
+});
+inName.addEventListener('input', checkProfile);
+inCustom.addEventListener('input', checkProfile);
+pNext.addEventListener('click', () => {
+  S.name = inName.value.trim();
+  S.land = selLand.value === '__own' ? '🏳️ ' + inCustom.value.trim() : selLand.value || selLand.options[0].text;
+  show('s-diff');
+});
+
+/* ── Schwierigkeit ───────────────────────────────────────────── */
+const diffT = document.getElementById('diff-tiles');
+DIFFS.forEach((d,i) => {
+  const b = document.createElement('button');
+  b.className = 'tile';
+  b.innerHTML = tileHTML(d);
+  b.addEventListener('click', () => {
+    S.diff = i;
+    if (S.multi) { picked = []; pickT.querySelectorAll('.tile').forEach(t=>t.classList.remove('sel'));
+                   document.getElementById('pick-count').textContent = '0 von 3 gewählt';
+                   document.getElementById('pick-go').disabled = true;
+                   refreshNorms(); show('s-pick'); }
+    else { S.idx = 0; S.results = []; startNext(); }
+  });
+  diffT.appendChild(b);
+});
+function refreshNorms(){
+  pickT.querySelectorAll('.tile').forEach(t => {
+    const d = DISCIPLINES[t.dataset.k];
+    t.querySelector('.sub').textContent = 'Norm ' + d.norms[S.diff] + ' ' + d.unit;
+  });
+}
+
+/* ══ Eingabe: Tastatur + Touch vereinheitlicht ══════════════════ */
+const IN = { left:false, right:false, tapL:0, tapR:0, tapAny:0 };
+function pressL(){ IN.left = true;  IN.tapL++; IN.tapAny++; flash('padL'); }
+function pressR(){ IN.right = true; IN.tapR++; IN.tapAny++; flash('padR'); }
+function flash(id){ const e=document.getElementById(id); e.classList.add('hit');
+                    setTimeout(()=>e.classList.remove('hit'),70); }
+
+addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.code==='ArrowLeft'||e.code==='KeyA') { pressL(); e.preventDefault(); }
+  if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') { pressR(); e.preventDefault(); }
+});
+addEventListener('keyup', e => {
+  if (e.code==='ArrowLeft'||e.code==='KeyA') IN.left = false;
+  if (e.code==='ArrowRight'||e.code==='KeyD'||e.code==='Space') IN.right = false;
+});
+function bindPad(id, down, up){
+  const el = document.getElementById(id);
+  const d = e => { down(); e.preventDefault(); };
+  const u = e => { up();   e.preventDefault(); };
+  el.addEventListener('touchstart', d, {passive:false});
+  el.addEventListener('touchend',   u, {passive:false});
+  el.addEventListener('touchcancel',u, {passive:false});
+  el.addEventListener('mousedown',  d);
+  el.addEventListener('mouseup',    u);
+  el.addEventListener('mouseleave', u);
+}
+bindPad('padL', pressL, ()=>IN.left=false);
+bindPad('padR', pressR, ()=>IN.right=false);
+
+/* ══ Spielsteuerung ════════════════════════════════════════════ */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const big = document.getElementById('bigmsg');
+let G = null, raf = 0, lastT = 0;
+
+function startNext(){
+  if (S.idx >= S.queue.length) return showSummary();
+  startDiscipline(S.queue[S.idx]);
+}
+
+function startDiscipline(key){
+  const d = DISCIPLINES[key];
+  IN.tapL = IN.tapR = IN.tapAny = 0; IN.left = IN.right = false;   // Reste verwerfen
+  big.textContent = '';
+  G = { key, d, phase: d.phases[0], pi: 0, t: 0, done:false,
+        // Rennen
+        dist:0, v:0, rate:0, lastTap:0, alt:1, reactT:0, falseStart:false,
+        // Balken / Heben
+        att:1, bestVal:0, barX:0, barDir:1, barLocked:null, angle:null,
+        // Slalom
+        px:0, gate:0, gates:[], missed:0,
+        cd: 3.0 };
+  document.getElementById('hud-disc').textContent = d.icon + ' ' + d.name;
+  document.getElementById('hud-who').textContent = S.land + ' · ' + S.name;
+  document.getElementById('hud-norm').textContent = d.norms[S.diff] + ' ' + d.unit;
+  document.getElementById('pads').className = (d.phases[0]==='react') ? 'single' : '';
+  setPadLabels();
+  if (d.phases.includes('slalom')) buildGates();
+  show('s-play');
+  lastT = performance.now();
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(loop);
+}
+
+function setPadLabels(){
+  const p = G.phase, L = document.getElementById('padL'), R = document.getElementById('padR');
+  const pads = document.getElementById('pads');
+  const hint = document.getElementById('play-hint');
+  if (p === 'react'){ pads.className='single'; R.textContent='JETZT!'; L.style.display='none';
+    hint.textContent='Warte auf LOS – zu früh ist ein Fehlstart. (Leertaste)'; }
+  else if (p === 'mash'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
+    hint.textContent='Abwechselnd links/rechts hämmern. (A und D)'; }
+  else if (p === 'bar2' || p === 'lift'){ pads.className='single'; L.style.display='none'; R.textContent='STOPP';
+    hint.textContent='Zeiger in der grünen Zone stoppen. (Leertaste)'; }
+  else if (p === 'slalom'){ pads.className=''; L.style.display=''; L.textContent='◀ LINKS'; R.textContent='RECHTS ▶';
+    hint.textContent='Halte gedrückt zum Lenken – durch die Tore fahren. (A und D)'; }
+}
+
+function buildGates(){
+  const n = DISCIPLINES[G.key].gates;
+  const spread = [0.34, 0.40, 0.46, 0.52][S.diff];   // härter = weiter außen
+  for (let i=0;i<n;i++)
+    G.gates.push({ z: 90 + i*70, x: (i%2?1:-1) * spread * (0.5 + Math.random()*0.5) });
+}
+
+function loop(now){
+  const dt = Math.min((now - lastT)/1000, 0.05);
+  lastT = now;
+  if (G && !G.done) { update(dt); draw(); }
+  raf = requestAnimationFrame(loop);
+}
+
+/* ── Mechaniken ──────────────────────────────────────────────── */
+function update(dt){
+  G.t += dt;
+  const d = G.d;
+
+  // Notbremse: ohne Zeitlimit haengt fest, wer aufhoert zu spielen
+  if (G.phase !== 'react' && G.t > 90){
+    if (d.lower) finish(90 + (G.missed||0) * 2.5);
+    else finish(G.bestVal);
+    return;
+  }
+
+  if (G.phase === 'react'){
+    G.cd -= dt;
+    if (G.cd > 0){
+      big.textContent = G.cd > 2 ? 'Auf die Plätze' : G.cd > 1 ? 'Fertig' : '…';
+      big.style.color = '#cfe0f2';
+      if (IN.tapAny > 0){                       // zu früh gedrückt
+        IN.tapAny = 0; G.falseStart = true;
+        big.textContent = 'FEHLSTART'; big.style.color = 'var(--red)';
+        G.cd = 1.6;
+      }
+    } else if (!G.started){
+      // Sobald der Countdown durch ist – nicht in einem Ein-Frame-Fenster testen
+      G.started = true; G.reactMark = G.t; IN.tapAny = 0;
+      big.textContent = 'LOS!'; big.style.color = 'var(--green)';
+    } else if (IN.tapAny > 0){
+      G.reactT = G.t - G.reactMark;
+      IN.tapAny = 0; big.textContent = '';
+      nextPhase();
+    }
+    return;
+  }
+
+  if (G.phase === 'mash'){
+    // Taktrate aus dem Wechsel links/rechts – reines Dauerdrücken bringt nichts
+    if (IN.tapL > 0 && G.alt !== 1){ G.alt = 1; registerTap(); }
+    if (IN.tapR > 0 && G.alt !== -1){ G.alt = -1; registerTap(); }
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    G.rate = Math.max(0, G.rate - dt * 3.4);            // Tempo fällt ohne Takt
+    const target = d.vMax * Math.min(1, G.rate / d.cadence);
+    G.v += (target - G.v) * Math.min(1, dt * 2.2);
+    G.dist += G.v * dt;
+    if (G.dist >= d.dist){ G.dist = d.dist; finish(G.t - (G.reactMark||0) + (G.reactT||0)); }
+    return;
+  }
+
+  if (G.phase === 'bar2' || G.phase === 'lift'){
+    const spd = [1.05, 1.35, 1.7, 2.1][S.diff];
+    G.barX += G.barDir * spd * dt;
+    if (G.barX > 1){ G.barX = 1; G.barDir = -1; }
+    if (G.barX < 0){ G.barX = 0; G.barDir = 1; }
+    if (IN.tapAny > 0){
+      IN.tapAny = 0; IN.tapL = IN.tapR = 0;
+      const acc = 1 - Math.abs(G.barX - 0.5) * 2;       // 1 = perfekt mittig
+      if (G.phase === 'bar2' && G.angle === null){
+        G.angle = acc; G.barX = 0; G.barDir = 1;        // zweite Stufe: Kraft
+        big.textContent = 'Winkel ' + Math.round(acc*100) + '%';
+        big.style.color = 'var(--gold)';
+        setTimeout(()=>{ if(big) big.textContent=''; }, 700);
+      } else {
+        const val = (G.phase === 'lift')
+          ? liftValue(acc)
+          : throwValue(G.angle, acc);
+        G.bestVal = Math.max(G.bestVal, val);
+        G.angle = null; G.barX = 0; G.barDir = 1;
+        if (G.att >= (d.attempts||3)) finish(G.bestVal);
+        else { G.att++; big.textContent = 'Versuch ' + G.att; big.style.color='#cfe0f2';
+               setTimeout(()=>{ if(big) big.textContent=''; }, 800); }
+      }
+    }
+    return;
+  }
+
+  if (G.phase === 'slalom'){
+    const steer = (IN.left ? -1 : 0) + (IN.right ? 1 : 0);
+    IN.tapL = IN.tapR = IN.tapAny = 0;
+    G.px += steer * 0.85 * dt;
+    G.px = Math.max(-0.62, Math.min(0.62, G.px));
+    const speed = [150, 178, 205, 232][S.diff];
+    G.travel = (G.travel || 0) + speed * dt;
+    // Tor passiert?
+    const g = G.gates[G.gate];
+    if (g && G.travel >= g.z){
+      if (Math.abs(G.px - g.x) > 0.19){ G.missed++;
+        big.textContent = 'TOR VERPASST'; big.style.color='var(--red)';
+        setTimeout(()=>{ if(big) big.textContent=''; }, 500); }
+      G.gate++;
+      if (G.gate >= G.gates.length) finish(G.t + G.missed * 2.5 + (G.reactT||0));
+    }
+    return;
+  }
+}
+
+function registerTap(){
+  const now = G.t;
+  const gap = now - (G.lastTap || now);
+  G.lastTap = now;
+  if (gap > 0.001) G.rate = Math.min(12, G.rate * 0.55 + (1/gap) * 0.45);
+  else G.rate = Math.min(12, G.rate + 1);
+}
+
+function throwValue(angleAcc, powerAcc){
+  // Bestwert bei gutem Winkel UND voller Kraft
+  const base = 30 + powerAcc * 58;
+  return Math.round((base * (0.6 + angleAcc * 0.4)) * 10) / 10;
+}
+function liftValue(acc){
+  const base = [70, 95, 118, 138][S.diff];
+  return Math.round(base + acc * 62);
+}
+
+function nextPhase(){
+  G.pi++;
+  const ph = G.d.phases[G.pi];
+  if (!ph) return;
+  G.phase = ph; G.t = 0; G.reactMark = 0;
+  setPadLabels();
+}
+
+function finish(val){
+  G.done = true;
+  const d = G.d, norm = d.norms[S.diff];
+  const ok = d.lower ? val <= norm : val >= norm;
+  // Medaillenstufen jenseits der Norm
+  const marg = d.lower ? (norm - val) / norm : (val - norm) / norm;
+  let medal = '—', mname = 'Keine Medaille';
+  if (ok){
+    if (marg >= 0.10){ medal='🥇'; mname='Gold'; }
+    else if (marg >= 0.05){ medal='🥈'; mname='Silber'; }
+    else { medal='🥉'; mname='Bronze'; }
+  }
+  const shown = d.unit === 's' ? val.toFixed(2) : (d.unit==='kg' ? Math.round(val) : val.toFixed(1));
+  S.results[S.idx] = { key:G.key, name:d.name, icon:d.icon, val, shown, unit:d.unit,
+                       norm, ok, medal, mname, falseStart:G.falseStart };
+  showResult();
+}
+
+/* ── Zeichnen ────────────────────────────────────────────────── */
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  const p = G.phase;
+  if (p === 'react')  drawReact();
+  else if (p === 'mash')   drawRace();
+  else if (p === 'slalom') drawSlalom();
+  else drawBar();
+}
+
+function bg(topCol, botCol){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, topCol); g.addColorStop(1, botCol);
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+}
+
+function drawReact(){
+  bg('#0d1a2e','#060b14');
+  ctx.fillStyle = G.cd > 0 ? '#c8352b' : '#2fbf6b';
+  ctx.beginPath(); ctx.arc(W/2, H/2 - 20, 62, 0, Math.PI*2); ctx.fill();
+}
+
+function drawRace(){
+  const d = G.d;
+  bg(G.key==='swim' ? '#0a2b46' : '#132038', '#070d18');
+  // Tribüne: gefüllte Ränge statt leerer Fläche über der Bahn
+  for (let r = 0; r < 5; r++){
+    const y = H*0.10 + r*20, shade = 26 + r*9;
+    ctx.fillStyle = `rgb(${shade+16},${shade+22},${shade+34})`;
+    ctx.fillRect(0, y, W, 17);
+    for (let i = 0; i < 46; i++){
+      const seed = (r*97 + i*31) % 7;
+      if (seed > 3) continue;
+      ctx.fillStyle = ['#d9556a','#5b8fd9','#e0b64a','#57b98a'][seed];
+      ctx.fillRect(6 + i*16.4 + (r%2)*7, y+3, 8, 11);
+    }
+  }
+  ctx.fillStyle = 'rgba(7,13,24,.55)'; ctx.fillRect(0, H*0.10, W, 5);
+  // Bahn
+  ctx.fillStyle = G.key==='swim' ? '#12507e' : G.key==='bike' ? '#3a2a2a' : '#7a4530';
+  ctx.fillRect(0, H*0.52, W, H*0.30);
+  ctx.strokeStyle='rgba(255,255,255,.32)'; ctx.lineWidth=2; ctx.setLineDash([16,14]);
+  ctx.beginPath(); ctx.moveTo(0,H*0.67); ctx.lineTo(W,H*0.67); ctx.stroke(); ctx.setLineDash([]);
+  // Athlet
+  const prog = G.dist / d.dist;
+  const x = 50 + prog * (W-120);
+  ctx.font = '46px serif'; ctx.textAlign='center';
+  const bob = Math.sin(G.t*14) * (G.v/d.vMax) * 6;
+  ctx.fillText(d.icon, x, H*0.66 + bob);
+  // Ziellinie
+  ctx.fillStyle='#fff'; ctx.fillRect(W-66, H*0.52, 4, H*0.30);
+  // Tempoanzeige
+  ctx.textAlign='left'; ctx.fillStyle='#9fb6cf'; ctx.font='600 15px Segoe UI,Arial';
+  ctx.fillText('Strecke ' + G.dist.toFixed(0) + ' / ' + d.dist + ' m', 22, 34);
+  ctx.fillText('Tempo ' + (G.v*3.6).toFixed(1) + ' km/h', 22, 58);
+  ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 82);
+  // Taktbalken
+  const rr = Math.min(1, G.rate / d.cadence);
+  ctx.fillStyle='rgba(255,255,255,.14)'; ctx.fillRect(22, H-46, W-44, 14);
+  ctx.fillStyle = rr > 0.85 ? '#39e08f' : rr > 0.5 ? '#ffd75e' : '#ff8a5a';
+  ctx.fillRect(22, H-46, (W-44)*rr, 14);
+  ctx.fillStyle='#8ea3bd'; ctx.font='12px Segoe UI,Arial';
+  ctx.fillText('TAKT', 22, H-54);
+}
+
+function drawBar(){
+  bg('#141d33','#070c16');
+  const bw = W-120, bx = 60, by = H/2 + 20;
+  ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(bx, by, bw, 34);
+  // Zonen
+  const zw = [0.22,0.17,0.13,0.10][S.diff];
+  ctx.fillStyle='rgba(255,215,94,.32)';
+  ctx.fillRect(bx + bw*(0.5-zw), by, bw*zw*2, 34);
+  ctx.fillStyle='rgba(57,224,143,.55)';
+  ctx.fillRect(bx + bw*(0.5-zw*0.42), by, bw*zw*0.84, 34);
+  // Zeiger
+  ctx.fillStyle='#fff'; ctx.fillRect(bx + bw*G.barX - 3, by-11, 6, 56);
+  // Beschriftung
+  ctx.textAlign='center'; ctx.fillStyle='#cfe0f2'; ctx.font='700 22px Segoe UI,Arial';
+  const label = G.phase==='lift' ? 'Versuch ' + G.att + ' / 3'
+              : (G.angle===null ? 'Abwurfwinkel' : 'Kraft');
+  ctx.fillText(label, W/2, by - 46);
+  if (G.phase !== 'lift'){                       // Versuchszähler auch beim Wurf
+    ctx.font='600 13px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
+    ctx.fillText('Versuch ' + G.att + ' / ' + (G.d.attempts||3), W/2, by - 22);
+    ctx.font='700 22px Segoe UI,Arial'; ctx.fillStyle='#cfe0f2';
+  }
+  ctx.font='600 15px Segoe UI,Arial'; ctx.fillStyle='#8ea3bd';
+  ctx.fillText(G.bestVal ? ('Bester Versuch: ' + G.bestVal + ' ' + G.d.unit) : 'Noch kein gültiger Versuch',
+               W/2, by + 82);
+  ctx.font='40px serif'; ctx.fillText(G.d.icon, W/2, by - 86);
+  ctx.textAlign='left';
+}
+
+function drawSlalom(){
+  bg('#1b3350','#0a1220');
+  // Piste
+  ctx.fillStyle='#e8f2fb'; ctx.beginPath();
+  ctx.moveTo(W*0.30, 0); ctx.lineTo(W*0.70, 0); ctx.lineTo(W, H); ctx.lineTo(0, H);
+  ctx.closePath(); ctx.fill();
+  const trav = G.travel || 0;
+  // Tore
+  G.gates.forEach((g,i) => {
+    const rel = g.z - trav;
+    if (rel < -20 || rel > 420) return;
+    const t = 1 - rel/420;                       // 0 = fern, 1 = nah
+    const y = t*t * H;
+    const road = (W*0.40) + (W*0.60) * (t*t);
+    const cx = W/2 + g.x * road;
+    const gw = 26 + 66*t*t;
+    ctx.fillStyle = i < G.gate ? '#9fb0c2' : '#d02a2a';
+    ctx.fillRect(cx - gw/2 - 4, y-10, 7, 10+34*t);
+    ctx.fillStyle = i < G.gate ? '#9fb0c2' : '#1f6fd0';
+    ctx.fillRect(cx + gw/2 - 3, y-10, 7, 10+34*t);
+  });
+  // Fahrer
+  ctx.font='40px serif'; ctx.textAlign='center';
+  ctx.fillText('⛷️', W/2 + G.px * W*0.98, H-42);
+  ctx.textAlign='left';
+  ctx.fillStyle='#33465e'; ctx.font='600 15px Segoe UI,Arial';
+  ctx.fillText('Tor ' + Math.min(G.gate+1, G.gates.length) + ' / ' + G.gates.length, 22, 30);
+  ctx.fillText('Zeit ' + G.t.toFixed(2) + ' s', 22, 52);
+  if (G.missed) { ctx.fillStyle='#c0392b'; ctx.fillText('Verpasst: ' + G.missed + ' (+2,5 s)', 22, 74); }
+}
+
+/* ── Ergebnis ────────────────────────────────────────────────── */
+function showResult(){
+  const r = S.results[S.idx], d = DISCIPLINES[r.key];
+  document.getElementById('r-title').textContent = r.icon + ' ' + r.name;
+  document.getElementById('r-medal').textContent = r.ok ? r.medal : '😔';
+  document.getElementById('r-val').textContent = r.shown + ' ' + r.unit;
+  document.getElementById('r-norm').textContent =
+    'Qualifikationsnorm: ' + r.norm + ' ' + r.unit + ' · ' + DIFFS[S.diff].name;
+  const v = document.getElementById('r-verdict');
+  v.className = 'verdict ' + (r.ok ? 'ok' : 'no');
+  v.textContent = r.ok ? '✓ Qualifiziert – ' + r.mname : '✗ Norm verfehlt';
+  document.getElementById('r-next').textContent =
+    (S.idx + 1 < S.queue.length) ? 'Nächste Disziplin →' : 'Zur Wertung →';
+  show('s-result');
+}
+document.getElementById('r-retry').addEventListener('click', () => startDiscipline(S.queue[S.idx]));
+document.getElementById('r-next').addEventListener('click', () => { S.idx++; startNext(); });
+
+function showSummary(){
+  document.getElementById('sum-who').textContent =
+    S.land + ' · ' + S.name + ' · ' + DIFFS[S.diff].name;
+  let g=0,s=0,b=0;
+  let rows = '<tr><th>Disziplin</th><th class="r">Ergebnis</th><th class="r">Norm</th><th class="r">Medaille</th></tr>';
+  S.results.forEach(r => {
+    if (r.medal==='🥇') g++; else if (r.medal==='🥈') s++; else if (r.medal==='🥉') b++;
+    rows += `<tr><td>${r.icon} ${r.name}</td><td class="r">${r.shown} ${r.unit}</td>` +
+            `<td class="r" style="color:#7f92aa">${r.norm} ${r.unit}</td>` +
+            `<td class="r">${r.ok ? r.medal + ' ' + r.mname : '—'}</td></tr>`;
+  });
+  document.getElementById('sum-table').innerHTML = rows;
+  const tot = g+s+b;
+  document.getElementById('sum-tot').innerHTML = tot
+    ? `🥇 ${g} &nbsp; 🥈 ${s} &nbsp; 🥉 ${b}`
+    : 'Keine Medaille – beim nächsten Mal!';
+  show('s-summary');
+}
+document.getElementById('play-abort').addEventListener('click', () => {
+  if (G) G.done = true;
+  cancelAnimationFrame(raf); G = null; big.textContent = '';
+  show(S.multi ? 's-pick' : 's-home');
+});
+document.getElementById('sum-home').addEventListener('click', () => {
+  cancelAnimationFrame(raf); G = null; picked = [];
+  pickT.querySelectorAll('.tile').forEach(t=>t.classList.remove('sel'));
+  show('s-home');
+});
+</script>
 </body>
 </html>
