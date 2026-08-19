@@ -100,6 +100,21 @@
   .field input:focus,.field select:focus{border-color:var(--gold);}
   .field select option{background:#101827;color:var(--ink);}
 
+  /* ── Erklärung ──────────────────────────────────────── */
+  .briefico{font-size:56px;line-height:1;margin-bottom:10px;}
+  .steps{list-style:none;max-width:560px;margin:0 auto 22px;text-align:left;
+         counter-reset:st;}
+  .steps li{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    margin-bottom:10px;font-size:15px;line-height:1.55;color:#d3e0ee;}
+  .steps li .si{font-size:22px;line-height:1.3;flex-shrink:0;}
+  .steps li b{color:var(--gold);font-weight:700;}
+  .keys{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:24px;}
+  .keys span{padding:7px 14px;border-radius:10px;background:rgba(255,255,255,.07);
+    border:1px solid var(--line);font-size:13px;color:#9db1c8;}
+  .keys kbd{font-family:inherit;font-weight:700;color:var(--ink);
+    background:rgba(255,255,255,.12);border-radius:6px;padding:1px 7px;margin:0 2px;}
+
   /* ── Spielfeld ──────────────────────────────────────── */
   #stage{position:relative;width:100%;max-width:760px;margin:0 auto;}
   canvas{width:100%;height:auto;display:block;border-radius:18px;
@@ -204,6 +219,19 @@
     <p class="note" id="pick-count">0 von 3 gewählt</p>
   </section>
 
+  <!-- ══ Erklärung vor dem Start ══ -->
+  <section class="screen" id="s-brief">
+    <div class="briefico" id="b-ico">🏃</div>
+    <h2 id="b-name">Disziplin</h2>
+    <p class="lead" id="b-meta">–</p>
+    <ol class="steps" id="b-steps"></ol>
+    <div class="keys" id="b-keys"></div>
+    <div class="row">
+      <button class="btn ghost" id="b-back">← Zurück</button>
+      <button class="btn" id="b-go">Los geht's</button>
+    </div>
+  </section>
+
   <!-- ══ Spiel ══ -->
   <section class="screen" id="s-play">
     <div id="hud">
@@ -235,6 +263,7 @@
       <div class="verdict ok" id="r-verdict">Qualifiziert</div>
     </div>
     <div class="row">
+      <button class="btn ghost" id="r-help">❔ Erklärung</button>
       <button class="btn ghost" id="r-retry">🔄 Nochmal</button>
       <button class="btn" id="r-next">Weiter</button>
     </div>
@@ -272,22 +301,51 @@ const DIFFS = [
 const DISCIPLINES = {
   sprint: { name:'100 m Sprint', icon:'🏃', unit:'s', lower:true,
             phases:['react','mash'], dist:100, vMax:11.6, cadence:7.2,
-            norms:[15.5, 13.4, 11.9, 10.9] },
+            norms:[15.5, 13.4, 11.9, 10.9],
+            short:'Starten und Takt halten',
+            how:[['🚦','Warte auf <b>LOS!</b> und drücke sofort. Wer zu früh drückt, hat einen Fehlstart.'],
+                 ['⚡','Dann <b>abwechselnd</b> links und rechts hämmern. Nur der Wechsel zählt – Dauerdrücken bringt nichts.'],
+                 ['📈','Je schneller der Takt, desto höher das Tempo. Lässt du nach, wirst du langsamer.']] },
+
   swim:   { name:'50 m Freistil', icon:'🏊', unit:'s', lower:true,
             phases:['react','mash'], dist:50, vMax:2.35, cadence:5.0,
-            norms:[34.0, 28.0, 24.0, 21.5] },
+            norms:[34.0, 28.0, 24.0, 21.5],
+            short:'Gleichmäßiger Zug',
+            how:[['🚦','Auf <b>LOS!</b> reagieren – Fehlstart vermeiden.'],
+                 ['🌊','Abwechselnd links und rechts für die Züge. Der Takt ist <b>ruhiger</b> als beim Sprint.'],
+                 ['📈','Gleichmäßigkeit schlägt Hektik: halte den Rhythmus bis zur Wand durch.']] },
+
   bike:   { name:'500 m Bahnsprint', icon:'🚴', unit:'s', lower:true,
             phases:['mash'], dist:500, vMax:19.0, cadence:6.4,
-            norms:[46.0, 38.0, 32.5, 28.5] },
+            norms:[46.0, 38.0, 32.5, 28.5],
+            short:'Lange Distanz, kein Start',
+            how:[['🚴','Kein Startsignal – es geht <b>sofort</b> los.'],
+                 ['⚡','Abwechselnd links und rechts treten, um Tempo aufzubauen.'],
+                 ['💪','500 m sind lang. Wer zu früh alles gibt, bricht auf der Zielgeraden ein.']] },
+
   throw:  { name:'Speerwurf', icon:'🎯', unit:'m', lower:false,
             phases:['bar2'], attempts:3,
-            norms:[42, 56, 68, 78] },
+            short:'Zwei Mal richtig stoppen',
+            norms:[42, 56, 68, 78],
+            how:[['📐','<b>Erster Stopp:</b> der Abwurfwinkel. Zeiger möglichst in der grünen Mitte stoppen.'],
+                 ['💥','<b>Zweiter Stopp:</b> die Kraft. Auch hier gilt: je mittiger, desto weiter.'],
+                 ['🔁','Du hast <b>3 Versuche</b> – gewertet wird der beste.']] },
+
   ski:    { name:'Ski-Slalom', icon:'⛷️', unit:'s', lower:true,
             phases:['react','slalom'], gates:12,
-            norms:[38.0, 32.0, 27.5, 24.0] },
+            norms:[38.0, 32.0, 27.5, 24.0],
+            short:'Durch alle Tore lenken',
+            how:[['🚦','Auf <b>LOS!</b> reagieren, dann geht die Fahrt los.'],
+                 ['🎿','Links/rechts <b>gedrückt halten</b> zum Lenken – nicht tippen.'],
+                 ['🚩','Jedes <b>verpasste Tor</b> kostet 2,5 Sekunden Strafzeit.']] },
+
   lift:   { name:'Gewichtheben', icon:'🏋️', unit:'kg', lower:false,
             phases:['lift'], attempts:3,
-            norms:[95, 130, 160, 185] },
+            norms:[95, 130, 160, 185],
+            short:'Punktgenau stoppen',
+            how:[['🎯','Den laufenden Zeiger <b>genau in der grünen Mitte</b> stoppen.'],
+                 ['⚖️','Je genauer der Treffer, desto mehr Gewicht bekommst du hoch.'],
+                 ['🔁','<b>3 Versuche</b> – der beste zählt.']] },
 };
 
 const LAENDER = ['🇩🇪 Deutschland','🇦🇹 Österreich','🇨🇭 Schweiz','🇫🇷 Frankreich',
@@ -317,7 +375,7 @@ Object.entries(DISCIPLINES).forEach(([k,d]) => {
   const mk = (parent, onClick) => {
     const b = document.createElement('button');
     b.className = 'tile'; b.dataset.k = k;
-    b.innerHTML = tileHTML({icon:d.icon, name:d.name, sub:'Norm ab ' + d.norms[0] + ' ' + d.unit});
+    b.innerHTML = tileHTML({icon:d.icon, name:d.name, sub:d.short});
     b.addEventListener('click', () => onClick(k, b));
     parent.appendChild(b);
   };
@@ -383,7 +441,7 @@ DIFFS.forEach((d,i) => {
 function refreshNorms(){
   pickT.querySelectorAll('.tile').forEach(t => {
     const d = DISCIPLINES[t.dataset.k];
-    t.querySelector('.sub').textContent = 'Norm ' + d.norms[S.diff] + ' ' + d.unit;
+    t.querySelector('.sub').textContent = d.short + ' · Norm ' + d.norms[S.diff] + ' ' + d.unit;
   });
 }
 
@@ -425,8 +483,31 @@ let G = null, raf = 0, lastT = 0;
 
 function startNext(){
   if (S.idx >= S.queue.length) return showSummary();
-  startDiscipline(S.queue[S.idx]);
+  showBrief(S.queue[S.idx]);
 }
+
+/* ── Erklärung vor jeder Disziplin ───────────────────────────── */
+function showBrief(key){
+  const d = DISCIPLINES[key];
+  document.getElementById('b-ico').textContent = d.icon;
+  document.getElementById('b-name').textContent = d.name;
+  document.getElementById('b-meta').innerHTML =
+    'Stufe <b style="color:#fff">' + DIFFS[S.diff].name + '</b> · ' +
+    'Qualifikationsnorm <b style="color:#fff">' + d.norms[S.diff] + ' ' + d.unit + '</b>' +
+    (S.queue.length > 1 ? ' · Disziplin ' + (S.idx+1) + ' von ' + S.queue.length : '');
+  document.getElementById('b-steps').innerHTML =
+    d.how.map(([i,t]) => `<li><span class="si">${i}</span><span>${t}</span></li>`).join('');
+  // Steuerung passend zur ersten Mechanik
+  const usesSteer = d.phases.includes('slalom');
+  const usesMash  = d.phases.includes('mash');
+  const keys = ['<span>Touch: die großen Flächen unten</span>'];
+  if (usesMash || usesSteer) keys.unshift('<span>Tastatur: <kbd>A</kbd> und <kbd>D</kbd></span>');
+  else keys.unshift('<span>Tastatur: <kbd>Leertaste</kbd></span>');
+  document.getElementById('b-keys').innerHTML = keys.join('');
+  show('s-brief');
+}
+document.getElementById('b-go').addEventListener('click', () => startDiscipline(S.queue[S.idx]));
+document.getElementById('b-back').addEventListener('click', () => show(S.multi ? 's-pick' : 's-home'));
 
 function startDiscipline(key){
   const d = DISCIPLINES[key];
@@ -759,6 +840,7 @@ function showResult(){
   show('s-result');
 }
 document.getElementById('r-retry').addEventListener('click', () => startDiscipline(S.queue[S.idx]));
+document.getElementById('r-help').addEventListener('click', () => showBrief(S.queue[S.idx]));
 document.getElementById('r-next').addEventListener('click', () => { S.idx++; startNext(); });
 
 function showSummary(){
